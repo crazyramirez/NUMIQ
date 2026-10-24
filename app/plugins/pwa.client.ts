@@ -6,7 +6,7 @@ export default defineNuxtPlugin(() => {
 
 const WINDOW_KEY = 'numiq-pwa-window'
 const WIDTH = 1280
-const HEIGHT = 720
+const HEIGHT = 900
 
 /**
  * App instalada en Windows o Mac: el manifiesto no permite fijar el tamaño de la ventana, así que la
