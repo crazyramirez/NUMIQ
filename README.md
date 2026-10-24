@@ -154,7 +154,7 @@ Plantilla completa y comentada en [`.env.example`](.env.example). Las claves rea
 | `NUXT_DATABASE_URL` | Conexión MySQL (`mysql://usuario:clave@host:puerto/base`). |
 | `DB_HOST` `DB_PORT` `DB_USER` `DB_PASSWORD` `DB_NAME` `DB_SOCKET` | Alternativa por partes (útil en Plesk). Tienen prioridad sobre la URL y la contraseña no necesita codificarse. |
 | `NUXT_UPLOADS_DIR` | Carpeta de archivos subidos (por defecto `./storage/uploads`). |
-| `NUXT_SITE_URL` | URL pública para los enlaces de los correos, sin barra final. |
+| `NUXT_SITE_URL` | URL pública para los enlaces de los correos y la imagen al compartir un enlace (`og:image`, se fija al compilar), sin barra final. |
 | `NUXT_OPENAI_API_KEY` | IA: lectura de documentos, importación, relleno de contactos y asistente. |
 | `NUXT_OPENAI_MODEL` · `NUXT_OPENAI_PRO_MODEL` · `NUXT_OPENAI_CHAT_MODEL` · `NUXT_OPENAI_CONCURRENCY` | Opcionales: modelo de lectura rápida, modelo de segunda lectura cuando los importes no cuadran, modelo del asistente y documentos leídos en paralelo. |
 | `GOOGLE_APP_EMAIL` · `GOOGLE_APP_PASSWORD` | Correo con Gmail o Workspace (contraseña de aplicación): envío por SMTP y recepción por IMAP. |

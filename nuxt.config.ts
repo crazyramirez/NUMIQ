@@ -1,3 +1,7 @@
+// URL pública del .env (nuxi build también lo lee): las redes sociales solo aceptan og:image absolutas
+const siteUrl = (process.env.NUXT_SITE_URL || '').replace(/\/+$/, '')
+const description = 'Facturación, gastos e impuestos para autónomos y pymes, con IA.'
+
 export default defineNuxtConfig({
   compatibilityDate: '2026-10-01',
 
@@ -34,7 +38,20 @@ export default defineNuxtConfig({
       htmlAttrs: { lang: 'es' },
       meta: [
         { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
-        { name: 'description', content: 'Facturación, gastos e impuestos para autónomos y pymes, con IA.' },
+        { name: 'description', content: description },
+        // Vista previa al compartir un enlace (WhatsApp, LinkedIn, X…): sin SSR, los rastreadores solo ven esta cabecera
+        { property: 'og:type', content: 'website' },
+        { property: 'og:site_name', content: 'NUMIQ' },
+        { property: 'og:locale', content: 'es_ES' },
+        { property: 'og:title', content: 'NUMIQ · Facturas, gastos e impuestos, en orden' },
+        { property: 'og:description', content: description },
+        ...(siteUrl ? [{ property: 'og:url', content: `${siteUrl}/` }] : []),
+        { property: 'og:image', content: `${siteUrl}/og-image.jpg` },
+        { property: 'og:image:type', content: 'image/jpeg' },
+        { property: 'og:image:width', content: '1200' },
+        { property: 'og:image:height', content: '630' },
+        { property: 'og:image:alt', content: 'NUMIQ: facturas, gastos e impuestos en orden, con IA para autónomos y pymes' },
+        { name: 'twitter:card', content: 'summary_large_image' },
         { name: 'theme-color', content: '#f5f6f8', media: '(prefers-color-scheme: light)' },
         { name: 'theme-color', content: '#0b0d12', media: '(prefers-color-scheme: dark)' },
         // App instalable (PWA): pantalla completa y nombre en el móvil
