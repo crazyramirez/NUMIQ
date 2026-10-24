@@ -6,12 +6,19 @@ const { data, status, error, refresh } = await useFetch('/api/dashboard', { lazy
 
 const showAllInsights = ref(false)
 
+// Ingresos y gastos con impuestos; beneficio y margen sobre bases (el IVA no es tuyo)
 const sum12 = computed(() => {
   const m = data.value?.monthly ?? []
-  const income = m.reduce((s, x) => s + x.income, 0)
-  const expenses = m.reduce((s, x) => s + x.expenses, 0)
-  return { income, expenses, profit: income - expenses, margin: income ? ((income - expenses) / income) * 100 : 0 }
+  const base = m.reduce((s, x) => s + x.income, 0)
+  const profit = m.reduce((s, x) => s + x.profit, 0)
+  return {
+    income: m.reduce((s, x) => s + x.incomeTotal, 0),
+    expenses: m.reduce((s, x) => s + x.expensesTotal, 0),
+    profit,
+    margin: base ? (profit / base) * 100 : 0,
+  }
 })
+const chart = computed(() => (data.value?.monthly ?? []).map(m => ({ month: m.month, income: m.incomeTotal, expenses: m.expensesTotal, profit: m.profit })))
 
 const firstName = computed(() => me.value?.user.name.split(' ')[0] ?? '')
 const greeting = computed(() => {
@@ -30,9 +37,9 @@ const kpis = computed(() => {
   const k = data.value?.kpis
   if (!k) return []
   return [
-    { key: 'income', label: 'Facturado este trimestre', icon: 'ph:arrow-circle-up-right', value: k.income.value, delta: delta(k.income.value, k.income.previous), invert: false, note: 'Base imponible, sin IVA' },
-    { key: 'expenses', label: 'Gastos este trimestre', icon: 'ph:arrow-circle-down-left', value: k.expenses.value, delta: delta(k.expenses.value, k.expenses.previous), invert: true, note: 'Base imponible, sin IVA' },
-    { key: 'profit', label: 'Beneficio', icon: 'ph:chart-line-up', value: k.profit.value, delta: delta(k.profit.value, k.profit.previous), invert: false, note: 'Ingresos menos gastos' },
+    { key: 'income', label: 'Facturado este trimestre', icon: 'ph:arrow-circle-up-right', value: k.income.value, delta: delta(k.income.value, k.income.previous), invert: false, note: 'Total de las facturas, con impuestos' },
+    { key: 'expenses', label: 'Gastos este trimestre', icon: 'ph:arrow-circle-down-left', value: k.expenses.value, delta: delta(k.expenses.value, k.expenses.previous), invert: true, note: 'Total de los gastos, con impuestos' },
+    { key: 'profit', label: 'Beneficio sin IVA', icon: 'ph:chart-line-up', value: k.profit.value, delta: delta(k.profit.value, k.profit.previous), invert: false, note: 'Ingresos menos gastos, sin IVA' },
   ]
 })
 
@@ -40,7 +47,7 @@ const vatResult = computed(() => data.value?.kpis.vat303.result ?? 0)
 const irpf = computed(() => data.value?.kpis.irpf130)
 const reserve = computed(() => Math.max(0, vatResult.value) + (irpf.value?.applicable ? irpf.value.result : 0))
 
-const total12 = computed(() => data.value?.monthly.reduce((s, m) => s + m.income, 0) ?? 0)
+const total12 = computed(() => data.value?.monthly.reduce((s, m) => s + m.incomeTotal, 0) ?? 0)
 const topMax = computed(() => data.value?.topClients[0]?.amount || 1)
 
 const severity = {
@@ -131,15 +138,15 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 
       <!-- Gráfico + Asesor IA -->
       <div class="row-main">
-        <UiCard class="rise chart-card" style="--i: 5" title="Ingresos y gastos" subtitle="Últimos 12 meses · base imponible">
+        <UiCard class="rise chart-card" style="--i: 5" title="Ingresos y gastos" subtitle="Últimos 12 meses · con impuestos (beneficio, sin IVA)">
           <template #actions>
             <UiButton size="sm" variant="ghost" icon-right="ph:arrow-right" to="/informes">Informes</UiButton>
           </template>
-          <ChartsIncomeChart :data="data.monthly" />
+          <ChartsIncomeChart :data="chart" />
           <dl class="chart-sum">
             <div><dt><i class="cs-dot inc" />Ingresos</dt><dd class="num">{{ eur(sum12.income, false) }}</dd></div>
             <div><dt><i class="cs-dot exp" />Gastos</dt><dd class="num">{{ eur(sum12.expenses, false) }}</dd></div>
-            <div><dt>Beneficio</dt><dd class="num" :class="{ neg: sum12.profit < 0 }">{{ eur(sum12.profit, false) }}</dd></div>
+            <div><dt>Beneficio sin IVA</dt><dd class="num" :class="{ neg: sum12.profit < 0 }">{{ eur(sum12.profit, false) }}</dd></div>
             <div><dt>Margen</dt><dd class="num">{{ pct(sum12.margin) }}</dd></div>
           </dl>
         </UiCard>
@@ -240,7 +247,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
           </ul>
         </UiCard>
 
-        <UiCard class="rise" style="--i: 9" icon="ph:crown-simple" title="Mejores clientes" subtitle="Facturación de los últimos 12 meses">
+        <UiCard class="rise" style="--i: 9" icon="ph:crown-simple" title="Mejores clientes" subtitle="Facturación de los últimos 12 meses, con impuestos">
           <ul v-if="data.topClients.length" class="clients">
             <li v-for="c in data.topClients" :key="c.id ?? c.name">
               <NuxtLink :to="c.id ? `/clientes/${c.id}` : '/clientes'" class="client">
@@ -266,7 +273,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 
       <!-- Categorías · Actividad -->
       <div class="row-2">
-        <UiCard class="rise" style="--i: 10" icon="ph:chart-bar-horizontal" title="Gastos por categoría" :subtitle="`${quarterLabel} · base imponible`">
+        <UiCard class="rise" style="--i: 10" icon="ph:chart-bar-horizontal" title="Gastos por categoría" :subtitle="`${quarterLabel} · con impuestos`">
           <ChartsCategoryBars :rows="data.expensesByCategory" />
         </UiCard>
 

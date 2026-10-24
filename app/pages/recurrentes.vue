@@ -40,7 +40,8 @@ const firstLoad = computed(() => fetchStatus.value === 'pending' && !data.value)
 
 // ─── Resumen ───
 
-const monthlyOf = (r: Row) => r.base * monthlyEquivalent(r.frequency, r.interval)
+// Equivalente mensual del importe total (con impuestos)
+const monthlyOf = (r: Row) => r.total * monthlyEquivalent(r.frequency, r.interval)
 const live = computed(() => rows.value.filter(r => r.status === 'active'))
 const mrr = computed(() => round2(live.value.filter(r => r.kind === 'invoice').reduce((s, r) => s + monthlyOf(r), 0)))
 const fixed = computed(() => round2(live.value.filter(r => r.kind === 'expense').reduce((s, r) => s + monthlyOf(r), 0)))
@@ -315,12 +316,12 @@ const IDEAS = Object.freeze([
       <div class="kpi">
         <p class="eyebrow">Ingresos recurrentes</p>
         <p class="v num">{{ eur(mrr) }}<span class="per">/mes</span></p>
-        <p class="s">{{ plural(live.filter(r => r.kind === 'invoice').length, 'activa', 'activas') }} · sin IVA</p>
+        <p class="s">{{ plural(live.filter(r => r.kind === 'invoice').length, 'activa', 'activas') }} · con impuestos</p>
       </div>
       <div class="kpi">
         <p class="eyebrow">Gastos fijos</p>
         <p class="v num">{{ eur(fixed) }}<span class="per">/mes</span></p>
-        <p class="s">{{ plural(live.filter(r => r.kind === 'expense').length, 'activo', 'activos') }} · sin IVA</p>
+        <p class="s">{{ plural(live.filter(r => r.kind === 'expense').length, 'activo', 'activos') }} · con impuestos</p>
       </div>
       <div class="kpi">
         <p class="eyebrow">Margen recurrente</p>

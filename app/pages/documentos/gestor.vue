@@ -285,7 +285,7 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
               <span class="o-ic issued" aria-hidden="true"><Icon name="ph:receipt" /></span>
               <span class="grow min0">
                 <span class="o-t">Facturas emitidas</span>
-                <span class="o-s">{{ preview ? `${preview.issued.count} factura${preview.issued.count === 1 ? '' : 's'} en PDF (generadas por la app) · base ${eur(preview.issued.base)}` : '…' }}</span>
+                <span class="o-s">{{ preview ? `${preview.issued.count} factura${preview.issued.count === 1 ? '' : 's'} en PDF (generadas por la app) · ${eur(preview.issued.total)}` : '…' }}</span>
               </span>
             </label>
             <label class="opt" :class="{ on: incReceived }">
@@ -293,7 +293,7 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
               <span class="o-ic received" aria-hidden="true"><Icon name="ph:wallet" /></span>
               <span class="grow min0">
                 <span class="o-t">Facturas recibidas y gastos</span>
-                <span class="o-s">{{ preview ? `${preview.received.count} gasto${preview.received.count === 1 ? '' : 's'} · ${preview.received.withFile} con documento original · base ${eur(preview.received.base)}` : '…' }}</span>
+                <span class="o-s">{{ preview ? `${preview.received.count} gasto${preview.received.count === 1 ? '' : 's'} · ${preview.received.withFile} con documento original · ${eur(preview.received.total)}` : '…' }}</span>
               </span>
             </label>
             <label class="opt" :class="{ on: incSummary }">

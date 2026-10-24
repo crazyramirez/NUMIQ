@@ -81,13 +81,13 @@ const kpis = computed(() => {
   const overdue = open.filter(d => d.dueDate && d.dueDate < today)
   const yearStart = `${today.slice(0, 4)}-01-01`
   return {
-    billed: emitted.reduce((s, d) => s + d.taxBase, 0),
-    billedYear: emitted.filter(d => d.issueDate >= yearStart).reduce((s, d) => s + d.taxBase, 0),
+    billed: emitted.reduce((s, d) => s + d.total, 0),
+    billedYear: emitted.filter(d => d.issueDate >= yearStart).reduce((s, d) => s + d.total, 0),
     pending: open.reduce((s, d) => s + (d.total - d.paidTotal), 0),
     overdue: overdue.reduce((s, d) => s + (d.total - d.paidTotal), 0),
     overdueCount: overdue.length,
     count: emitted.length,
-    avg: emitted.length ? emitted.reduce((s, d) => s + d.taxBase, 0) / emitted.length : 0,
+    avg: emitted.length ? emitted.reduce((s, d) => s + d.total, 0) / emitted.length : 0,
     spent: expenses.value.reduce((s, e) => s + e.total, 0),
     spentYear: expenses.value.filter(e => e.issueDate >= yearStart).reduce((s, e) => s + e.total, 0),
     toPay: expenses.value.filter(e => e.status !== 'paid').reduce((s, e) => s + e.total, 0),
@@ -250,7 +250,7 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
           <div class="kpi rise" style="--i: 2">
             <p class="eyebrow">Este año</p>
             <p class="v num">{{ eur(kpis.billedYear) }}</p>
-            <p class="s">Base imponible desde el 1 de enero</p>
+            <p class="s">Con impuestos, desde el 1 de enero</p>
           </div>
           <div class="kpi rise" style="--i: 3">
             <p class="eyebrow">Pendiente de cobro</p>
@@ -272,7 +272,7 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
           <div class="kpi rise" style="--i: 2">
             <p class="eyebrow">Este año</p>
             <p class="v num">{{ eur(kpis.spentYear) }}</p>
-            <p class="s">Total con IVA</p>
+            <p class="s">Con impuestos, desde el 1 de enero</p>
           </div>
           <div class="kpi rise" style="--i: 3">
             <p class="eyebrow">Pendiente de pago</p>

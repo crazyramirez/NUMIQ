@@ -1,6 +1,6 @@
 import { and, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm'
 
-/** Catálogo con uso de los últimos 12 meses (veces facturado e importe) */
+/** Catálogo con uso de los últimos 12 meses (veces facturado e importe total, con impuestos) */
 export default defineEventHandler(async (event) => {
   const { company } = await requireCompany(event, 'advisor')
   const db = useDb()
@@ -16,7 +16,8 @@ export default defineEventHandler(async (event) => {
   const usage = await db.select({
     itemId: l.itemId,
     uses: sql<number>`COUNT(*)`.mapWith(Number),
-    revenue: sql<number>`SUM(${l.base})`.mapWith(Number),
+    // Lo que suma la línea a la factura: base + IVA + recargo − IRPF (si la línea lleva retención)
+    revenue: sql<number>`SUM(${l.base} * (1 + (COALESCE(${l.vatRate}, 0) + COALESCE(${l.surchargeRate}, 0)) / 100) - CASE WHEN ${l.irpfApplies} THEN ${l.base} * COALESCE(${s.irpfRate}, 0) / 100 ELSE 0 END)`.mapWith(Number),
     lastUsed: sql<string>`MAX(${s.issueDate})`,
   }).from(l).innerJoin(s, eq(s.id, l.documentId))
     .where(and(

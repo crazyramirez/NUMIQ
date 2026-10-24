@@ -24,11 +24,15 @@ const expensesWhere = (companyId: number, from: string, to: string) => and(
 
 export interface PeriodSummary {
   income: number
+  /** Importe total de las facturas (con impuestos), para mostrar */
+  incomeTotal: number
   vatCharged: number
   irpfWithheld: number
   /** Base de ventas con retención (para la regla del 70 % del modelo 130) */
   incomeWithRetention: number
   expenses: number
+  /** Importe total de los gastos (con impuestos), para mostrar */
+  expensesTotal: number
   deductibleExpenses: number
   vatDeductible: number
   profit: number
@@ -39,12 +43,14 @@ export async function periodSummary(companyId: number, from: string, to: string)
   const [[inc], [exp]] = await Promise.all([
     db.select({
       income: sql<number>`COALESCE(SUM(${s().taxBase}), 0)`.mapWith(Number),
+      incomeTotal: sql<number>`COALESCE(SUM(${s().total}), 0)`.mapWith(Number),
       vatCharged: sql<number>`COALESCE(SUM(${s().vatTotal} + ${s().surchargeTotal}), 0)`.mapWith(Number),
       irpfWithheld: sql<number>`COALESCE(SUM(${s().irpfTotal}), 0)`.mapWith(Number),
       incomeWithRetention: sql<number>`COALESCE(SUM(CASE WHEN ${s().irpfTotal} <> 0 THEN ${s().taxBase} ELSE 0 END), 0)`.mapWith(Number),
     }).from(s()).where(salesWhere(companyId, from, to)),
     db.select({
       expenses: sql<number>`COALESCE(SUM(${e().taxBase}), 0)`.mapWith(Number),
+      expensesTotal: sql<number>`COALESCE(SUM(${e().total}), 0)`.mapWith(Number),
       deductibleExpenses: sql<number>`COALESCE(SUM(CASE WHEN ${e().isInvestment} THEN 0 ELSE ${e().taxBase} * ${e().deductiblePct} / 100 END), 0)`.mapWith(Number),
       vatDeductible: sql<number>`COALESCE(SUM(${e().vatTotal} * ${e().vatDeductiblePct} / 100), 0)`.mapWith(Number),
     }).from(e()).where(expensesWhere(companyId, from, to)),
@@ -53,10 +59,12 @@ export async function periodSummary(companyId: number, from: string, to: string)
   const deductibleExpenses = round2(exp!.deductibleExpenses)
   return {
     income,
+    incomeTotal: round2(inc!.incomeTotal),
     vatCharged: round2(inc!.vatCharged),
     irpfWithheld: round2(inc!.irpfWithheld),
     incomeWithRetention: round2(inc!.incomeWithRetention),
     expenses: round2(exp!.expenses),
+    expensesTotal: round2(exp!.expensesTotal),
     deductibleExpenses,
     vatDeductible: round2(exp!.vatDeductible),
     profit: round2(income - round2(exp!.expenses)),
@@ -107,7 +115,7 @@ export async function estimate130(companyId: number, year: number, q: Quarter) {
   return last
 }
 
-/** Ingresos y gastos (bases) por mes, últimos `months` meses incluido el actual */
+/** Ingresos y gastos por mes, últimos `months` meses incluido el actual: bases (y beneficio) y totales con impuestos */
 export async function monthlySeries(companyId: number, months = 12) {
   const now = new Date()
   const start = new Date(now.getFullYear(), now.getMonth() - months + 1, 1)
@@ -116,48 +124,51 @@ export async function monthlySeries(companyId: number, months = 12) {
   const db = useDb()
   const ym = (col: unknown) => sql<string>`DATE_FORMAT(${col}, '%Y-%m')`
   const [inc, exp] = await Promise.all([
-    db.select({ month: ym(s().issueDate), amount: sql<number>`SUM(${s().taxBase})`.mapWith(Number) })
+    db.select({ month: ym(s().issueDate), amount: sql<number>`SUM(${s().taxBase})`.mapWith(Number), total: sql<number>`SUM(${s().total})`.mapWith(Number) })
       .from(s()).where(salesWhere(companyId, from, to)).groupBy(ym(s().issueDate)),
-    db.select({ month: ym(e().issueDate), amount: sql<number>`SUM(${e().taxBase})`.mapWith(Number) })
+    db.select({ month: ym(e().issueDate), amount: sql<number>`SUM(${e().taxBase})`.mapWith(Number), total: sql<number>`SUM(${e().total})`.mapWith(Number) })
       .from(e()).where(expensesWhere(companyId, from, to)).groupBy(ym(e().issueDate)),
   ])
-  const incBy = new Map(inc.map(r => [r.month, r.amount]))
-  const expBy = new Map(exp.map(r => [r.month, r.amount]))
+  const incBy = new Map(inc.map(r => [r.month, r]))
+  const expBy = new Map(exp.map(r => [r.month, r]))
   return Array.from({ length: months }, (_, i) => {
     const d = new Date(start.getFullYear(), start.getMonth() + i, 1)
     const month = toISODate(d).slice(0, 7)
-    const income = round2(incBy.get(month) ?? 0)
-    const expenses = round2(expBy.get(month) ?? 0)
-    return { month, income, expenses, profit: round2(income - expenses) }
+    const income = round2(incBy.get(month)?.amount ?? 0)
+    const expenses = round2(expBy.get(month)?.amount ?? 0)
+    return { month, income, expenses, profit: round2(income - expenses), incomeTotal: round2(incBy.get(month)?.total ?? 0), expensesTotal: round2(expBy.get(month)?.total ?? 0) }
   })
 }
 
-export async function topClients(companyId: number, from: string, to: string, limit = 5) {
+/** `by`: 'base' en informes y modelos; 'total' (con impuestos) en las pantallas */
+export async function topClients(companyId: number, from: string, to: string, limit = 5, by: 'base' | 'total' = 'base') {
   const c = tables.contacts
+  const col = by === 'total' ? s().total : s().taxBase
   const rows = await useDb().select({
     id: s().contactId,
     name: sql<string>`COALESCE(${c.name}, JSON_UNQUOTE(JSON_EXTRACT(${s().customer}, '$.name')), 'Sin cliente')`,
-    amount: sql<number>`SUM(${s().taxBase})`.mapWith(Number),
+    amount: sql<number>`SUM(${col})`.mapWith(Number),
   }).from(s()).leftJoin(c, eq(c.id, s().contactId))
     .where(salesWhere(companyId, from, to))
     .groupBy(s().contactId, c.name)
-    .orderBy(desc(sql`SUM(${s().taxBase})`))
+    .orderBy(desc(sql`SUM(${col})`))
     .limit(limit)
   return rows.map(r => ({ ...r, amount: round2(r.amount) }))
 }
 
-export async function expensesByCategory(companyId: number, from: string, to: string) {
+export async function expensesByCategory(companyId: number, from: string, to: string, by: 'base' | 'total' = 'base') {
   const cat = tables.categories
+  const col = by === 'total' ? e().total : e().taxBase
   const rows = await useDb().select({
     id: e().categoryId,
     name: sql<string>`COALESCE(${cat.name}, 'Sin categoría')`,
     icon: cat.icon,
     color: cat.color,
-    amount: sql<number>`SUM(${e().taxBase})`.mapWith(Number),
+    amount: sql<number>`SUM(${col})`.mapWith(Number),
   }).from(e()).leftJoin(cat, eq(cat.id, e().categoryId))
     .where(expensesWhere(companyId, from, to))
     .groupBy(e().categoryId, cat.name, cat.icon, cat.color)
-    .orderBy(desc(sql`SUM(${e().taxBase})`))
+    .orderBy(desc(sql`SUM(${col})`))
   return rows.map(r => ({ ...r, amount: round2(r.amount) }))
 }
 

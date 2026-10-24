@@ -57,7 +57,8 @@ export async function computeInsights(company: typeof tables.companies.$inferSel
   }
 
   // Dependencia de un cliente: más del 40 % de la facturación de los últimos 12 meses
-  const total12 = ctx.monthly.reduce((a, m) => a + m.income, 0)
+  // El ranking de clientes viene con impuestos: se compara con la facturación total del mismo modo
+  const total12 = ctx.monthly.reduce((a, m) => a + m.incomeTotal, 0)
   const top = ctx.top[0]
   if (top && total12 > 0 && top.amount / total12 > 0.4 && ctx.top.length > 1) {
     const share = Math.round(top.amount / total12 * 100)

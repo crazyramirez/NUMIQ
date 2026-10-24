@@ -26,8 +26,8 @@ export default defineEventHandler(async (event) => {
     monthlySeries(company.id, 12),
     receivables(company.id),
     payables(company.id),
-    topClients(company.id, `${year - 1}-${String(now.getMonth() + 1).padStart(2, '0')}-01`, today, 5),
-    expensesByCategory(company.id, q.from, today),
+    topClients(company.id, `${year - 1}-${String(now.getMonth() + 1).padStart(2, '0')}-01`, today, 5, 'total'),
+    expensesByCategory(company.id, q.from, today, 'total'),
   ])
 
   const s = tables.salesDocuments
@@ -52,8 +52,9 @@ export default defineEventHandler(async (event) => {
   return {
     period: { year, quarter, from: q.from, to: q.to },
     kpis: {
-      income: { value: current.income, previous: previous.income },
-      expenses: { value: current.expenses, previous: previous.expenses },
+      // Facturado y gastado, con impuestos; el beneficio, sobre bases (el IVA no es ingreso ni gasto)
+      income: { value: current.incomeTotal, previous: previous.incomeTotal },
+      expenses: { value: current.expensesTotal, previous: previous.expensesTotal },
       profit: { value: current.profit, previous: previous.profit },
       receivables: recv,
       payables: pay,

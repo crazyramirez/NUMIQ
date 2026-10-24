@@ -219,7 +219,7 @@ const bulkActions = computed<BulkAction[]>(() => [
       <div class="stat">
         <p class="eyebrow">Facturado 12 m</p>
         <p class="v num">{{ eur(totalRevenue, false) }}</p>
-        <p class="s">Base imponible de las líneas del catálogo</p>
+        <p class="s">Importe con impuestos de las líneas del catálogo</p>
       </div>
       <div v-if="top" class="stat star">
         <p class="eyebrow"><Icon name="ph:crown-simple-fill" aria-hidden="true" /> Más vendido</p>

@@ -117,7 +117,6 @@ const summary = computed(() => {
   return {
     count: r.length,
     total: r.reduce((s, e) => s + e.total, 0),
-    base: r.reduce((s, e) => s + e.taxBase, 0),
     deductible: r.reduce((s, e) => s + e.taxBase * e.deductiblePct / 100, 0),
     vatDeductible: r.reduce((s, e) => s + e.vatTotal * e.vatDeductiblePct / 100, 0),
     notDeductible: r.filter(e => levelOf(e) === 'none').length,
@@ -126,13 +125,13 @@ const summary = computed(() => {
   }
 })
 
-/** Reparto por categoría (base imponible) para la barra apilada */
+/** Reparto por categoría (importe total, con impuestos) para la barra apilada */
 const byCategory = computed(() => {
   const map = new Map<string, { name: string, color: string, amount: number }>()
   for (const e of rows.value) {
     const key = String(e.categoryId ?? 0)
     const cur = map.get(key) ?? { name: e.categoryName ?? 'Sin categoría', color: e.categoryColor ?? 'var(--text-4)', amount: 0 }
-    cur.amount += e.taxBase
+    cur.amount += e.total
     map.set(key, cur)
   }
   const list = [...map.values()].filter(c => c.amount > 0).sort((a, b) => b.amount - a.amount)
@@ -382,7 +381,7 @@ function savePartial() {
       <div class="sum main">
         <p class="eyebrow">Total gastado</p>
         <p class="v num">{{ eur(summary.total) }}</p>
-        <p class="s">{{ summary.count }} {{ summary.count === 1 ? 'gasto' : 'gastos' }} · base {{ eur(summary.base, false) }}</p>
+        <p class="s">{{ summary.count }} {{ summary.count === 1 ? 'gasto' : 'gastos' }} · con impuestos</p>
       </div>
       <div class="sum">
         <p class="eyebrow">Deducible</p>
