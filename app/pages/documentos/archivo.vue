@@ -54,7 +54,7 @@ const folders = computed(() => {
 
 const files = computed(() => (folder.value === 'all' ? data.value.files : data.value.files.filter(f => (f.folder ?? 'otros') === folder.value)))
 const totalBytes = computed(() => files.value.reduce((s, f) => s + f.size, 0))
-const { page, pages, items: shown } = usePaged(files, [year, quarter, folder])
+const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(files, [year, quarter, folder])
 const periodLabel = computed(() => (quarter.value === 'all' ? `${year.value}` : `${quarter.value}.º trimestre de ${year.value}`))
 
 // ─── Subida ───
@@ -232,7 +232,7 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
           </UiMenu>
         </li>
       </ul>
-      <UiPager v-model="page" :pages="pages" />
+      <UiPager v-model="page" v-model:size="pageSize" :pages="pages" :total="pageTotal" />
     </section>
 
     <UiModal v-model="previewOpen" size="xl" :title="preview?.name">

@@ -94,7 +94,7 @@ const autoModel = computed({
 const pending = computed(() => data.value?.counts.pending ?? 0)
 const filter = ref<'all' | VfRecord['status']>('all')
 const rows = computed(() => (data.value?.records ?? []).filter(r => filter.value === 'all' || r.status === filter.value))
-const { page, pages, items: shown } = usePaged(rows, [filter])
+const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(rows, [filter])
 const filterOptions = computed(() => [
   { value: 'all', label: 'Todos', count: data.value?.records.length ?? null },
   ...(['pending', 'accepted', 'accepted_with_errors', 'rejected'] as const).filter(s => data.value?.counts[s]).map(s => ({ value: s, label: STATUS[s].label, count: data.value?.counts[s] ?? null })),
@@ -162,7 +162,7 @@ const filterModel = computed({ get: () => filter.value as string, set: (v: strin
           </tbody>
         </table>
       </div>
-      <UiPager v-model="page" :pages="pages" />
+      <UiPager v-model="page" v-model:size="pageSize" :pages="pages" :total="pageTotal" />
     </UiCard>
   </div>
 </template>

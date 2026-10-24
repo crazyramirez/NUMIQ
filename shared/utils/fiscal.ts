@@ -19,6 +19,13 @@ export interface FiscalDeadline {
 export const toISODate = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
+/** YYYY-MM-DD más `days` días (negativo = antes) */
+export const addDaysISO = (iso: string, days: number) => {
+  const d = new Date(`${iso}T12:00:00`)
+  d.setDate(d.getDate() + days)
+  return toISODate(d)
+}
+
 export function quarterOf(date: Date | string): Quarter {
   const d = typeof date === 'string' ? new Date(`${date}T12:00:00`) : date
   return (Math.floor(d.getMonth() / 3) + 1) as Quarter

@@ -120,8 +120,8 @@ function rowMenu(r: ContactRow): MenuItem[] {
 
 // ─── Páginas de 25 y selección (de la página a la vista): eliminar muchos de una vez ───
 
-const { page, pages, items: shown } = usePaged(rows, [qDebounced])
-const { selected, selectedSet, selectedRows, selecting, allSelected, toggle: pick, toggleAll, clear } = useSelection(shown)
+const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(rows, [qDebounced])
+const { selected, selectedSet, selectedRows, selecting, allSelected, toggle: pick, toggleAll, selectAll, clear } = useSelection(rows, shown)
 const busy = ref(false)
 const noun = (n: number) => (isClient.value ? (n === 1 ? 'cliente' : 'clientes') : (n === 1 ? 'proveedor' : 'proveedores'))
 
@@ -341,18 +341,18 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
           </li>
         </ul>
 
-        <UiPager v-model="page" :pages="pages" />
+        <UiPager v-model="page" v-model:size="pageSize" :pages="pages" :total="pageTotal" />
       </template>
     </UiCard>
 
     <UiBulkBar
       :count="selected.length"
-      :total="shown.length"
+      :total="rows.length"
       :title="`${noun(selected.length)} ${selected.length === 1 ? 'seleccionado' : 'seleccionados'}`"
       :actions="bulkActions"
       :busy="busy"
       :label="`Acciones con los ${isClient ? 'clientes' : 'proveedores'} seleccionados`"
-      @all="toggleAll"
+      @all="selectAll"
       @clear="clear"
     />
 

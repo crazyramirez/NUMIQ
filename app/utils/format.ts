@@ -38,12 +38,6 @@ export const todayISO = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export const addDaysISO = (iso: string, days: number) => {
-  const d = new Date(`${iso}T12:00:00`)
-  d.setDate(d.getDate() + days)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 /** Días desde hoy hasta la fecha (negativo = pasada) */
 export const daysUntil = (iso: string) => {
   const a = new Date(`${todayISO()}T12:00:00`).getTime()

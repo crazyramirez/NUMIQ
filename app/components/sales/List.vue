@@ -163,11 +163,11 @@ function rowMenu(r: Row): MenuItem[] {
   return items
 }
 
-// ─── Páginas de 25 y selección (de la página a la vista): eliminar muchos de una vez ───
+// ─── Páginas (50 por defecto) y selección de todo lo filtrado: cambiar el estado o eliminar muchos de una vez ───
 
 const list = computed(() => rows.value ?? [])
-const { page, pages, items: shown } = usePaged(list, [status, debouncedQ, period])
-const { selected, selectedSet, selectedRows, selecting, allSelected, toggle: pick, toggleAll, clear } = useSelection(shown)
+const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(list, [status, debouncedQ, period])
+const { selected, selectedSet, selectedRows, selecting, allSelected, toggle: pick, toggleAll, selectAll, clear } = useSelection(list, shown)
 const busy = ref(false)
 const selectedTotal = computed(() => selectedRows.value.reduce((s, r) => s + amountOf(r), 0))
 const noun = (n: number) => (isQuote.value ? (n === 1 ? 'presupuesto' : 'presupuestos') : (n === 1 ? 'factura' : 'facturas'))
@@ -210,7 +210,103 @@ async function deleteBulk() {
   }
 }
 
+// ─── Estado en bloque: cobradas, pendientes, enviadas, borrador, vencimiento… ───
+
+const fem = computed(() => !isQuote.value)
+const done = (n: number, f: string, m: string) => `${n} ${noun(n)} ${n === 1 ? (fem.value ? f : m) : `${fem.value ? f : m}s`}`
+
+async function runStatus(body: Record<string, unknown>, ok: (n: number) => string) {
+  const ids = [...selected.value]
+  if (!ids.length) return
+  busy.value = true
+  try {
+    const res = await $fetch<BulkStatusResult>('/api/sales/bulk-status', { method: 'POST', body: { ids, ...body } })
+    if (res.done) toast.success(ok(res.done))
+    if (res.skipped.length) {
+      const { body: why, already } = skippedSummary(res.skipped, 'borrador')
+      const title = `${res.skipped.length} sin cambiar`
+      if (already) toast.info(title, why)
+      else toast.error(title, why)
+    }
+    clear()
+  }
+  catch (err) {
+    toast.error('No se pudo cambiar el estado', errorMessage(err))
+  }
+  finally {
+    busy.value = false
+    await Promise.all([refresh(), refreshCounts()])
+  }
+}
+
+const paidOpen = ref(false)
+const dueOpen = ref(false)
+
+function markPaid({ date, method }: { date: string, method: string }) {
+  return runStatus({ action: 'paid', date, method }, n => done(n, 'cobrada', 'cobrado'))
+}
+
+async function markPending() {
+  const charged = selectedRows.value.filter(r => r.paidTotal !== 0).length
+  if (charged && !isQuote.value) {
+    const ok = await confirm({
+      title: `¿Dejar ${charged === 1 ? 'pendiente la factura cobrada' : `pendientes ${charged} facturas cobradas`}?`,
+      body: 'Se borrarán sus cobros registrados. Los movimientos del banco conciliados con ellas volverán a quedar pendientes de conciliar.',
+      confirmLabel: 'Dejar pendientes',
+    })
+    if (!ok) return
+  }
+  return runStatus({ action: 'pending' }, n => done(n, 'pendiente', 'pendiente'))
+}
+
+async function markDraft() {
+  const picked = selectedRows.value.filter(r => r.status !== 'draft')
+  if (!picked.length) return toast.info('Ya son borradores')
+  const n = picked.length
+  const charged = picked.some(r => r.paidTotal !== 0)
+  const ok = await confirm({
+    title: `¿Pasar ${n} ${noun(n)} a borrador?`,
+    body: [
+      `Pierden su número y su enlace público; al emitir${n === 1 ? 'la' : 'las'} de nuevo recibirán el siguiente número de la serie.`,
+      fem.value ? 'Deja huecos en la numeración y puede descuadrar trimestres ya presentados: para anular una factura emitida, lo correcto es una rectificativa.' : '',
+      charged ? 'Sus cobros se borrarán y los movimientos del banco conciliados volverán a quedar pendientes.' : '',
+    ].filter(Boolean).join('\n\n'),
+    confirmLabel: `Pasar ${n} a borrador`,
+    danger: fem.value,
+  })
+  if (!ok) return
+  return runStatus({ action: 'draft' }, m => `${m} ${noun(m)} en borrador`)
+}
+
+function setDue(body: { dueDays?: number, dueDate?: string | null }) {
+  return runStatus({ action: 'due', ...body }, n => `${isQuote.value ? 'Validez' : 'Vencimiento'} de ${n} ${noun(n)} cambiado`)
+}
+
+const statusMenu = computed<MenuItem[]>(() => isQuote.value
+  ? [
+      { heading: 'Marcar como' },
+      { label: 'Pendientes', icon: 'ph:clock', onClick: markPending },
+      { label: 'Enviados', icon: 'ph:paper-plane-tilt', onClick: () => runStatus({ action: 'sent' }, n => done(n, 'enviada', 'enviado')) },
+      { label: 'Aceptados', icon: 'ph:check-circle', onClick: () => runStatus({ action: 'accepted' }, n => done(n, 'aceptada', 'aceptado')) },
+      { label: 'Rechazados', icon: 'ph:x-circle', onClick: () => runStatus({ action: 'rejected' }, n => done(n, 'rechazada', 'rechazado')) },
+      { label: 'Caducados', icon: 'ph:hourglass-low', onClick: () => runStatus({ action: 'expired' }, n => done(n, 'caducada', 'caducado')) },
+      { label: 'Borradores', icon: 'ph:pencil-simple-line', onClick: markDraft },
+      { divider: true },
+      { label: 'Válido hasta…', icon: 'ph:calendar-dots', onClick: () => (dueOpen.value = true) },
+    ]
+  : [
+      { heading: 'Marcar como' },
+      { label: 'Cobradas…', icon: 'ph:hand-coins', onClick: () => (paidOpen.value = true) },
+      { label: 'Pendientes de cobro', icon: 'ph:clock', onClick: markPending },
+      { label: 'Enviadas', icon: 'ph:paper-plane-tilt', onClick: () => runStatus({ action: 'sent' }, n => done(n, 'enviada', 'enviado')) },
+      { label: 'Borradores', icon: 'ph:pencil-simple-line', onClick: markDraft },
+      { divider: true },
+      { label: 'Vencimiento…', hint: 'Vencidas', icon: 'ph:calendar-x', onClick: () => (dueOpen.value = true) },
+    ])
+
 const bulkActions = computed<BulkAction[]>(() => [
+  ...(isQuote.value ? [] : [{ label: 'Cobradas', icon: 'ph:hand-coins', tone: 'success' as const, onClick: () => (paidOpen.value = true) }]),
+  { label: 'Estado', icon: 'ph:flag', menu: statusMenu.value, menuWidth: 240 },
   { label: 'Eliminar', icon: 'ph:trash', tone: 'danger', onClick: deleteBulk },
 ])
 </script>
@@ -412,20 +508,37 @@ const bulkActions = computed<BulkAction[]>(() => [
           </li>
         </ul>
 
-        <UiPager v-model="page" :pages="pages" />
+        <UiPager v-model="page" v-model:size="pageSize" :pages="pages" :total="pageTotal" />
       </template>
     </div>
 
     <UiBulkBar
       :count="selected.length"
-      :total="shown.length"
+      :total="list.length"
       :title="`${noun(selected.length)} ${isQuote ? (selected.length === 1 ? 'seleccionado' : 'seleccionados') : (selected.length === 1 ? 'seleccionada' : 'seleccionadas')}`"
       :sub="isQuote ? `${eur(selectedTotal)} de base imponible` : eur(selectedTotal)"
       :actions="bulkActions"
       :busy="busy"
       :label="`Acciones con ${isQuote ? 'los presupuestos seleccionados' : 'las facturas seleccionadas'}`"
-      @all="toggleAll"
+      @all="selectAll"
       @clear="clear"
+    />
+
+    <BulkPaidModal
+      v-model="paidOpen"
+      title="Marcar como cobradas"
+      :subtitle="`${selected.length} ${noun(selected.length)} · ${eur(selectedTotal)}`"
+      :confirm-label="`Marcar ${selected.length} como cobradas`"
+      what="cobro"
+      @apply="markPaid"
+    />
+
+    <BulkDueModal
+      v-model="dueOpen"
+      :title="isQuote ? 'Válido hasta' : 'Vencimiento'"
+      :subtitle="`${selected.length} ${noun(selected.length)}`"
+      :late="isQuote ? 'Pasada esa fecha sin respuesta, puedes marcarlos como caducados.' : 'Las pendientes de cobro con el vencimiento ya pasado aparecen como vencidas.'"
+      @apply="setDue"
     />
 
     <SalesPaymentModal v-if="payDoc" v-model="payOpen" :document-id="payDoc.id" :remaining="round2(payDoc.total - payDoc.paidTotal)" :number="payDoc.number" @saved="refresh" />

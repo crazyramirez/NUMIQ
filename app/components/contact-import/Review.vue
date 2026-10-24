@@ -57,7 +57,7 @@ const visible = computed(() => rows.value.filter((r) => {
   return [d.name, d.tradeName, d.contactPerson, d.nif, d.email, d.city].some(v => v?.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').includes(plainQ.value))
 }))
 
-const { page, pages, items: shown } = usePaged(visible, [filter, plainQ])
+const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(visible, [filter, plainQ])
 const { selected, selectedSet, selectedRows, selecting, allSelected, toggle: pick, toggleAll, clear } = useSelection(visible)
 
 // ─── Qué hacer con cada fila ───
@@ -341,7 +341,7 @@ const autoFixes = computed(() => rows.value.reduce((s, r) => s + contactRowChang
           </li>
         </ul>
 
-        <UiPager v-model="page" :pages="pages" />
+        <UiPager v-model="page" v-model:size="pageSize" :pages="pages" :total="pageTotal" />
       </template>
     </UiCard>
 

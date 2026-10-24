@@ -14,7 +14,7 @@ export interface BulkAction {
 
 const props = defineProps<{
   count: number
-  /** Cuántos hay a la vista: con menos seleccionados aparece «Todos» */
+  /** Cuántos hay en el listado filtrado (todas las páginas): con menos seleccionados aparece «Todos» */
   total?: number
   /** «facturas seleccionadas», «seleccionados»… */
   title?: string
@@ -50,7 +50,7 @@ const cols = computed(() => Math.min(4, props.actions.length + (showAll.value ? 
         </div>
         <div class="bulk-acts" :style="{ '--cols': cols }">
           <button v-if="showAll" type="button" class="bulk-btn" :disabled="busy" @click="emit('all')">
-            <Icon name="ph:checks" aria-hidden="true" /><span>Todos</span>
+            <Icon name="ph:checks" aria-hidden="true" /><span>Todos <span class="num">({{ total }})</span></span>
           </button>
           <template v-for="a in actions" :key="a.label">
             <UiMenu v-if="a.menu" :items="a.menu" :width="a.menuWidth ?? 240" up align="end">
@@ -99,9 +99,9 @@ const cols = computed(() => Math.min(4, props.actions.length + (showAll.value ? 
 
 .bulk-info {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 10px;
-  min-width: 0;
 }
 
 .bulk-n {
@@ -135,7 +135,10 @@ const cols = computed(() => Math.min(4, props.actions.length + (showAll.value ? 
 
 .bulk-acts {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  /* Con muchas acciones y poco ancho, pasan a una segunda fila en lugar de pisar el resumen */
+  min-width: 0;
   gap: 4px;
   padding-left: var(--s-3);
   border-left: 1px solid var(--border-subtle);

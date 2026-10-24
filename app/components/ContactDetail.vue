@@ -294,7 +294,7 @@ const shown = computed(() => {
   return f?.test ? entries.value.filter(f.test) : entries.value
 })
 
-const { page, pages, items: paged } = usePaged(shown, [tab, filter])
+const { page, pages, items: paged, size: pageSize, total: pageTotal } = usePaged(shown, [tab, filter])
 
 // La página a la vista, por años (la lista ya viene de más reciente a más antigua). Cada año resume
 // todo lo suyo, también lo que cae en otras páginas; el total no cuenta borradores ni anulados
@@ -533,7 +533,7 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
                 </table>
               </div>
 
-              <UiPager v-model="page" :pages="pages" />
+              <UiPager v-model="page" v-model:size="pageSize" :pages="pages" :total="pageTotal" />
             </template>
           </template>
         </UiCard>

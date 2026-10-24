@@ -53,7 +53,7 @@ const filtered = computed(() => {
   if (!q) return rows.value
   return rows.value.filter(r => norm(`${r.number ?? ''} ${r.name} ${r.nif ?? ''} ${r.sub ?? ''}`).includes(q))
 })
-const { page, pages, items: visible } = usePaged(filtered, [bookQuery, search])
+const { page, pages, items: visible, size: pageSize, total: pageTotal } = usePaged(filtered, [bookQuery, search])
 const totals = computed(() => filtered.value.reduce((t, r) => ({
   base: round2(t.base + r.base), vat: round2(t.vat + r.vat), irpf: round2(t.irpf + r.irpf), total: round2(t.total + r.total),
 }), { base: 0, vat: 0, irpf: 0, total: 0 }))
@@ -154,7 +154,7 @@ const counts = computed(() => (data.value?.type === tab.value ? rows.value.lengt
       </table>
     </div>
 
-    <UiPager v-if="data && filtered.length" v-model="page" :pages="pages" />
+    <UiPager v-if="data && filtered.length" v-model="page" v-model:size="pageSize" :pages="pages" :total="pageTotal" />
   </UiCard>
 </template>
 

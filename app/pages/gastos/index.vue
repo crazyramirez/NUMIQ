@@ -275,10 +275,10 @@ function clearFilters() {
   noFile.value = false
 }
 
-// ─── Páginas de 25 y selección (de la página a la vista): marcar muchos gastos de una vez (los que llegan del banco o de una importación) ───
+// ─── Páginas (50 por defecto) y selección de todo lo filtrado: marcar muchos gastos de una vez (los que llegan del banco o de una importación) ───
 
-const { page, pages, items: shown } = usePaged(rows, [status, period, categoryId, deductible, qDebounced, approvalFilter, noFile, reviewFilter])
-const { selected, selectedSet, selecting, allSelected, toggle, toggleAll, clear: stopSelecting } = useSelection(shown)
+const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(rows, [status, period, categoryId, deductible, qDebounced, approvalFilter, noFile, reviewFilter])
+const { selected, selectedSet, selecting, allSelected, toggle, toggleAll, selectAll, clear: stopSelecting } = useSelection(rows, shown)
 const selectedTotal = computed(() => rows.value.reduce((s, e) => s + (selectedSet.value.has(e.id) ? e.total : 0), 0))
 
 // ─── Deducible / categoría en bloque, con deshacer ───
@@ -445,6 +445,55 @@ const categoryMenu = computed<MenuItem[]>(() => [
   { label: 'Sin categoría', icon: 'ph:tag-simple', onClick: () => apply(selected.value, { categoryId: null }, 'Sin categoría') },
 ])
 
+// ─── Pagados, pendientes o vencimiento en bloque ───
+
+const paidOpen = ref(false)
+const dueOpen = ref(false)
+
+async function runStatus(body: Record<string, unknown>, ok: (n: number) => string) {
+  const ids = [...selected.value]
+  if (!ids.length) return
+  applying.value = true
+  try {
+    const res = await $fetch<BulkStatusResult>('/api/expenses/bulk-status', { method: 'POST', body: { ids, ...body } })
+    if (res.done) toast.success(ok(res.done))
+    if (res.skipped.length) {
+      const { body: why, already } = skippedSummary(res.skipped)
+      if (already) toast.info(`${plural(res.skipped.length)} sin cambiar`, why)
+      else toast.error(`${plural(res.skipped.length)} sin cambiar`, why)
+    }
+    stopSelecting()
+  }
+  catch (err) {
+    toast.error('No se pudo cambiar', errorMessage(err))
+  }
+  finally {
+    applying.value = false
+    await refresh()
+  }
+}
+
+async function markPendingBulk() {
+  const paid = rows.value.filter(e => selectedSet.value.has(e.id) && e.status !== 'pending').length
+  if (paid) {
+    const ok = await confirm({
+      title: `¿Dejar ${paid === 1 ? 'pendiente el gasto pagado' : `pendientes ${paid} gastos pagados`}?`,
+      body: 'Se borrarán sus pagos registrados. Los movimientos del banco conciliados con ellos volverán a quedar pendientes de conciliar; los gastos se conservan.',
+      confirmLabel: 'Dejar pendientes',
+    })
+    if (!ok) return
+  }
+  return runStatus({ action: 'pending' }, n => `${plural(n)} ${n === 1 ? 'pendiente' : 'pendientes'} de pago`)
+}
+
+const statusMenu = computed<MenuItem[]>(() => [
+  { heading: 'Marcar como' },
+  { label: 'Pagados…', icon: 'ph:check-circle', onClick: () => (paidOpen.value = true) },
+  { label: 'Pendientes de pago', icon: 'ph:clock', onClick: markPendingBulk },
+  { divider: true },
+  { label: 'Vencimiento…', hint: 'Vencidos', icon: 'ph:calendar-x', onClick: () => (dueOpen.value = true) },
+])
+
 const bulkActions = computed<BulkAction[]>(() => [
   ...(canApprove.value && approvalFilter.value === 'pending'
     ? [
@@ -458,6 +507,7 @@ const bulkActions = computed<BulkAction[]>(() => [
   { label: 'En parte…', icon: 'ph:circle-half-fill', tone: 'warning', onClick: () => openPartial(selected.value) },
   { label: 'No deducibles', icon: 'ph:prohibit', onClick: () => markDeductible(selected.value, 'none') },
   { label: 'Categoría', icon: 'ph:tag', menu: categoryMenu.value, menuWidth: 260 },
+  { label: 'Pago', icon: 'ph:wallet', menu: statusMenu.value, menuWidth: 240 },
   { label: 'Eliminar', icon: 'ph:trash', tone: 'danger', onClick: () => deleteBulk(selected.value) },
 ])
 
@@ -764,18 +814,37 @@ function savePartial() {
           </li>
         </ul>
 
-        <UiPager v-model="page" :pages="pages" />
+        <UiPager v-model="page" v-model:size="pageSize" :pages="pages" :total="pageTotal" />
       </template>
     </UiCard>
 
     <UiBulkBar
       :count="selected.length"
+      :total="rows.length"
       :title="selected.length === 1 ? 'gasto seleccionado' : 'gastos seleccionados'"
       :sub="eur(selectedTotal)"
       :actions="bulkActions"
       :busy="applying"
       label="Acciones con los gastos seleccionados"
+      @all="selectAll"
       @clear="stopSelecting"
+    />
+
+    <BulkPaidModal
+      v-model="paidOpen"
+      title="Marcar como pagados"
+      :subtitle="`${plural(selected.length)} · ${eur(selectedTotal)}`"
+      :confirm-label="`Marcar ${selected.length} como pagados`"
+      what="pago"
+      @apply="({ date, method }) => runStatus({ action: 'paid', date, method }, n => `${plural(n)} ${n === 1 ? 'pagado' : 'pagados'}`)"
+    />
+
+    <BulkDueModal
+      v-model="dueOpen"
+      title="Vencimiento"
+      :subtitle="plural(selected.length)"
+      late="Los pendientes de pago con el vencimiento ya pasado aparecen como vencidos."
+      @apply="body => runStatus({ action: 'due', ...body }, n => `Vencimiento de ${plural(n)} cambiado`)"
     />
 
     <UiModal v-model="partialOpen" title="Deducible en parte" :subtitle="partialIds.length === 1 ? 'Uso mixto: solo cuenta la parte profesional' : `${plural(partialIds.length)} · uso mixto`" size="sm">

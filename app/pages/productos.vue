@@ -109,8 +109,8 @@ const rowMenu = (i: Item): MenuItem[] => [
 
 // ─── Páginas de 25 y selección (de la página a la vista): eliminar o mover de categoría muchos de una vez ───
 
-const { page, pages, items: shown } = usePaged(filtered, [q, kind, cat])
-const sel = useSelection(shown)
+const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(filtered, [q, kind, cat])
+const sel = useSelection(filtered, shown)
 const busy = ref(false)
 
 function onMain(i: Item) {
@@ -311,7 +311,7 @@ const bulkActions = computed<BulkAction[]>(() => [
               @change="sel.toggleAll"
             >
           </span>
-          <span>{{ sel.selected.value.length ? `${sel.selected.value.length} de ${shown.length} seleccionados` : `${filtered.length} ${filtered.length === 1 ? 'elemento' : 'elementos'}` }}</span>
+          <span>{{ sel.selected.value.length ? `${sel.selected.value.length} de ${filtered.length} seleccionados` : `${filtered.length} ${filtered.length === 1 ? 'elemento' : 'elementos'}` }}</span>
           <span class="h-usage">Facturado 12 m</span>
           <span class="r">Precio</span>
           <span />
@@ -402,18 +402,18 @@ const bulkActions = computed<BulkAction[]>(() => [
           </li>
         </ul>
 
-        <UiPager v-model="page" :pages="pages" />
+        <UiPager v-model="page" v-model:size="pageSize" :pages="pages" :total="pageTotal" />
       </template>
     </UiCard>
 
     <UiBulkBar
       :count="sel.selected.value.length"
-      :total="shown.length"
+      :total="filtered.length"
       :sub="describe(sel.selected.value)"
       :actions="bulkActions"
       :busy="busy"
       label="Acciones con los productos seleccionados"
-      @all="sel.toggleAll"
+      @all="sel.selectAll"
       @clear="sel.clear"
     />
 

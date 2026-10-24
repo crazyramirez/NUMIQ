@@ -86,7 +86,7 @@ const filterOptions = computed(() => [
 const shown = computed(() => rows.value.filter(r =>
   filter.value === 'all' ? true : filter.value === 'paused' ? r.status !== 'active' : r.status === 'active',
 ))
-const { page, pages, items: paged } = usePaged(shown, [filter])
+const { page, pages, items: paged, size: pageSize, total: pageTotal } = usePaged(shown, [filter])
 
 function statusOf(r: Row) {
   if (r.status === 'finished') return { label: 'Terminado', tone: 'neutral' as const }
@@ -495,7 +495,7 @@ const IDEAS = computed(() => ALL_IDEAS.filter(i => i.kind === props.kind))
         </li>
       </ul>
 
-      <UiPager v-model="page" :pages="pages" />
+      <UiPager v-model="page" v-model:size="pageSize" :pages="pages" :total="pageTotal" />
       </template>
     </UiCard>
 

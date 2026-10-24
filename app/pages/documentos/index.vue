@@ -23,7 +23,7 @@ const { open: openScan } = useScan()
 
 const { data: ai } = await useFetch<{ configured: boolean }>('/api/ai/status', { default: () => ({ configured: true }) })
 const { data: batches, refresh, pending } = await useFetch<Batch[]>('/api/imports', { default: () => [] })
-const { page, pages, items: shownBatches } = usePaged(batches)
+const { page, pages, items: shownBatches, size: pageSize, total: pageTotal } = usePaged(batches)
 
 // Lotes leyéndose: se refrescan solos
 const anyRunning = computed(() => batches.value.some(b => b.running || b.status === 'processing'))
@@ -240,7 +240,7 @@ const TYPES = ['PDF', 'Fotos', 'Word', 'Excel', 'CSV', 'ZIP', 'Carpetas']
             <Icon name="ph:caret-right" class="chev" aria-hidden="true" />
           </li>
         </ul>
-        <UiPager v-model="page" :pages="pages" />
+        <UiPager v-model="page" v-model:size="pageSize" :pages="pages" :total="pageTotal" />
       </div>
     </section>
 
