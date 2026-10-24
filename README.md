@@ -8,6 +8,11 @@ Gestión completa para autónomos y pequeñas empresas españolas: facturas y pr
 
 App web instalable (PWA), responsive y en español. Varias empresas por cuenta y equipo con roles.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/inicio-dark.webp">
+  <img src=".github/assets/screenshots/inicio-light.webp" alt="Panel de inicio de NUMIQ: facturado, gastos, beneficio y pendiente de cobro del trimestre, gráfico de los últimos 12 meses y recomendaciones del asesor IA" width="100%">
+</picture>
+
 ---
 
 ## Qué hace
@@ -24,6 +29,79 @@ App web instalable (PWA), responsive y en español. Varias empresas por cuenta y
 | **Informes** | Panel de inicio, informes por periodo, libros registro y exportación a Excel y PDF. |
 | **Asistente IA** | Chat que consulta los datos de la empresa con herramientas de solo lectura (ventas, gastos, impuestos, banco…) y puede preparar borradores de factura. |
 | **Cuenta y equipo** | Registro con verificación de email, recuperación de contraseña e invitaciones con roles (`owner`, `admin`, `member`, `advisor`). Copia de seguridad completa en ZIP desde Ajustes. Modo claro y oscuro. |
+
+---
+
+## Capturas
+
+Cuenta de demostración con datos ficticios. Las imágenes siguen el tema claro u oscuro de GitHub.
+
+<table>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/factura-dark.webp">
+        <img src=".github/assets/screenshots/factura-light.webp" alt="Factura con su diseño, estado de cobro y adjuntos">
+      </picture>
+      <p align="center"><b>Factura</b> · diseño propio, cobros parciales y adjuntos</p>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/gastos-dark.webp">
+        <img src=".github/assets/screenshots/gastos-light.webp" alt="Lista de gastos con categoría, deducibilidad y resumen del trimestre">
+      </picture>
+      <p align="center"><b>Gastos</b> · categoría, deducibilidad y resumen del periodo</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/banco-dark.webp">
+        <img src=".github/assets/screenshots/banco-light.webp" alt="Banco con saldo por cuenta y movimientos conciliados con facturas y gastos">
+      </picture>
+      <p align="center"><b>Banco</b> · saldos por cuenta y conciliación</p>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/impuestos-dark.webp">
+        <img src=".github/assets/screenshots/impuestos-light.webp" alt="Impuestos: modelos 111, 115, 130 y 303 por trimestre y calendario fiscal">
+      </picture>
+      <p align="center"><b>Impuestos</b> · modelos por trimestre y calendario fiscal</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/informes-dark.webp">
+        <img src=".github/assets/screenshots/informes-light.webp" alt="Informe anual con evolución mensual e indicadores">
+      </picture>
+      <p align="center"><b>Informes</b> · evolución mensual e indicadores</p>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/asistente-dark.webp">
+        <img src=".github/assets/screenshots/asistente-light.webp" alt="Asistente IA respondiendo con las cifras del trimestre">
+      </picture>
+      <p align="center"><b>Asistente IA</b> · responde con las cifras reales</p>
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/movil-inicio-dark.webp">
+    <img src=".github/assets/screenshots/movil-inicio-light.webp" alt="Inicio en el móvil" width="31%">
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/movil-factura-dark.webp">
+    <img src=".github/assets/screenshots/movil-factura-light.webp" alt="Factura en el móvil" width="31%">
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/movil-banco-dark.webp">
+    <img src=".github/assets/screenshots/movil-banco-light.webp" alt="Banco en el móvil" width="31%">
+  </picture>
+</p>
+<p align="center"><b>En el móvil</b> · inicio, factura y banco</p>
 
 ---
 
