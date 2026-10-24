@@ -33,6 +33,7 @@ watch(() => route.query.escanear, (v) => {
     <AppScanModal />
     <AppScrollTop />
     <AppBottomNav v-if="bottomNav" />
+    <AppPasskeyOffer />
   </div>
 </template>
 

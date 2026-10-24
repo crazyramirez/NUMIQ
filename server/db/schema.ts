@@ -82,6 +82,33 @@ export const userTokens = mysqlTable('user_tokens', {
   createdAt: createdAt(),
 }, t => [uniqueIndex('user_tokens_hash_uq').on(t.tokenHash), index('user_tokens_user_idx').on(t.userId, t.kind)])
 
+/** Llaves de acceso (passkeys): entrar con huella, cara o el PIN del dispositivo */
+export const userPasskeys = mysqlTable('user_passkeys', {
+  /** Id de la credencial WebAuthn (base64url) */
+  id: varchar('id', { length: 255 }).primaryKey(),
+  userId: int('user_id').notNull(),
+  publicKey: text('public_key').notNull(),
+  counter: int('counter').notNull().default(0),
+  backedUp: boolean('backed_up').notNull().default(false),
+  transports: jsonText<string[]>('transports'),
+  /** «iPhone», «Mac», «Android»… para reconocerla en Ajustes */
+  name: varchar('name', { length: 80 }),
+  createdAt: createdAt(),
+  lastUsedAt: datetime('last_used_at'),
+}, t => [index('passkeys_user_idx').on(t.userId)])
+
+/** Avisos al móvil o al ordenador (Web Push) de cada usuario y dispositivo */
+export const pushSubscriptions = mysqlTable('push_subscriptions', {
+  id: int('id').autoincrement().primaryKey(),
+  userId: int('user_id').notNull(),
+  endpoint: varchar('endpoint', { length: 600 }).notNull(),
+  p256dh: varchar('p256dh', { length: 200 }).notNull(),
+  auth: varchar('auth', { length: 100 }).notNull(),
+  device: varchar('device', { length: 80 }),
+  createdAt: createdAt(),
+  lastSentAt: datetime('last_sent_at'),
+}, t => [uniqueIndex('push_endpoint_uq').on(t.endpoint), index('push_user_idx').on(t.userId)])
+
 export type CompanyKind = 'autonomo' | 'sociedad'
 export type TaxRegime = 'directa_simplificada' | 'directa_normal' | 'modulos' | 'sociedades'
 export type VatRegime = 'general' | 'recargo_equivalencia' | 'criterio_caja' | 'exento'
@@ -387,11 +414,20 @@ export const expenses = mysqlTable('expenses', {
   recurringId: int('recurring_id'),
   notes: text('notes'),
   paidAt: datetime('paid_at'),
+  /**
+   * Aprobación del equipo: lo que registra un miembro queda «pendiente» hasta que un dueño o
+   * administrador lo aprueba (si la empresa lo tiene activado). Lo demás nace aprobado.
+   */
+  approval: mysqlEnum('approval', ['approved', 'pending', 'rejected']).notNull().default('approved'),
+  approvedBy: int('approved_by'),
+  approvedAt: datetime('approved_at'),
+  rejectReason: varchar('reject_reason', { length: 300 }),
   createdBy: int('created_by'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, t => [
   index('expenses_company_idx').on(t.companyId, t.issueDate),
+  index('expenses_approval_idx').on(t.companyId, t.approval),
   index('expenses_supplier_idx').on(t.supplierId),
   index('expenses_category_idx').on(t.categoryId),
 ])

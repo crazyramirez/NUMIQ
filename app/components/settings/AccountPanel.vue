@@ -83,6 +83,8 @@ async function resend() {
       </div>
     </UiCard>
 
+    <SettingsPasskeysPanel />
+
     <UiCard title="Contraseña" icon="ph:lock-key" subtitle="Usa al menos 8 caracteres; mejor una frase larga.">
       <form class="form-grid" novalidate @submit.prevent="savePassword">
         <UiInput v-model="pw.current" class="c-4" label="Contraseña actual" type="password" autocomplete="current-password" :error="pwErrors.current" />

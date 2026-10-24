@@ -12,6 +12,9 @@ export default defineNuxtConfig({
 
   modules: ['nuxt-auth-utils', '@nuxt/icon', '@vueuse/nuxt'],
 
+  // Llaves de acceso (passkeys): entrar con huella, cara o el PIN del dispositivo
+  auth: { webAuthn: true },
+
   css: [
     '@fontsource-variable/inter/opsz.css',
     // Tipografías de las facturas (diseño a medida): solo se descargan si una factura las usa

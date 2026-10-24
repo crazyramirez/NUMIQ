@@ -127,6 +127,13 @@
       "when": 1792849825683,
       "tag": "0017_ai_actions",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1792852422794,
+      "tag": "0018_auth_push_approvals",
+      "breakpoints": true
     }
   ]
 }
