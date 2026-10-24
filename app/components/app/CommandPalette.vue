@@ -14,6 +14,9 @@ interface Entry {
 }
 
 const open = useState('paletteOpen', () => false)
+const { me } = useMe()
+// El gestor entra en modo consulta: sin atajos de crear
+const readOnly = computed(() => me.value?.company?.role === 'advisor')
 const query = ref('')
 const active = ref(0)
 const input = ref<HTMLInputElement>()
@@ -27,7 +30,7 @@ const staticEntries = computed<Entry[]>(() => {
   const q = norm(query.value.trim())
   const match = (s: string) => !q || norm(s).includes(q)
   const create = CREATE_ACTIONS.filter(a => match(`${a.label} ${a.keywords}`))
-    .map(a => ({ id: `c:${a.to}`, group: 'Crear', label: a.label, icon: a.icon, to: a.to }))
+    .map(a => ({ id: `c:${a.to}`, group: 'Crear', label: a.label, icon: a.icon, to: a.to, hint: a.hint }))
   const nav = ALL_NAV.filter(n => match(`${n.label} ${n.keywords ?? ''}`))
     .map(n => ({ id: `n:${n.to}`, group: 'Ir a', label: n.label, icon: n.icon, to: n.to }))
   return q ? [...create, ...nav] : [...create.slice(0, 4), ...nav]
@@ -110,11 +113,26 @@ function onKey(e: KeyboardEvent) {
   nextTick(() => list.value?.querySelector('.on')?.scrollIntoView({ block: 'nearest' }))
 }
 
-// Atajo global
+// Atajos globales: ⌘K / Ctrl+K o «/» para buscar; F, P, G, E, C para crear (como indica la paleta)
+const typing = (el: EventTarget | null) => el instanceof HTMLElement && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))
 useEventListener('keydown', (e: KeyboardEvent) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
     open.value = !open.value
+    return
+  }
+  if (open.value || e.metaKey || e.ctrlKey || e.altKey || e.repeat || typing(e.target)) return
+  // Con una ventana abierta (modal, menú) las letras son de ella
+  if (document.querySelector('[role="dialog"][aria-modal="true"], [role="menu"]')) return
+  if (e.key === '/') {
+    e.preventDefault()
+    open.value = true
+    return
+  }
+  const action = CREATE_ACTIONS.find(a => a.hint && a.hint.toLowerCase() === e.key.toLowerCase())
+  if (action && !readOnly.value) {
+    e.preventDefault()
+    navigateTo(action.to)
   }
 })
 </script>
@@ -146,6 +164,7 @@ useEventListener('keydown', (e: KeyboardEvent) => {
                 <span class="e-ic"><Icon :name="e.icon" /></span>
                 <span class="grow truncate">{{ e.label }}</span>
                 <span v-if="e.sub" class="e-sub truncate">{{ e.sub }}</span>
+                <kbd v-if="e.hint && e.index !== active" class="kbd e-key" :title="`Atajo: tecla ${e.hint}`">{{ e.hint }}</kbd>
                 <Icon v-if="e.index === active" name="ph:arrow-elbow-down-left" class="enter" aria-hidden="true" />
               </button>
             </template>
@@ -154,6 +173,7 @@ useEventListener('keydown', (e: KeyboardEvent) => {
           <div class="foot">
             <span><kbd class="kbd">↑</kbd><kbd class="kbd">↓</kbd> moverse</span>
             <span><kbd class="kbd">↵</kbd> abrir</span>
+            <span class="hide-touch"><kbd class="kbd">/</kbd> buscar desde cualquier pantalla</span>
           </div>
         </div>
       </div>
@@ -323,5 +343,17 @@ useEventListener('keydown', (e: KeyboardEvent) => {
 
 .pal-enter-from .palette {
   transform: scale(0.97) translateY(-8px);
+}
+
+.e-key {
+  flex: none;
+  opacity: 0.8;
+}
+
+@media (hover: none) {
+  .hide-touch,
+  .e-key {
+    display: none;
+  }
 }
 </style>
