@@ -589,6 +589,11 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
     gap: var(--s-3);
   }
 
+  /* La tarjeta que queda sola en la última fila ocupa las dos columnas */
+  .kpis > :nth-child(odd):last-child {
+    grid-column: 1 / -1;
+  }
+
   .kpi {
     padding: var(--s-3) var(--s-4);
   }

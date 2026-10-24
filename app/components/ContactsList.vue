@@ -596,6 +596,11 @@ button.card-row {
     gap: var(--s-3);
   }
 
+  /* La tarjeta que queda sola en la última fila (Pendiente de cobro) ocupa las dos columnas */
+  .stat:nth-child(odd):last-child {
+    grid-column: 1 / -1;
+  }
+
   .stat {
     padding: var(--s-3) var(--s-4);
   }
