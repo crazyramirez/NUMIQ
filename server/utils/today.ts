@@ -30,15 +30,12 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
   const urgent: TodayTask[] = []
   const rest: TodayTask[] = []
 
-  const [recv, [bank], [drafts], [quotes], [unpaid], [noFile], filings] = await Promise.all([
+  const [recv, [bank], [drafts], [unpaid], [noFile], filings] = await Promise.all([
     receivables(company.id),
     db.select({ n: sql<number>`COUNT(*)`.mapWith(Number) }).from(tables.bankTransactions)
       .where(and(eq(tables.bankTransactions.companyId, company.id), eq(tables.bankTransactions.status, 'pending'))),
     db.select({ n: sql<number>`COUNT(*)`.mapWith(Number) }).from(s)
       .where(and(eq(s.companyId, company.id), eq(s.kind, 'invoice'), eq(s.status, 'draft'))),
-    // Presupuestos enviados hace más de una semana que siguen sin respuesta
-    db.select({ n: sql<number>`COUNT(*)`.mapWith(Number) }).from(s)
-      .where(and(eq(s.companyId, company.id), inArray(s.kind, ['quote', 'proforma']), inArray(s.status, ['issued', 'sent']), lt(s.issueDate, toISODate(new Date(now.getTime() - 7 * 86_400_000))))),
     db.select({ n: sql<number>`COUNT(*)`.mapWith(Number), amount: sql<number>`COALESCE(SUM(${e.total} - ${e.paidTotal}), 0)`.mapWith(Number) }).from(e)
       .where(and(eq(e.companyId, company.id), approvedExpense(), inArray(e.status, ['pending', 'partial']), lt(e.dueDate, today))),
     // Gastos del trimestre sin la foto o el PDF (nóminas, cuotas e impuestos no llevan factura adjunta)
@@ -164,17 +161,6 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
       title: `${plural(drafts!.n, 'borrador de factura', 'borradores de factura')} sin emitir`,
       detail: 'Lo que no se emite no se cobra',
       action: { label: 'Ver', to: '/facturas?estado=draft&anio=todos' },
-    })
-  }
-
-  if (quotes!.n > 0) {
-    rest.push({
-      key: 'quotes',
-      icon: 'ph:file-text',
-      tone: 'brand',
-      title: `${plural(quotes!.n, 'presupuesto espera', 'presupuestos esperan')} respuesta`,
-      detail: quotes!.n === 1 ? 'Enviado hace más de una semana' : 'Enviados hace más de una semana',
-      action: { label: 'Ver', to: '/presupuestos?estado=open&anio=todos' },
     })
   }
 
