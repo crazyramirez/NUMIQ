@@ -1485,7 +1485,7 @@ input[type='checkbox'] {
   }
 }
 
-@container gastos (max-width: 759px) {
+@container gastos (max-width: 899px) {
   .desktop {
     display: none;
   }

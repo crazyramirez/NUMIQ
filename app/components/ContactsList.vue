@@ -534,7 +534,7 @@ input[type='checkbox'] {
   }
 }
 
-@container contacts (max-width: 759px) {
+@container contacts (max-width: 899px) {
   .desktop {
     display: none;
   }

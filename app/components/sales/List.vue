@@ -845,7 +845,7 @@ input[type='checkbox'] {
   }
 }
 
-@container sales (max-width: 759px) {
+@container sales (max-width: 899px) {
   .desk {
     display: none;
   }
