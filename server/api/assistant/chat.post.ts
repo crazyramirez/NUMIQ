@@ -3,7 +3,8 @@ import { z } from 'zod'
 
 const schema = z.object({
   conversationId: z.number().int().positive().nullish(),
-  message: z.string().trim().min(1, 'Escribe tu pregunta').max(4000, 'La pregunta es demasiado larga'),
+  // 15 000 caracteres caben en la columna TEXT (65 535 bytes) aunque cada uno ocupe 4 bytes
+  message: z.string().trim().min(1, 'Escribe tu pregunta').max(15000, 'El mensaje es demasiado largo: máximo 15.000 caracteres'),
 })
 
 // Límite por usuario: evita gastos desbocados de IA por un bucle o un abuso

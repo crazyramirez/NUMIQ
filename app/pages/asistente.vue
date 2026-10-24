@@ -33,6 +33,10 @@ const firstName = computed(() => me.value?.user.name.split(' ')[0] ?? '')
 const conversationId = ref<number | null>(null)
 const messages = ref<Message[]>([])
 const draft = ref('')
+// Mismo límite que el servidor: se avisa antes de enviar y el texto no se pierde
+const MAX_ASK = 15000
+const draftLength = computed(() => draft.value.trim().length)
+const tooLong = computed(() => draftLength.value > MAX_ASK)
 const busy = ref(false)
 const loadingConv = ref(false)
 const historyOpen = ref(false)
@@ -130,7 +134,7 @@ function scrollDown(force = false) {
 
 async function send(text?: string) {
   const q = (text ?? draft.value).trim()
-  if (!q || busy.value) return
+  if (!q || busy.value || q.length > MAX_ASK) return
   draft.value = ''
   busy.value = true
   stick = true
@@ -351,9 +355,12 @@ const html = (m: Message) => renderMarkdown(m.content)
           <label for="ask" class="sr-only">Escribe tu pregunta</label>
           <textarea id="ask" ref="input" v-model="draft" rows="1" :placeholder="ai.configured ? 'Pregunta o pide un cambio…' : 'Asistente no disponible'" :disabled="!ai.configured" @keydown="onKey" @blur="onBlur" />
           <UiButton v-if="busy" variant="secondary" square icon="ph:stop-fill" aria-label="Detener" @click="stop" />
-          <UiButton v-else type="submit" variant="ai" square icon="ph:paper-plane-right-fill" aria-label="Enviar" :disabled="!draft.trim() || !ai.configured" />
+          <UiButton v-else type="submit" variant="ai" square icon="ph:paper-plane-right-fill" aria-label="Enviar" :disabled="!draft.trim() || tooLong || !ai.configured" />
         </div>
-        <p class="disclaimer"><span class="d-long">Usa tus datos de NUMIQ. Los cambios solo se aplican cuando los confirmas. Los impuestos son estimaciones: confírmalos con tu asesor.</span><span class="d-short">Los cambios solo se aplican cuando los confirmas.</span></p>
+        <p v-if="draftLength > MAX_ASK * 0.8" class="disclaimer limit" :class="{ over: tooLong }" aria-live="polite">
+          {{ draftLength.toLocaleString('es-ES') }} / {{ MAX_ASK.toLocaleString('es-ES') }} caracteres{{ tooLong ? ' · acórtalo para poder enviarlo' : '' }}
+        </p>
+        <p v-else class="disclaimer"><span class="d-long">Usa tus datos de NUMIQ. Los cambios solo se aplican cuando los confirmas. Los impuestos son estimaciones: confírmalos con tu asesor.</span><span class="d-short">Los cambios solo se aplican cuando los confirmas.</span></p>
       </form>
     </section>
 
@@ -874,10 +881,19 @@ textarea {
   color: var(--text-4);
 }
 
-@media (max-width: 1023px) {
+.limit {
+  font-variant-numeric: tabular-nums;
+}
+
+.limit.over {
+  font-weight: 600;
+  color: var(--danger);
+}
+
+/* Hasta 1279 px la barra lateral de la app deja poco sitio: el historial pasa al botón «Historial» y el chat ocupa todo */
+@media (max-width: 1279px) {
   .ai-page {
     grid-template-columns: minmax(0, 1fr);
-    padding: var(--s-3) var(--s-4);
   }
 
   .side {
@@ -886,6 +902,12 @@ textarea {
 
   .hist-btn {
     display: inline-flex;
+  }
+}
+
+@media (max-width: 1023px) {
+  .ai-page {
+    padding: var(--s-3) var(--s-4);
   }
 }
 
