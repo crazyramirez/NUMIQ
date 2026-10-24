@@ -1485,7 +1485,23 @@ input[type='checkbox'] {
   }
 }
 
+/* Filas en vez de tabla con poco ancho de contenido y siempre bajo 1024 px: sin barra lateral
+   el contenido vuelve a crecer y la tabla no debe reaparecer */
 @container gastos (max-width: 899px) {
+  .desktop {
+    display: none;
+  }
+
+  .cards {
+    display: block;
+  }
+
+  .sel-toggle {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 1023px) {
   .desktop {
     display: none;
   }

@@ -845,7 +845,27 @@ input[type='checkbox'] {
   }
 }
 
+/* Filas en vez de tabla con poco ancho de contenido y siempre bajo 1024 px: sin barra lateral
+   el contenido vuelve a crecer y la tabla no debe reaparecer */
 @container sales (max-width: 899px) {
+  .desk {
+    display: none;
+  }
+
+  .mobile {
+    display: block;
+  }
+
+  .toolbar :deep(.seg) {
+    width: 100%;
+  }
+
+  .sel-toggle {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 1023px) {
   .desk {
     display: none;
   }
