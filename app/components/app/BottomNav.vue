@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Navegación del móvil: lo de cada día a un toque (Inicio, Ventas, Gastos), un «+» central para
+ * Navegación del móvil: lo de cada día a un toque (Inicio, Ingresos, Gastos), un «+» central para
  * crear (con la foto del ticket primero) y «Más» abre el menú completo.
  */
 const route = useRoute()
@@ -11,7 +11,7 @@ const { open: openScan } = useScan()
 // El gestor entra en modo consulta: sin crear
 const readOnly = computed(() => me.value?.company?.role === 'advisor')
 const area = computed(() => areaOf(route.path).area?.key ?? null)
-const isMore = computed(() => !!area.value && !['inicio', 'ventas', 'gastos'].includes(area.value))
+const isMore = computed(() => !!area.value && !['inicio', 'ingresos', 'gastos'].includes(area.value))
 // Punto en «Más» si hay importaciones por confirmar en Documentos
 const inbox = useInboxCount()
 
@@ -45,9 +45,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <Icon :name="area === 'inicio' ? 'ph:squares-four-fill' : 'ph:squares-four'" class="bi-ic" aria-hidden="true" />
       <span>Inicio</span>
     </NuxtLink>
-    <NuxtLink to="/facturas" class="bi" :class="{ on: area === 'ventas' }" :aria-current="area === 'ventas' ? 'page' : undefined">
-      <Icon :name="area === 'ventas' ? 'ph:receipt-fill' : 'ph:receipt'" class="bi-ic" aria-hidden="true" />
-      <span>Ventas</span>
+    <NuxtLink to="/facturas" class="bi" :class="{ on: area === 'ingresos' }" :aria-current="area === 'ingresos' ? 'page' : undefined">
+      <Icon :name="area === 'ingresos' ? 'ph:receipt-fill' : 'ph:receipt'" class="bi-ic" aria-hidden="true" />
+      <span>Ingresos</span>
     </NuxtLink>
     <div v-if="!readOnly" class="plus-slot">
       <button type="button" class="plus" aria-label="Crear: factura, gasto, foto de ticket…" :aria-expanded="sheet" @click="sheet = true">

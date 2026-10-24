@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Pestañas del área (Ventas: Facturas · Presupuestos · Recurrentes · Productos…).
+ * Pestañas del área (Ingresos: Facturas · Presupuestos · Recurrentes · Productos…).
  * Solo en las pantallas de lista de un área con varias: en fichas y editores no estorban.
  */
 const route = useRoute()

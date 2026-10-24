@@ -19,7 +19,7 @@ App web instalable (PWA), responsive y en español. Varias empresas por cuenta y
 
 | Área | Funciones |
 |---|---|
-| **Ventas** | Facturas, presupuestos y rectificativas con numeración por series. Diseño de factura a medida (logo, colores, tipografías, textos por defecto) y PDF generado en el servidor. Envío por correo con PDF y adjuntos. Página pública para el cliente (`/p/:token`): ver, descargar, aceptar o rechazar presupuestos y datos de pago, con aviso de lectura. Cobros parciales y recordatorios de pago automáticos. |
+| **Ingresos** | Facturas, presupuestos y rectificativas con numeración por series. Diseño de factura a medida (logo, colores, tipografías, textos por defecto) y PDF generado en el servidor. Envío por correo con PDF y adjuntos. Página pública para el cliente (`/p/:token`): ver, descargar, aceptar o rechazar presupuestos y datos de pago, con aviso de lectura. Cobros parciales y recordatorios de pago automáticos. |
 | **Catálogo y contactos** | Productos y servicios con imagen, precio, IVA y unidad, que se sugieren al escribir el concepto de una línea. Clientes y proveedores con validación de NIF/CIF/NIE y NIF-IVA, retención IRPF, recargo de equivalencia y categoría de gasto por defecto. Relleno con IA a partir de una firma, una foto o un PDF. |
 | **Gastos** | Registro manual o leído con IA desde foto, PDF, Word o Excel. Importación por lotes (PDF, imágenes, Word, Excel, CSV, XML o un ZIP con todo) con detección de duplicados. Gastos deducibles según la normativa. |
 | **Banco** | Importación de extractos (Norma 43, CSV, Excel; si el formato es desconocido, la IA identifica las columnas). Conciliación de movimientos con facturas y gastos, y saldo por cuenta. |

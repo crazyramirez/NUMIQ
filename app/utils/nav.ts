@@ -36,11 +36,11 @@ export const NAV: readonly NavArea[][] = Object.freeze([
   [
     { key: 'inicio', label: 'Inicio', to: '/', icon: 'ph:squares-four', keywords: 'panel dashboard resumen hoy tareas' },
     {
-      key: 'ventas',
-      label: 'Ventas',
+      key: 'ingresos',
+      label: 'Ingresos',
       to: '/facturas',
       icon: 'ph:receipt',
-      keywords: 'facturas emitidas cobros',
+      keywords: 'ventas facturas emitidas cobros',
       tabs: [
         { label: 'Facturas', to: '/facturas', icon: 'ph:receipt', keywords: 'emitidas ventas cobros' },
         { label: 'Presupuestos', to: '/presupuestos', icon: 'ph:file-text', keywords: 'ofertas cotizaciones' },

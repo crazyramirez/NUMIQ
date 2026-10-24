@@ -10,7 +10,7 @@ const route = useRoute()
 watch(() => route.fullPath, () => (navOpen.value = false))
 
 const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path === to || route.path.startsWith(`${to}/`))
-// Área de la pantalla actual: Ventas sigue marcada en Presupuestos, Impuestos en Gestoría…
+// Área de la pantalla actual: Ingresos sigue marcada en Presupuestos, Impuestos en Gestoría…
 const activeArea = computed(() => areaOf(route.path).area?.key ?? null)
 // Contador de Documentos: importaciones leídas por la IA que esperan confirmación
 const inbox = useInboxCount()
