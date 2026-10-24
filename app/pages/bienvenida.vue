@@ -58,6 +58,15 @@ const nifState = computed(() => {
   return { ok: true, text: kindOk ? `${r.kind === 'cif' ? 'NIF de sociedad' : r.kind === 'nie' ? 'NIE' : 'DNI'} válido` : 'Válido, aunque no parece del tipo de actividad elegida' }
 })
 
+/**
+ * La retención se decide con una pregunta sencilla: las actividades profesionales (diseño,
+ * consultoría, abogacía…) retienen a empresas y autónomos; las empresariales (comercio, oficios…) no.
+ */
+const activity = computed({
+  get: () => (form.defaultIrpfRate > 0 ? 'professional' : 'business'),
+  set: (v: 'professional' | 'business') => (form.defaultIrpfRate = v === 'business' ? 0 : newFreelancer.value ? 7 : 15),
+})
+
 /** Nuevo autónomo: 7 % de retención el año de alta y los dos siguientes */
 const newFreelancer = computed(() => {
   if (form.kind !== 'autonomo' || !form.activityStartDate) return false
@@ -166,7 +175,7 @@ async function finish() {
           <!-- 3 · Impuestos -->
           <section v-else-if="step === 2" key="2">
             <h1>Impuestos</h1>
-            <p class="lead">Lo dejamos configurado para que cada factura salga con los cálculos correctos.</p>
+            <p class="lead">Lo dejamos configurado para que cada factura salga con los cálculos correctos. Si no estás seguro, deja lo que viene marcado: es lo más común.</p>
             <div class="form-grid">
               <UiSelect
                 v-model="form.taxRegime"
@@ -195,17 +204,26 @@ async function finish() {
 
               <template v-if="form.kind === 'autonomo'">
                 <UiInput v-model="form.activityStartDate" class="c-6" label="Fecha de alta como autónomo" type="date" hint="Para aplicar la retención reducida si te corresponde" />
-                <div class="c-6 field">
-                  <span class="label">Retención de IRPF en tus facturas</span>
-                  <div class="pills small" role="radiogroup" aria-label="Retención de IRPF">
-                    <button v-for="r in [15, 7, 0]" :key="r" type="button" role="radio" :aria-checked="form.defaultIrpfRate === r" class="pill" :class="{ on: form.defaultIrpfRate === r }" @click="form.defaultIrpfRate = r">
-                      <strong class="num">{{ r }} %</strong>
+                <div class="c-12 field">
+                  <span class="label">¿Qué tipo de actividad tienes?</span>
+                  <div class="pills two" role="radiogroup" aria-label="Tipo de actividad">
+                    <button type="button" role="radio" :aria-checked="activity === 'professional'" class="pill" :class="{ on: activity === 'professional' }" @click="activity = 'professional'">
+                      <strong>Profesional</strong>
+                      <span>Diseño, consultoría, abogacía, formación…</span>
+                    </button>
+                    <button type="button" role="radio" :aria-checked="activity === 'business'" class="pill" :class="{ on: activity === 'business' }" @click="activity = 'business'">
+                      <strong>Empresarial</strong>
+                      <span>Comercio, hostelería, reformas, oficios…</span>
                     </button>
                   </div>
-                  <p class="hint">Profesionales: 15 % (7 % los tres primeros años). 0 % si vendes a particulares o no eres profesional.</p>
+                  <p class="hint">
+                    {{ activity === 'professional'
+                      ? `Tus facturas a empresas y autónomos llevarán un ${form.defaultIrpfRate} % de retención de IRPF; a particulares, ninguna. Lo ajustamos solo en cada factura.`
+                      : 'Tus facturas no llevarán retención de IRPF.' }}
+                  </p>
                 </div>
                 <Transition name="fade">
-                  <div v-if="newFreelancer && form.defaultIrpfRate !== 7" class="c-12 tip">
+                  <div v-if="newFreelancer && activity === 'professional' && form.defaultIrpfRate !== 7" class="c-12 tip">
                     <Icon name="ph:sparkle-fill" class="tip-ic" />
                     <div class="grow">
                       <strong>Puedes facturar con un 7 % de retención</strong>
@@ -428,6 +446,10 @@ h1 {
 
 .nif-state.ok {
   color: var(--success);
+}
+
+.pills.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .pills {

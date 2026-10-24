@@ -225,7 +225,7 @@ const moreItems = computed<MenuItem[]>(() => {
     if (d.status === 'issued') items.push({ label: 'Marcar como enviada', icon: 'ph:paper-plane-tilt', onClick: () => setStatus('sent', 'Marcada como enviada') })
     if (d.status === 'sent') items.push({ label: 'Marcar como no enviada', icon: 'ph:arrow-u-up-left', onClick: () => setStatus('issued', 'Marcada como no enviada') })
     items.push({ label: 'Crear rectificativa', icon: 'ph:arrow-counter-clockwise', to: `/facturas/nueva?rectifica=${d.id}` })
-    if (d.kind === 'invoice') items.push({ label: 'Hacer recurrente', icon: 'ph:arrows-clockwise', to: `/recurrentes?desde=${d.id}` })
+    if (d.kind === 'invoice') items.push({ label: 'Repetir cada mes…', icon: 'ph:arrows-clockwise', to: `/recurrentes?desde=${d.id}` })
   }
   if (isQuote.value && !['draft', 'invoiced'].includes(d.status)) {
     if (d.status !== 'issued') items.push({ label: 'Marcar como pendiente', icon: 'ph:arrow-u-up-left', onClick: () => setStatus('issued', 'Presupuesto pendiente') })

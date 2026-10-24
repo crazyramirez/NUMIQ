@@ -848,7 +848,7 @@ async function remove() {
 
     <template #footer>
       <UiButton v-if="isEdit" class="del" variant="ghost" icon="ph:trash" :loading="deleting" @click="remove">Eliminar</UiButton>
-      <UiButton v-if="isEdit" variant="ghost" icon="ph:arrows-clockwise" :to="`/recurrentes?gasto=${expenseId}`" @click="open = false">Hacer recurrente</UiButton>
+      <UiButton v-if="isEdit" variant="ghost" icon="ph:arrows-clockwise" :to="`/recurrentes?gasto=${expenseId}`" @click="open = false">Repetir cada mes</UiButton>
       <UiButton @click="open = false">Cancelar</UiButton>
       <UiButton type="submit" :form="formId" variant="primary" :loading="saving" :disabled="loading" icon="ph:check-bold">
         {{ isEdit ? 'Guardar cambios' : 'Registrar gasto' }}

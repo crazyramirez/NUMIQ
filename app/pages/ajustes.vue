@@ -452,13 +452,12 @@ function onDesignSaved(accent: string) {
                   <UiSelect v-model="form!.defaultVatRate" class="c-4" label="IVA habitual" :options="vatRateOptions" />
                   <IrpfField v-model="form!.defaultIrpfRate" class="c-4" :presets="[0, 1, 7, 15]" hint="Se aplica a clientes empresa o profesionales" />
                   <UiInput v-model="form!.paymentTermsDays" class="c-4" numeric label="Vencimiento" suffix="días" />
-                  <UiTextarea v-model="form!.invoiceFooter" class="c-12" label="Pie de factura" rows="3" placeholder="Ej. Inscrita en el Registro Mercantil de Madrid, tomo… / Gracias por confiar en nosotros." />
                   <div class="c-12 email-banner">
                     <div class="email-banner-info">
                       <span class="email-banner-icon"><Icon name="ph:envelope-simple-fill" /></span>
                       <div>
-                        <strong class="email-banner-title">Mensaje de envío por email y etiqueta de pedido</strong>
-                        <p class="email-banner-text">Personaliza el mensaje por defecto que reciben tus clientes al enviar una factura por correo y la etiqueta para su orden de pedido.</p>
+                        <strong class="email-banner-title">Pie de factura, mensaje de envío y etiqueta de pedido</strong>
+                        <p class="email-banner-text">Se configuran en Diseño de factura, con la vista previa al lado.</p>
                       </div>
                     </div>
                     <UiButton type="button" size="sm" variant="secondary" icon="ph:paint-brush" @click="section = 'diseno'">Configurar en Diseño</UiButton>

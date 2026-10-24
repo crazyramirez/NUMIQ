@@ -37,7 +37,8 @@ const MODEL_EXPLAIN: Record<string, string> = {
   '115': 'La retención del 19 % que aplicas al alquiler de tu local u oficina y que ingresas en nombre del propietario.',
 }
 
-const MODEL_SHORT: Record<string, string> = { '303': 'IVA', '130': 'IRPF', '111': 'Retenciones', '115': 'Alquileres' }
+// Primero en lenguaje de todos los días; el número de modelo va al lado como etiqueta
+const MODEL_SHORT: Record<string, string> = { '303': 'IVA del trimestre', '130': 'Pago a cuenta del IRPF', '111': 'Retenciones a profesionales', '115': 'Retención del alquiler', '202': 'Pago a cuenta de Sociedades' }
 
 type ModelData = { result: number, accrued?: number, deductible?: number, income?: number, expenses?: number, netIncome?: number, withheld?: number, base?: number, recipients?: number }
 
