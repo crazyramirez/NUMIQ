@@ -144,12 +144,15 @@ Reglas:
 - NIF, CIF y NIE en mayúsculas, sin espacios, puntos ni guiones (B-12.345.678 → B12345678). NIF-IVA europeo con su prefijo de país. country: código ISO de 2 letras (España = ES).
 - issuer: quien emite la factura y la cobra (el vendedor). recipient: el cliente al que se factura (null si no figura, típico de los tickets).
 - Para distinguirlos NO te guíes por la posición en la página: muchas facturas ponen el cliente arriba a la izquierda y el emisor a la derecha. Pistas del emisor: el logotipo o membrete, el pie de página con su dirección, web o datos registrales, la cuenta bancaria a la que hay que pagar ("realizar el pago mediante transferencia a…"; en una domiciliación la cuenta es la del cliente) y quien firma. Pistas del cliente: rótulos como "Cliente", "Facturar a", "Destinatario" o "Datos del cliente".
-- footerName: el nombre de la empresa o persona cuyos datos (dirección, web, teléfono) aparecen en el pie de página; null si no hay pie.
+- Muchas plantillas ponen arriba una tabla «NIF/CIF | Nº Factura | Fecha» sin nombre: ese NIF suele ser el del CLIENTE (el dato fiscal del destinatario que pide la factura), no el del emisor. Asigna cada NIF al bloque de nombre y dirección al que pertenece: si un bloque ya trae su propio NIF, el NIF suelto de la cabecera es del otro.
+- Un recuadro con solo nombre y dirección postal (la ventana del sobre) es el destinatario. Un bloque sin rótulo con nombre, dirección, NIF y email de contacto suele ser el emisor.
+- Retención de IRPF del 7 % o del 15 % (o del 1 % o 2 %): la practica la empresa que paga a un profesional persona física, así que el emisor es la persona física (DNI o NIE) y el cliente la sociedad (CIF que empieza por letra).
+- footerName: el nombre de la empresa o persona cuyos datos (dirección, web, teléfono) aparecen en el pie de página; null si no hay pie. Una línea suelta con el IBAN o las condiciones de pago no es un pie.
 - footerParty: transcribe los datos identificativos de esa empresa en el pie (NIF, email, dirección y teléfono); null si no hay. Nunca mezcles su NIF con el nombre del cliente.
 - Contrasta siempre los bloques con el NIF, nombre comercial, datos de contacto y cuentas de la empresa usuaria. La posición izquierda/derecha o arriba/abajo no determina quién es el cliente. No copies datos de la empresa usuaria a la contraparte.
 - ibanRole: payee si es la cuenta de destino de una transferencia/cobro; payer si es la cuenta a la que se carga una domiciliación o del pagador; unknown si no se especifica.
-- payeeName: el titular de la cuenta bancaria a la que se pide pagar ("realizar el pago a…", "transferencia a…"); null si no hay o si es una domiciliación en la cuenta del cliente.
-- roleEvidence: antes de rellenar issuer y recipient, anota en pocas palabras qué te indica quién emite el documento (p. ej. "pago a Estudio Gráfico SL y su pie de página: emite Estudio Gráfico").
+- payeeName: el titular de la cuenta bancaria a la que se pide pagar, solo si el documento escribe su nombre junto a la cuenta ("realizar el pago a…", "transferencia a…", "titular: …"); null si solo figura «IBAN: …» sin titular (no lo deduzcas del emisor) o si es una domiciliación en la cuenta del cliente.
+- roleEvidence: antes de rellenar issuer y recipient, anota en pocas palabras qué te indica quién emite el documento (p. ej. "pago a Estudio Gráfico SL y su pie de página: emite Estudio Gráfico"). Si uno de los bloques es la empresa usuaria, di qué la delata como emisora o como cliente.
 - Si el título o el encabezado dice FACTURA, es una factura aunque el texto mencione un presupuesto, una proforma o un pedido anterior.
 - isPerson: true si es una persona física (nombre y apellidos o DNI/NIE), false si es una empresa.
 - lines: cada concepto facturado. description: el concepto completo, incluido su texto de detalle. amount: base de la línea sin IVA, después del descuento. vatRate: el tipo de IVA de la línea si se conoce.
@@ -180,10 +183,17 @@ function contextText(ctx: ExtractContext) {
   const c = ctx.company
   return [
     `Empresa usuaria de la app (es el emisor de sus facturas emitidas y el receptor de las recibidas): ${c.legalName}${c.tradeName && c.tradeName !== c.legalName ? ` (${c.tradeName})` : ''}, NIF ${c.nif}.`,
+    /^(\d{8}[A-Z]|[KLMXYZ]\d{7}[A-Z])$/.test(comparableNif(c.nif))
+      ? 'Es un autónomo (persona física): en sus facturas a sociedades con retención de IRPF, él es el emisor y la sociedad el cliente.'
+      : '',
     c.contact ? `Sus datos de contacto: ${c.contact}. Contrástalos con cada bloque y con el pie para identificar a la empresa; no confundas los datos del destinatario con los del emisor.` : '',
     c.ibans?.length ? `Cuentas propias registradas en la app: ${c.ibans.join(', ')}. Si la cuenta es de cobro, la empresa emite; si se carga una domiciliación en ella, la empresa recibe. Una cuenta sin papel indicado no decide por sí sola.` : '',
     `Categorías de gasto: ${ctx.categories.map(x => x.name).join(', ') || 'ninguna'}.`,
-    ctx.direction !== 'auto' ? `El usuario indica que son facturas ${ctx.direction === 'issued' ? 'emitidas' : 'recibidas'}.` : '',
+    ctx.direction !== 'auto'
+      ? ctx.direction === 'issued'
+        ? 'El usuario indica que son facturas EMITIDAS: la empresa usuaria es el emisor (issuer) y la otra parte el cliente (recipient), aunque un bloque o un NIF de la cabecera parezca decir otra cosa.'
+        : 'El usuario indica que son facturas RECIBIDAS: la otra parte es el emisor (issuer) y la empresa usuaria el cliente (recipient).'
+      : '',
     folderText(folderSignals(ctx.path), ctx.direction === 'auto'),
     `Fecha de hoy: ${ctx.today}.`,
     `Archivo: ${ctx.path}`,
@@ -310,10 +320,10 @@ export function toImportParty(p: ExtractedParty): ImportParty {
 
 export type DirectionResult = ReturnType<typeof resolveInvoiceParties>
 
-/** Primero identidad y evidencia del documento; carpetas y selección solo como alternativa. */
+/** Si el usuario eligió emitidas o recibidas, manda su elección; si no, la evidencia del documento y, como alternativa, las carpetas. */
 export function detectDirection(d: ExtractedDocument, ctx: ExtractContext, hint: ImportDirection | null): DirectionResult {
-  const fallback = ctx.direction !== 'auto' ? ctx.direction : folderHint(ctx.path) ?? hint
-  return resolveInvoiceParties(d, ctx.company, ctx.contacts, fallback)
+  const chosen = ctx.direction !== 'auto' ? ctx.direction : null
+  return resolveInvoiceParties(d, ctx.company, ctx.contacts, folderHint(ctx.path) ?? hint, chosen)
 }
 
 /** Emitidas o recibidas según las carpetas de la ruta (sin el nombre del archivo) */

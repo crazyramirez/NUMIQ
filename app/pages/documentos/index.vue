@@ -41,6 +41,11 @@ const dirOptions = [
   { value: 'received', label: 'Recibidas' },
 ]
 const dirModel = computed({ get: () => direction.value as string, set: (v: string) => { direction.value = v as typeof direction.value } })
+const dirHint = computed(() => direction.value === 'issued'
+  ? 'Todas las facturas se importarán como emitidas (ingresos), sin detectarlo.'
+  : direction.value === 'received'
+    ? 'Todas las facturas se importarán como recibidas (gastos), sin detectarlo.'
+    : 'Con "Detectar solo", tu NIF, tus clientes habituales, la cuenta de cobro y las carpetas deciden si cada factura es emitida o recibida.')
 
 // ─── Subida ───
 
@@ -173,7 +178,7 @@ const TYPES = ['PDF', 'Fotos', 'Word', 'Excel', 'CSV', 'ZIP', 'Carpetas']
           <div class="opt-dir">
             <p class="label">¿Qué estás importando?</p>
             <UiSegmented v-model="dirModel" :options="dirOptions" label="Tipo de facturas" />
-            <p class="hint">Con "Detectar solo", tu NIF y las carpetas deciden si cada factura es emitida o recibida.</p>
+            <p class="hint">{{ dirHint }}</p>
           </div>
           <div class="opt-sw">
             <UiSwitch v-model="createItems" label="Crear productos y servicios" hint="Los conceptos de tus facturas emitidas pasan al catálogo" />

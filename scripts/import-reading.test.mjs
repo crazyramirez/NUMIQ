@@ -111,6 +111,74 @@ test('documento con dos NIF ajenos distintos avisa pero no bloquea y asigna la e
   assert.equal(res.document.recipient.nif, company.nif)
 })
 
+// Factura real de un autónomo: la IA toma el NIF del cliente de la cabecera «NIF/CIF | Nº | Fecha» como del emisor,
+// cruza los bloques y repite al cliente como titular de un «IBAN: …» sin nombre y como pie inexistente
+const autonomo = { legalName: 'Andrés Ramírez Lería', tradeName: null, nif: '25588523B', email: 'andres@andresrl.es', ibans: [], defaultVatRate: 21 }
+const agencia = party('ABSOLUTE EXPERIENCIAS DE COMUNICACIÓN, S.L.', 'B91348755')
+const crossed = (more = {}) => doc({
+  issuer: agencia, recipient: party(autonomo.legalName, autonomo.nif, { isPerson: true }), number: '16-26',
+  taxLines: [{ base: 120, vatRate: 21, vatAmount: 25.2, surchargeRate: 0, surchargeAmount: 0 }], irpfRate: 15, irpfAmount: 18, total: 127.2,
+  iban: 'ES3500730100570862027818', ibanRole: 'payee', payeeName: agencia.name, footerName: agencia.name, ...more,
+})
+
+test('retención profesional de un autónomo a una sociedad: emitida aunque la IA cruce los bloques', () => {
+  const result = resolveInvoiceParties(crossed(), autonomo, [])
+  assert.equal(result.direction, 'issued')
+  assert.equal(result.blocking, false)
+  assert.equal(result.document.recipient.nif, agencia.nif)
+  assert.equal(result.document.issuer.nif, autonomo.nif)
+})
+
+test('la cuenta propia de cobro no choca con un titular que solo repite el emisor leído', () => {
+  const result = resolveInvoiceParties(crossed(), { ...autonomo, ibans: ['ES35 0073 0100 5708 6202 7818'] }, [])
+  assert.equal(result.direction, 'issued')
+  assert.equal(result.blocking, false)
+  assert.equal(result.warning, null)
+})
+
+test('un cliente habitual hace emitida la factura con los bloques cruzados, y avisa', () => {
+  const plain = crossed({ irpfRate: null, irpfAmount: null, total: 145.2 })
+  const habitual = [{ ...agencia, isClient: true, isSupplier: false, issuedCount: 6, receivedCount: 0 }]
+  const result = resolveInvoiceParties(plain, autonomo, habitual)
+  assert.equal(result.direction, 'issued')
+  assert.equal(result.document.recipient.nif, agencia.nif)
+  assert.match(result.warning, /cliente habitual/)
+  // Sin historial, la lectura manda
+  assert.equal(resolveInvoiceParties(plain, autonomo, []).direction, 'received')
+  // Un historial mixto no decide
+  assert.equal(resolveInvoiceParties(plain, autonomo, [{ ...habitual[0], receivedCount: 3 }]).direction, 'received')
+})
+
+test('una sociedad que paga a un profesional con retención registra un gasto', () => {
+  const freelance = party('Diseñadora Autónoma', '87654321X', { isPerson: true })
+  const result = resolveInvoiceParties(doc({ issuer: us, recipient: freelance, irpfRate: 15, irpfAmount: 150, total: 1060 }), company, [])
+  assert.equal(result.direction, 'received')
+  assert.equal(result.document.issuer.nif, freelance.nif)
+})
+
+test('el pie de un cliente habitual que le vende a la empresa sigue siendo un gasto', () => {
+  const habitual = [{ ...client, isClient: true, isSupplier: false, issuedCount: 5, receivedCount: 0 }]
+  const result = resolveInvoiceParties(doc({ issuer: us, recipient: client, footerParty: client }), company, habitual)
+  assert.equal(result.direction, 'received')
+  assert.equal(result.document.issuer.nif, client.nif)
+})
+
+test('emitidas o recibidas elegidas al importar mandan sobre lo detectado', () => {
+  const chosen = (d, direction, more = {}) => converted(d, { ...ctx, direction, ...more })
+  // La IA cruzó los bloques: emitidas elegidas, el cliente sale del bloque del emisor
+  const issued = chosen(doc({ issuer: client, recipient: us }), 'issued')
+  assert.equal(issued.resolved.direction, 'issued')
+  assert.equal(issued.data.party.nif, client.nif)
+  assert.equal(issued.resolved.warning, null)
+  // Recibidas manda aunque la cuenta propia de cobro y la carpeta digan emitida
+  const received = chosen(doc({ issuer: supplier, recipient: us, iban: company.ibans[0], ibanRole: 'payee', footerParty: us }), 'received', { path: 'Ventas/f.pdf' })
+  assert.equal(received.resolved.direction, 'received')
+  assert.equal(received.resolved.blocking, false)
+  assert.equal(received.data.party.nif, supplier.nif)
+  // Un presupuesto de proveedor con recibidas elegidas va al archivo, no a Presupuestos
+  assert.equal(chosen(quote({ issuer: us, recipient: supplier }), 'received').resolved.direction, 'received')
+})
+
 for (const type of ['quote', 'proforma']) {
   test(`${type} incompleto se trata como propio y recupera el cliente aunque esté en issuer`, () => {
     const result = converted(quote({ documentType: type, issuer: client, recipient: null }))

@@ -140,9 +140,9 @@ async function loadKnowledge(company: Company, direction: ImportDirection | 'aut
       .where(and(eq(tables.categories.companyId, company.id), eq(tables.categories.kind, 'expense'))),
     db.select().from(tables.contacts)
       .where(eq(tables.contacts.companyId, company.id)),
-    db.select({ id: tables.salesDocuments.id, number: tables.salesDocuments.number, kind: tables.salesDocuments.kind, customer: tables.salesDocuments.customer, issueDate: tables.salesDocuments.issueDate, total: tables.salesDocuments.total }).from(tables.salesDocuments)
+    db.select({ id: tables.salesDocuments.id, number: tables.salesDocuments.number, kind: tables.salesDocuments.kind, customer: tables.salesDocuments.customer, issueDate: tables.salesDocuments.issueDate, total: tables.salesDocuments.total, contactId: tables.salesDocuments.contactId }).from(tables.salesDocuments)
       .where(eq(tables.salesDocuments.companyId, company.id)),
-    db.select({ id: tables.expenses.id, number: tables.expenses.number, issueDate: tables.expenses.issueDate, total: tables.expenses.total, supplier: tables.expenses.supplier, description: tables.expenses.description, notes: tables.expenses.notes, fileId: tables.expenses.fileId }).from(tables.expenses)
+    db.select({ id: tables.expenses.id, number: tables.expenses.number, issueDate: tables.expenses.issueDate, total: tables.expenses.total, supplier: tables.expenses.supplier, description: tables.expenses.description, notes: tables.expenses.notes, fileId: tables.expenses.fileId, contactId: tables.expenses.supplierId }).from(tables.expenses)
       .where(eq(tables.expenses.companyId, company.id)),
     db.select({ id: tables.items.id, name: tables.items.name, sku: tables.items.sku }).from(tables.items)
       .where(eq(tables.items.companyId, company.id)),
@@ -155,10 +155,13 @@ async function loadKnowledge(company: Company, direction: ImportDirection | 'aut
   const ibans = [company.iban, ...accounts.map(a => a.iban)].filter((x): x is string => !!x)
   // Web, email, teléfono y dirección: la IA reconoce así el pie de página de las facturas propias
   const contact = [company.website, company.email, company.phone, [company.address, company.city].filter(Boolean).join(', ')].filter(Boolean).join(' · ') || null
+  // Historial de cada contacto: un cliente habitual hace emitida la factura aunque la IA cruce los bloques
+  const tally = (rows: Array<{ contactId: number | null }>) => rows.reduce((m, r) => (r.contactId ? m.set(r.contactId, (m.get(r.contactId) ?? 0) + 1) : m), new Map<number, number>())
+  const issuedTo = tally(sales), receivedFrom = tally(expenses)
   const k: Knowledge = {
     ctx: {
       company: { legalName: company.legalName, tradeName: company.tradeName, nif: company.nif, ibans, contact, email: company.email, phone: company.phone, address: company.address, postalCode: company.postalCode, city: company.city, province: company.province, country: company.country, defaultVatRate: company.defaultVatRate },
-      contacts: contacts.map(c => ({ name: c.name, tradeName: c.tradeName, nif: c.nif, email: c.email, phone: c.phone, address: c.address, iban: c.iban, isClient: c.isClient, isSupplier: c.isSupplier })),
+      contacts: contacts.map(c => ({ name: c.name, tradeName: c.tradeName, nif: c.nif, email: c.email, phone: c.phone, address: c.address, iban: c.iban, isClient: c.isClient, isSupplier: c.isSupplier, issuedCount: issuedTo.get(c.id) ?? 0, receivedCount: receivedFrom.get(c.id) ?? 0 })),
       categories,
       direction,
       today: toISODate(new Date()),
