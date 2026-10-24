@@ -851,6 +851,70 @@ export const aiMessages = mysqlTable('ai_messages', {
   createdAt: createdAt(),
 }, t => [index('ai_msg_conv_idx').on(t.conversationId, t.id)])
 
+/** Fila de la vista previa de una operación del asistente: qué registro cambia y cómo */
+export type AiActionRow = {
+  id: number
+  label: string
+  sub?: string | null
+  amount?: number | null
+  before?: string | null
+  after?: string | null
+  url?: string | null
+}
+
+export type AiActionPreview = {
+  /** Qué cambia, en una línea («Galván → Navlag») */
+  change: string | null
+  count: number
+  /** Importe total afectado (con impuestos), si tiene sentido */
+  total: number | null
+  rows: AiActionRow[]
+  warnings: string[]
+  undoable: boolean
+}
+
+export type AiActionResult = {
+  done: number
+  skipped: Array<{ id: number, label: string, reason: string }>
+  /** Enlace para ver lo creado o lo cambiado */
+  url?: string | null
+  message?: string | null
+}
+
+/**
+ * Operaciones del asistente sobre los datos. El modelo solo las propone: quedan pendientes con los
+ * registros exactos que tocan y se ejecutan cuando el usuario las confirma. Guardan cómo estaba todo
+ * para poder deshacerlas.
+ */
+export const aiActions = mysqlTable('ai_actions', {
+  id: int('id').autoincrement().primaryKey(),
+  companyId: int('company_id').notNull(),
+  userId: int('user_id').notNull(),
+  conversationId: int('conversation_id'),
+  /** Respuesta del asistente en la que se propuso */
+  messageId: int('message_id'),
+  /** ventas.modificar, gastos.eliminar, banco.ignorar… */
+  kind: varchar('kind', { length: 40 }).notNull(),
+  title: varchar('title', { length: 200 }).notNull(),
+  /** high: borra datos o no tiene vuelta atrás fácil */
+  risk: mysqlEnum('risk', ['normal', 'high']).notNull().default('normal'),
+  status: mysqlEnum('status', ['pending', 'running', 'done', 'failed', 'cancelled', 'undoing', 'undone']).notNull().default('pending'),
+  /** Registros afectados y cambios ya resueltos (ids de cliente, categoría…) */
+  params: jsonText<Record<string, unknown>>('params'),
+  preview: jsonText<AiActionPreview>('preview'),
+  result: jsonText<AiActionResult>('result'),
+  /** Cómo estaban los registros antes de ejecutar */
+  undo: jsonText<Record<string, unknown>>('undo'),
+  error: varchar('error', { length: 500 }),
+  expiresAt: datetime('expires_at').notNull(),
+  executedAt: datetime('executed_at'),
+  undoneAt: datetime('undone_at'),
+  createdAt: createdAt(),
+}, t => [
+  index('ai_actions_conv_idx').on(t.conversationId, t.id),
+  index('ai_actions_company_idx').on(t.companyId, t.createdAt),
+])
+
 // ─── IA: recomendaciones y avisos ────────────────────────────────────────────
 
 export const insights = mysqlTable('insights', {

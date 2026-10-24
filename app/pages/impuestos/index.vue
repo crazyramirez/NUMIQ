@@ -198,6 +198,7 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
         <p class="sub">Tus modelos trimestrales calculados con lo que registras. Sin sorpresas al llegar el plazo.</p>
       </div>
       <div class="page-actions">
+        <UiButton variant="primary" icon="ph:flag-checkered" to="/impuestos/cerrar">Cerrar trimestre</UiButton>
         <div class="year" role="group" aria-label="Año fiscal">
           <UiButton variant="ghost" size="sm" square icon="ph:caret-left" aria-label="Año anterior" @click="year--" />
           <span class="year-l num" aria-live="polite">{{ year }}</span>

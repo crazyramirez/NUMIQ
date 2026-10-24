@@ -90,7 +90,7 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
           amount > 0 ? `unos ${eurText0(amount)} a ingresar` : null,
           `modelos ${pending.join(', ')}`,
         ].filter(Boolean).join(' · '),
-        action: { label: 'Preparar', to: '/impuestos' },
+        action: { label: 'Cerrar trimestre', to: m ? `/impuestos/cerrar?anio=${year}&t=${m[1]}` : '/impuestos' },
       })
     }
   }

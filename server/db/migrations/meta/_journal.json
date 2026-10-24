@@ -120,6 +120,13 @@
       "when": 1792802287285,
       "tag": "0016_item_categories",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1792849825683,
+      "tag": "0017_ai_actions",
+      "breakpoints": true
     }
   ]
 }

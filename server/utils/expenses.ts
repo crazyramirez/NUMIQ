@@ -171,7 +171,7 @@ export async function deductibleGuesser(companyId: number) {
 }
 
 /** Proveedor leído de un escaneo: el existente con ese NIF o nombre, o uno nuevo */
-async function ensureSupplier(companyId: number, p: z.infer<typeof importPartySchema>) {
+export async function ensureSupplier(companyId: number, p: z.infer<typeof importPartySchema>, notes = 'Creado al escanear una factura') {
   const db = useDb()
   const contacts = await db.select()
     .from(tables.contacts).where(eq(tables.contacts.companyId, companyId))
@@ -194,7 +194,7 @@ async function ensureSupplier(companyId: number, p: z.infer<typeof importPartySc
     city: p.city,
     province: p.province,
     country: p.country,
-    notes: 'Creado al escanear una factura',
+    notes,
   }).$returningId()
   return res!.id
 }
