@@ -12,7 +12,7 @@ export function loadCloneEnv() {
   const e = process.env
   if (e.NUXT_DATABASE_URL || e.DB_HOST || e.DB_SOCKET || e.NUXT_DATABASE_HOST || e.NUXT_DATABASE_SOCKET) return
   console.error('❌ Faltan los datos de la base de datos.')
-  console.error(`   Crea ${file} con los mismos valores que el panel Node.js:`)
+  console.error(`   Crea ${file} con los datos de la base:`)
   console.error('     DB_HOST=localhost')
   console.error('     DB_PORT=3306')
   console.error('     DB_USER=usuario_de_la_base')

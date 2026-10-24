@@ -1,5 +1,6 @@
 # Nuxt
 .output
+.output-*
 .data
 .nuxt
 .nitro
@@ -17,6 +18,10 @@ npm-debug.log*
 
 # Archivos subidos (facturas escaneadas, logos…)
 /storage/
+
+# Despliegue en Plesk (scripts/plesk-deploy.sh)
+/logs/
+/tmp/
 
 # Misc
 .DS_Store

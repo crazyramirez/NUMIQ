@@ -241,8 +241,8 @@ Se ejecutan dentro del propio servidor Nitro (`server/plugins`):
    bash scripts/plesk-deploy.sh
    ```
    Instala, compila y solo publica la nueva versión si el build sale bien. Registro en `logs/deploy.log`.
-3. **Node.js.** Versión 24, archivo de inicio `.output/server/index.mjs` y raíz del documento `.output/public`.
-4. **Variables de entorno**, en el panel Node.js (en producción la app no lee `.env`):
+3. **Node.js.** Versión 24, archivo de inicio `.output/server/index.mjs` y raíz del documento `.output/public`. La raíz del documento tiene que ser esa: si fuera la carpeta de la app, el `.env` se podría descargar desde la web.
+4. **`.env`** en la carpeta de la app (junto a `package.json`). La app lo lee al arrancar; si hay variables en el panel Node.js, mandan esas.
    ```ini
    DB_HOST=localhost
    DB_PORT=3306
@@ -252,12 +252,12 @@ Se ejecutan dentro del propio servidor Nitro (`server/plugins`):
    NUXT_SESSION_PASSWORD=32+ caracteres aleatorios
    NUXT_SITE_URL=https://tu-dominio
    ```
-   Los `DB_*` son los del paso 1, tal como aparecen en Plesk. Correo, IA y el resto, en [Variables de entorno](#variables-de-entorno).
+   Los `DB_*` son los del paso 1, tal como aparecen en Plesk. Si la contraseña lleva `#` o espacios, ponla entre comillas simples. Correo, IA y el resto, en [Variables de entorno](#variables-de-entorno).
 5. **Arranque.** Activa HTTPS (la cookie de sesión es `Secure`), reinicia la aplicación y crea la primera cuenta en `/registro`.
 
 Si la base no conecta, `https://tu-dominio/api/me` responde 503 con la causa (contraseña incorrecta, base inexistente…).
 
-Para mover una instalación con todos sus datos usa `npm run clone:export` en el origen y `npm run clone:import <zip>` en el destino. Por SSH las variables del panel no llegan a la consola: los dos comandos leen los `DB_*` (y `NUXT_UPLOADS_DIR`, si se cambió) de un `.env` en la carpeta de la app.
+Para mover una instalación con todos sus datos usa `npm run clone:export` en el origen y `npm run clone:import <zip>` en el destino, desde la carpeta de la app: leen el mismo `.env`.
 
 ---
 

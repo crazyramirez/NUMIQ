@@ -113,7 +113,40 @@ export default defineNuxtConfig({
       const from = join(nitro.options.rootDir, 'server/db/migrations')
       if (existsSync(from)) cpSync(from, join(nitro.options.output.serverDir, 'migrations'), { recursive: true })
     },
+    // En producción, leer el .env de la carpeta de la app (Plesk sin variables en el panel). Nitro fija la
+    // configuración al cargar sus módulos: index.mjs pasa a ser un arranque que carga el .env y luego app.mjs
+    'nitro:init': (nitro) => {
+      if (nitro.options.dev) return
+      nitro.hooks.hook('compiled', async () => {
+        const { readFileSync, renameSync, rmSync, writeFileSync } = await import('node:fs')
+        const { join } = await import('node:path')
+        const dir = nitro.options.output.serverDir
+        const app = readFileSync(join(dir, 'index.mjs'), 'utf8').replace('sourceMappingURL=index.mjs.map', 'sourceMappingURL=app.mjs.map')
+        writeFileSync(join(dir, 'app.mjs'), app)
+        rmSync(join(dir, 'index.mjs'))
+        try {
+          renameSync(join(dir, 'index.mjs.map'), join(dir, 'app.mjs.map'))
+        }
+        catch {
+          // build sin sourcemaps
+        }
+        writeFileSync(join(dir, 'index.mjs'), [
+          '// Variables del .env de la carpeta de la app; las del entorno (panel) tienen prioridad',
+          'try {',
+          '  process.loadEnvFile()',
+          '}',
+          'catch (err) {',
+          '  if (err?.code !== \'ENOENT\') console.error(\'[env] No se pudo leer .env:\', err?.message ?? err)',
+          '}',
+          'await import(\'./app.mjs\')',
+          '',
+        ].join('\n'))
+      })
+    },
   },
+
+  // Carpeta de salida configurable: scripts/plesk-deploy.sh compila en .output-next y solo la cambia si sale bien
+  nitro: process.env.NITRO_OUTPUT_DIR ? { output: { dir: process.env.NITRO_OUTPUT_DIR } } : {},
 
   typescript: {
     strict: true,
