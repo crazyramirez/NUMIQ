@@ -51,7 +51,7 @@ function onKey(e: KeyboardEvent) {
 </script>
 
 <template>
-  <div ref="root" class="period" role="group" :aria-label="`Periodo: ${label}`" @keydown="onKey">
+  <div ref="root" class="ui-period" role="group" :aria-label="`Periodo: ${label}`" @keydown="onKey">
     <UiButton v-if="model.year" variant="ghost" size="sm" square icon="ph:caret-left" :aria-label="`${unit} anterior`" @click="model = shiftPeriod(model, -1)" />
     <button type="button" class="cur" :class="{ all: !model.year }" aria-haspopup="dialog" :aria-expanded="open" @click="open = !open">
       <Icon name="ph:calendar-blank" class="cal" aria-hidden="true" />
@@ -120,7 +120,7 @@ function onKey(e: KeyboardEvent) {
 </template>
 
 <style scoped>
-.period {
+.ui-period {
   display: inline-flex;
   align-items: center;
   gap: 2px;

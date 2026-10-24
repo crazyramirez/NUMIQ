@@ -3,8 +3,16 @@ useHead({ title: 'Impuestos · NUMIQ' })
 const { verifactu } = useMe()
 
 const currentYear = new Date().getFullYear()
-// Año en la URL (?anio=2025): al volver desde un modelo o un enlace se sigue en el mismo ejercicio
+// Año en la URL (?anio=2025): al volver desde un modelo o un enlace se sigue en el mismo ejercicio. Sin él,
+// el último año elegido en Facturas, Gastos, Contactos o Informes; y el que se elige aquí, se recuerda allí
 const year = useQueryState('anio', currentYear, { parse: r => (Number.isInteger(Number(r)) && Number(r) >= 2000 && Number(r) <= currentYear ? Number(r) : undefined) })
+const periodMemory = usePeriodMemory()
+if (!hasPeriodQuery(useRoute().query) && periodMemory.value?.year) year.value = Math.min(periodMemory.value.year, currentYear)
+watch(year, (y) => {
+  const p = periodMemory.value
+  // Mismo trimestre o mes, otro año; con «Todos los años» recordado, el año entero
+  periodMemory.value = p?.year ? { ...p, year: y } : { year: y, quarter: null, month: null }
+})
 const { data, status, error, refresh } = await useFetch('/api/taxes', { query: { year }, lazy: true })
 
 const open = ref(new Set<string>())

@@ -3,49 +3,19 @@ import type { MenuItem } from '~/components/ui/Menu.vue'
 
 useHead({ title: 'Informes · NUMIQ' })
 
-const route = useRoute()
-const now = new Date()
-const currentYear = now.getFullYear()
-const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-
-// Periodo en la URL (?anio=2024&t=3 o &mes=9): enlaces directos y atrás del navegador
-const queryNum = (v: unknown) => {
-  const n = Number(Array.isArray(v) ? v[0] : v)
-  return Number.isInteger(n) && n > 0 ? n : null
-}
-const year = ref(queryNum(route.query.anio) ?? currentYear)
-const mode = ref(route.query.mes ? 'month' : route.query.t ? 'quarter' : 'year')
-const quarter = ref(String(Math.min(queryNum(route.query.t) ?? quarterOf(now), 4)))
-const month = ref(Math.min(queryNum(route.query.mes) ?? now.getMonth() + 1, 12))
+// Periodo en la URL (?anio=2024&t=3 o &mes=9): enlaces directos y atrás del navegador. Sin él, el último
+// elegido en Facturas, Gastos, Contactos o Impuestos; un informe siempre es de un año, trimestre o mes
+const { period } = usePeriodQuery({ allowAll: false })
 
 const query = computed(() => ({
-  year: year.value,
-  ...(mode.value === 'quarter' ? { quarter: Number(quarter.value) } : {}),
-  ...(mode.value === 'month' ? { month: month.value } : {}),
+  year: period.value.year ?? new Date().getFullYear(),
+  ...(period.value.quarter ? { quarter: period.value.quarter } : {}),
+  ...(period.value.month ? { month: period.value.month } : {}),
 }))
-
-const patchQuery = useQueryPatch()
-watch(query, (q) => {
-  patchQuery({ anio: String(q.year), t: q.quarter ? String(q.quarter) : undefined, mes: q.month ? String(q.month) : undefined })
-})
 
 const { data, status, error, refresh } = await useFetch('/api/reports/summary', { query, lazy: true })
 
-const modeOptions = [
-  { value: 'year', label: 'Año' },
-  { value: 'quarter', label: 'Trimestre' },
-  { value: 'month', label: 'Mes' },
-]
-const quarterOptions = ['1', '2', '3', '4'].map(q => ({ value: q, label: `${q}T` }))
-const monthOptions = MONTHS.map((m, i) => ({ value: i + 1, label: m }))
-
-const isFuture = computed(() => {
-  if (year.value > currentYear) return true
-  if (year.value < currentYear) return false
-  if (mode.value === 'quarter') return Number(quarter.value) > quarterOf(now)
-  if (mode.value === 'month') return month.value > now.getMonth() + 1
-  return false
-})
+const isFuture = computed(() => periodIsFuture(period.value))
 
 // ─── Descargas ───
 
@@ -168,15 +138,8 @@ const hasActivity = computed(() => !!data.value && (data.value.pnl.income !== 0 
     </header>
 
     <!-- Selector de periodo -->
-    <div class="period card rise" style="--i: 1" role="group" aria-label="Periodo del informe">
-      <div class="year" role="group" aria-label="Año">
-        <UiButton variant="ghost" size="sm" square icon="ph:caret-left" aria-label="Año anterior" @click="year--" />
-        <span class="year-l num" aria-live="polite">{{ year }}</span>
-        <UiButton variant="ghost" size="sm" square icon="ph:caret-right" aria-label="Año siguiente" :disabled="year >= currentYear" @click="year++" />
-      </div>
-      <UiSegmented v-model="mode" label="Agrupar por" :options="modeOptions" />
-      <UiSegmented v-if="mode === 'quarter'" v-model="quarter" label="Trimestre" :options="quarterOptions" />
-      <UiSelect v-else-if="mode === 'month'" v-model="month" class="month" :options="monthOptions" aria-label="Mes" />
+    <div class="period-bar card rise" style="--i: 1" role="group" aria-label="Periodo del informe">
+      <UiPeriod v-model="period" :allow-all="false" />
       <p v-if="data" class="cmp muted">
         <Icon name="ph:arrows-left-right" aria-hidden="true" />
         Comparado con {{ data.compare.previous.label }}<template v-if="data.compare.lastYear"> y {{ data.compare.lastYear.label }}</template>
@@ -479,34 +442,13 @@ const hasActivity = computed(() => !!data.value && (data.value.pnl.income !== 0 
 
 /* ─── Periodo ─── */
 
-.period {
+.period-bar {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--s-3);
   padding: var(--s-3);
   margin-bottom: var(--s-5);
-}
-
-.year {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px;
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-lg);
-}
-
-.year-l {
-  min-width: 52px;
-  text-align: center;
-  font-weight: 650;
-  font-size: var(--text-md);
-}
-
-.month {
-  width: 170px;
 }
 
 .cmp {
@@ -1179,12 +1121,8 @@ const hasActivity = computed(() => !!data.value && (data.value.pnl.income !== 0 
     width: 100%;
   }
 
-  .period {
+  .period-bar {
     padding: var(--s-2);
-  }
-
-  .month {
-    width: 100%;
   }
 
   .kpis {
