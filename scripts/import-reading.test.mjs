@@ -163,6 +163,31 @@ test('el pie de un cliente habitual que le vende a la empresa sigue siendo un ga
   assert.equal(result.document.issuer.nif, client.nif)
 })
 
+test('el cuerpo que repite el concepto no se duplica en la descripción', () => {
+  const concept = 'Mantenimiento web, Alojamiento Web, Copias de seguridad diarias y Certificado de seguridad para laboratoriovazquez.com febrero 2026'
+  const repeated = '## Mantenimiento web, Alojamiento Web, Copias de seguridad diarias y Certificado de seguridad para\nlaboratoriovazquez.com\nfebrero 2026'
+  assert.equal(converted(doc({ lines: [{ ...line(45, 21), description: concept }], bodyText: repeated })).data.bodyText, null)
+  // Lo que no está en los conceptos se conserva, con sus títulos cortos
+  const mixed = `${repeated}\n\n## Alcance\n- Revisión mensual de plugins\nPago a 30 días`
+  assert.equal(extraction.withoutRepeatedBody(mixed, [concept]), '## Alcance\n- Revisión mensual de plugins\nPago a 30 días')
+  assert.equal(extraction.withoutRepeatedBody('## Diseño\n- Logotipo y papelería', ['Diseño de logotipo']), '## Diseño\n- Logotipo y papelería')
+  assert.equal(extraction.withoutRepeatedBody('Proyecto Stand Gourmets', []), 'Proyecto Stand Gourmets')
+  // Un título que se queda sin texto debajo desaparece; varios «títulos» que son datos pasan a texto normal
+  assert.equal(extraction.withoutRepeatedBody(`## Descripción\n${concept}`, [concept]), null)
+  assert.equal(extraction.withoutRepeatedBody('## febrero 2026', [concept]), null)
+  assert.equal(extraction.withoutRepeatedBody('## OP: 26 1376\n## Proyecto: Stand Gourmets 2026 - AGAPA', ['Visores pantallas']), 'OP: 26 1376\nProyecto: Stand Gourmets 2026 - AGAPA')
+  assert.equal(extraction.withoutRepeatedBody('## Rediseño de la web corporativa', ['Diseño']), '## Rediseño de la web corporativa')
+})
+
+test('los conceptos no conservan los cortes de renglón del ancho de la celda', () => {
+  const wrapped = 'Mantenimiento web y Certificado de seguridad para\nlaboratoriovazquez.com\n\nfebrero 2026'
+  const result = converted(doc({ lines: [{ ...line(45, 21), description: wrapped }] }))
+  assert.equal(result.data.lines[0].description, 'Mantenimiento web y Certificado de seguridad para laboratoriovazquez.com febrero 2026')
+  // Los datos distintos (en mayúscula o tras un punto) siguen en su línea
+  const details = 'Visores pantallas cuadradas.\nOP: 26 1376\nProyecto: Stand Gourmets 2026'
+  assert.equal(converted(doc({ lines: [{ ...line(45, 21), description: details }] })).data.lines[0].description, details)
+})
+
 test('emitidas o recibidas elegidas al importar mandan sobre lo detectado', () => {
   const chosen = (d, direction, more = {}) => converted(d, { ...ctx, direction, ...more })
   // La IA cruzó los bloques: emitidas elegidas, el cliente sale del bloque del emisor

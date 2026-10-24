@@ -155,7 +155,7 @@ Reglas:
 - roleEvidence: antes de rellenar issuer y recipient, anota en pocas palabras qué te indica quién emite el documento (p. ej. "pago a Estudio Gráfico SL y su pie de página: emite Estudio Gráfico"). Si uno de los bloques es la empresa usuaria, di qué la delata como emisora o como cliente.
 - Si el título o el encabezado dice FACTURA, es una factura aunque el texto mencione un presupuesto, una proforma o un pedido anterior.
 - isPerson: true si es una persona física (nombre y apellidos o DNI/NIE), false si es una empresa.
-- lines: cada concepto facturado. description: el concepto completo, incluido su texto de detalle. amount: base de la línea sin IVA, después del descuento. vatRate: el tipo de IVA de la línea si se conoce.
+- lines: cada concepto facturado. description: el concepto completo, incluido su texto de detalle: todo lo que está dentro de la celda del concepto en la tabla (periodo, detalle, referencias como OP, pedido o código de proyecto) va en esa description, con un salto de línea entre datos o frases distintas (sin cortar una frase donde el ancho de la celda la parte), y nunca en bodyText. amount: base de la línea sin IVA, después del descuento. vatRate: el tipo de IVA de la línea si se conoce.
 - taxLines: una por cada tipo de IVA del cuadro de impuestos (base, tipo, cuota y recargo de equivalencia si lo hay). Operación exenta, intracomunitaria o con inversión del sujeto pasivo: vatRate 0 y vatAmount 0.
 - vatPresentation: transcribe cómo se presenta el precio, especialmente en presupuestos. «1.000 € + IVA», «más IVA», «IVA no incluido» o «sin IVA» => mode excluded y amount 1000 (precio antes de IVA). «IVA incluido» => included y amount precio final. «Exento de IVA» => exempt. Si no consta => unknown. rate es el porcentaje expresamente escrito, null si no figura; evidence es el fragmento literal que lo indica. No supongas un porcentaje al transcribir.
 - Si solo hay «precio + IVA» sin cuadro fiscal, taxLines debe estar vacío (no inventes una línea al 0 %). total es el total final con impuestos solo cuando aparece explícitamente: para «1.000 € + IVA» sin total final, total=null. El sistema calculará después el IVA usando el tipo escrito o el configurado en la empresa. La ausencia de desglose en ese formato de presupuesto no es un error ni requiere pedir datos al usuario.
@@ -175,7 +175,7 @@ Reglas:
 - Las carpetas donde el usuario guardó el archivo (si se indican) son una pista fuerte del tipo de documento y de si es emitido o recibido: úsalas salvo que el documento diga claramente otra cosa (p. ej. FACTURA en el título dentro de una carpeta de presupuestos).
 - category: la categoría de gasto más adecuada de la lista dada (texto exacto) o null.
 - summary: de 3 a 8 palabras que describan el documento (p. ej. "Fibra y móvil de octubre").
-- bodyText: el texto descriptivo del cuerpo del documento que no está en la tabla de conceptos: asunto o título del trabajo, alcance, descripción del servicio, condiciones, costes explicados, plazos u observaciones. Transcríbelo completo y literal, en el mismo orden y sin resumir. Formato: cada línea del original en su propia línea; los títulos de apartado y el asunto empiezan por "## "; las viñetas por "- " y las listas numeradas por "1. ". No incluyas el encabezado con el número o la fecha, los datos del emisor y del cliente, la tabla de conceptos, el cuadro de bases, IVA y total, los datos bancarios ni los textos legales del pie (protección de datos, registro mercantil). null si no hay texto así (lo normal en tickets).
+- bodyText: el texto descriptivo del cuerpo del documento que está FUERA de la tabla de conceptos: asunto o título del trabajo, alcance, descripción del servicio, condiciones, costes explicados, plazos u observaciones. Transcríbelo completo y literal, en el mismo orden y sin resumir. Formato: cada línea del original en su propia línea; los títulos de apartado y el asunto empiezan por "## "; las viñetas por "- " y las listas numeradas por "1. ". No repitas el texto de los conceptos: si el título o el párrafo encima de la tabla dice lo mismo que una línea, omítelo. No incluyas el encabezado con el número o la fecha, los datos del emisor y del cliente, la tabla de conceptos, el cuadro de bases, IVA y total, los datos bancarios ni los textos legales del pie (protección de datos, registro mercantil). null si no hay texto así (lo normal en tickets).
 - confidence: de 0 a 100, tu seguridad en la lectura (baja si está borroso, cortado o manuscrito).
 - warnings: avisos breves en español solo si algo no cuadra, es ilegible o falta un dato importante.`
 
@@ -437,7 +437,7 @@ export function toInvoiceData(d: ExtractedDocument, direction: ImportDirection, 
     if (Math.abs(lineAmounts({ quantity, unitPrice, discountPct, vatRate }).base - l.amount) > 0.02 && discountPct < 100) {
       unitPrice = round4(l.amount / quantity / (1 - discountPct / 100))
     }
-    return { description: l.description.trim().slice(0, 2000), sku: l.sku?.trim().slice(0, 60) || null, kind: l.kind, quantity, unitPrice, discountPct, vatRate, surchargeRate }
+    return { description: unwrapLines(l.description.replace(/(\s*\n){2,}/g, '\n')).trim().slice(0, 2000), sku: l.sku?.trim().slice(0, 60) || null, kind: l.kind, quantity, unitPrice, discountPct, vatRate, surchargeRate }
   })
 
   const resolvedDate = resolveDocumentDate(d.issueDate, ctx.fileDate)
@@ -476,7 +476,7 @@ export function toInvoiceData(d: ExtractedDocument, direction: ImportDirection, 
     references: cleanReferences(d.references, d.number),
     categoryId: direction === 'received' ? category?.id ?? null : null,
     description: d.summary?.trim().slice(0, 255) || null,
-    bodyText: cleanBodyText(d.bodyText),
+    bodyText: withoutRepeatedBody(d.bodyText, d.lines.map(l => l.description)),
   })
   return {
     data,
@@ -485,16 +485,68 @@ export function toInvoiceData(d: ExtractedDocument, direction: ImportDirection, 
   }
 }
 
-/** Texto del cuerpo: sin espacios sobrantes ni más de una línea en blanco seguida */
+/**
+ * Une los renglones que el ancho de la página partió a media frase: el siguiente sigue en minúscula y el
+ * anterior no acaba en punto, dos puntos ni paréntesis («…certificado de seguridad para\nlaboratorio.com»).
+ */
+export function unwrapLines(text: string) {
+  return text.replace(/\r\n?/g, '\n').replace(/([^\n.:;!?)])[ \t]*\n[ \t]*(?=\p{Ll})/gu, '$1 ')
+}
+
+/** Texto del cuerpo: sin espacios sobrantes, renglones partidos ni más de una línea en blanco seguida */
 export function cleanBodyText(text: string | null | undefined) {
-  const clean = (text ?? '')
-    .replace(/\r\n?/g, '\n')
+  const clean = unwrapLines(text ?? '')
     .split('\n')
     .map(l => l.replace(/[ \t\u00a0]+/g, ' ').trim())
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim()
   return clean.slice(0, 8000) || null
+}
+
+const comparableText = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+
+/**
+ * Quita del texto del cuerpo lo que ya dicen los conceptos: muchas facturas repiten el concepto como título
+ * encima de la tabla y la factura importada lo mostraría dos veces. Se descartan las líneas del cuerpo que
+ * están enteras en algún concepto (también partidas en varias líneas) y se conserva el resto (alcance, condiciones…).
+ */
+export function withoutRepeatedBody(body: string | null | undefined, lineDescriptions: string[]) {
+  const text = cleanBodyText(body)
+  if (!text) return null
+  const concepts = lineDescriptions.map(comparableText).filter(Boolean)
+  if (!concepts.length) return text
+  const all = concepts.join(' ')
+  // Todo el cuerpo junto ya es un concepto (o varios seguidos)
+  const whole = comparableText(text.replace(/^#+\s*/gm, ''))
+  if (!whole || all.includes(whole)) return null
+  const kept = text.split('\n').filter((l) => {
+    const c = comparableText(l.replace(/^(#+|-|\d+\.)\s*/, ''))
+    // Un título corto («## Diseño») ordena lo que sigue aunque su palabra aparezca en un concepto
+    if (!c || (/^#/.test(l) && c.split(' ').length < 3)) return true
+    return !concepts.some(x => x.includes(c))
+  })
+  return tidyHeadings(kept)
+}
+
+/**
+ * Títulos que no titulan nada: se quita el que se queda sin texto debajo («## Descripción» tras quitar el
+ * concepto repetido) y, si todo son varios títulos, eran datos sueltos («## OP: 26 1376») y pasan a texto normal.
+ */
+function tidyHeadings(lines: string[]) {
+  const isHeading = (l: string) => /^#+\s/.test(l)
+  const content = lines.filter(l => l.trim())
+  if (content.length && content.every(isHeading)) {
+    if (content.length > 1) return cleanBodyText(content.map(l => l.replace(/^#+\s*/, '')).join('\n'))
+    // Un único título: el asunto del trabajo se queda; una palabra suelta («Descripción») no dice nada
+    return comparableText(content[0]!).split(' ').length < 3 ? null : cleanBodyText(content[0])
+  }
+  const out = lines.filter((l, i) => {
+    if (!isHeading(l)) return true
+    const next = lines.slice(i + 1).find(x => x.trim())
+    return !!next && !isHeading(next)
+  })
+  return cleanBodyText(out.join('\n'))
 }
 
 /**

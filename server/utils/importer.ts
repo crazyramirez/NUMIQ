@@ -9,7 +9,7 @@ import { resolveDocumentDate, sourceDateWarning } from '../../shared/utils/sourc
 import type { SourceFileDate } from '../../shared/utils/source-date'
 import { resolveFileDate } from './file-date'
 import { folderSignals } from './doc-read'
-import { currencyWarning, folderMismatch, typeFromFolder } from './extract'
+import { currencyWarning, folderMismatch, typeFromFolder, withoutRepeatedBody } from './extract'
 import { conversionNote, ecbRate, isTrustedSupplier, scaleTaxLines, supplierByNumber } from './expense-review'
 import { reviewKind, reviewNotesOf } from '../../shared/utils/review'
 
@@ -795,8 +795,9 @@ async function commitSales(st: CommitState, item: ItemRow, file: FileRow | null)
       total: d.total,
       paidTotal: paid ? d.total : 0,
       paymentMethod: d.paymentMethod ?? 'transfer',
-      // Texto del cuerpo del original (asunto, alcance, condiciones…) como descripción antes de los conceptos
-      description: plainToRich(d.bodyText),
+      // Texto del cuerpo del original (asunto, alcance, condiciones…) como descripción antes de los conceptos,
+      // sin repetir lo que ya dicen las líneas (lecturas guardadas antes o conceptos editados en la revisión)
+      description: plainToRich(withoutRepeatedBody(d.bodyText, lines.map(l => l.description))),
       rectifiesId: rectified?.id ?? null,
       rectificationCode: rectifying ? 'R1' : null,
       rectificationReason: rectifying && d.rectifiedNumber ? `Rectifica la factura ${d.rectifiedNumber}` : null,
