@@ -459,7 +459,8 @@ const bulkActions = computed<BulkAction[]>(() => [
   font-weight: 520;
 }
 
-.s-label.stat strong {
+.stat strong {
+  margin-top: 4px;
   font-size: var(--text-2xl);
   font-weight: 680;
   letter-spacing: -0.03em;
