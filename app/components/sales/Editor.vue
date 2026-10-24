@@ -1635,7 +1635,7 @@ const R_CODES = [
     display: flex;
     align-items: center;
     gap: var(--s-2);
-    padding: var(--s-3) var(--s-4) calc(var(--s-3) + env(safe-area-inset-bottom));
+    padding: var(--s-3) var(--s-4) calc(var(--s-3) + var(--safe-b));
     background: color-mix(in srgb, var(--surface) 92%, transparent);
     backdrop-filter: blur(14px);
     border-top: 1px solid var(--border);

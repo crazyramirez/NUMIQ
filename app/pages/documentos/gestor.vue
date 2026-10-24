@@ -659,7 +659,7 @@ input[type='checkbox'] {
 
 .actionbar {
   position: sticky;
-  bottom: calc(var(--s-4) + var(--bnav) + env(safe-area-inset-bottom));
+  bottom: calc(var(--s-4) + var(--bnav) + var(--safe-b));
   z-index: var(--z-sticky);
   display: flex;
   align-items: center;

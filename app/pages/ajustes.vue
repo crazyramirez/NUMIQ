@@ -1085,7 +1085,7 @@ fieldset {
 .save-bar {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--s-5) + var(--bnav) + env(safe-area-inset-bottom));
+  bottom: calc(var(--s-5) + var(--bnav) + var(--safe-b));
   z-index: var(--z-overlay);
   display: flex;
   align-items: center;

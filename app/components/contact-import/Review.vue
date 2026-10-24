@@ -705,7 +705,7 @@ input[type='checkbox'] {
   }
 
   .ci-footer {
-    bottom: calc(var(--s-3) + var(--bnav) + env(safe-area-inset-bottom));
+    bottom: calc(var(--s-3) + var(--bnav) + var(--safe-b));
   }
 
   .ci-footer-in {

@@ -64,7 +64,10 @@
   --sidebar-w-collapsed: 68px;
   --topbar-h: 60px;
   /* Barra inferior del móvil: --bnav vale su altura solo cuando está a la vista (html.bnav) */
-  --bnav-h: 64px;
+  --bnav-h: 60px;
+  /* Hueco bajo la barra: la zona segura entera (34 px en iPhone) deja un margen que ninguna app nativa tiene;
+     la etiqueta puede bajar algo más sin tocar la raya de inicio */
+  --safe-b: max(0px, calc(env(safe-area-inset-bottom) - 14px));
   --bnav: 0px;
   --content-max: 1360px;
 

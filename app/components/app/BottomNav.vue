@@ -108,8 +108,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
     align-items: stretch;
-    height: calc(var(--bnav-h) + env(safe-area-inset-bottom));
-    padding: 0 6px env(safe-area-inset-bottom);
+    height: calc(var(--bnav-h) + var(--safe-b));
+    padding: 0 6px var(--safe-b);
     background: color-mix(in srgb, var(--surface) 90%, transparent);
     backdrop-filter: saturate(1.6) blur(16px);
     -webkit-backdrop-filter: saturate(1.6) blur(16px);

@@ -58,7 +58,7 @@ onBeforeUnmount(() => {
 .scroll-top-btn {
   position: fixed;
   right: var(--s-6);
-  bottom: calc(var(--s-6) + var(--bnav) + env(safe-area-inset-bottom));
+  bottom: calc(var(--s-6) + var(--bnav) + var(--safe-b));
   z-index: 45;
   display: inline-grid;
   place-items: center;
@@ -126,7 +126,7 @@ onBeforeUnmount(() => {
 @media (max-width: 767px) {
   .scroll-top-btn {
     right: var(--s-4);
-    bottom: calc(var(--s-4) + var(--bnav) + env(safe-area-inset-bottom));
+    bottom: calc(var(--s-4) + var(--bnav) + var(--safe-b));
     width: 40px;
     height: 40px;
   }

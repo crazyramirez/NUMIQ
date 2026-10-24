@@ -31,7 +31,7 @@ const update = useAppUpdate()
 .toasts {
   position: fixed;
   right: var(--s-5);
-  bottom: calc(var(--s-5) + var(--bnav) + env(safe-area-inset-bottom));
+  bottom: calc(var(--s-5) + var(--bnav) + var(--safe-b));
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;

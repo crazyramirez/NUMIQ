@@ -915,7 +915,7 @@ textarea {
    con el teclado abierto, la de abajo queda bajo él */
 @media (max-width: 767px) {
   .ai-page {
-    height: calc(var(--view-h, 100dvh) - var(--topbar-h) - var(--bnav) - env(safe-area-inset-bottom));
+    height: calc(var(--view-h, 100dvh) - var(--topbar-h) - var(--bnav) - var(--safe-b));
   }
 
   .ai-page.kb {
