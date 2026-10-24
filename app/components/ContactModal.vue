@@ -16,6 +16,7 @@ interface ContactForm {
   kind: 'company' | 'person'
   name: string
   tradeName: string | null
+  contactPerson: string | null
   nif: string | null
   nifType: string
   email: string | null
@@ -45,6 +46,7 @@ const blank = (): ContactForm => ({
   kind: 'company',
   name: props.prefillName?.trim() ?? '',
   tradeName: null,
+  contactPerson: null,
   nif: null,
   nifType: 'nif',
   email: null,
@@ -467,6 +469,8 @@ async function remove() {
 
         <UiInput v-model="form.email" class="c-6" label="Email" type="email" icon="ph:envelope-simple" placeholder="facturas@empresa.es" :error="errors.email" autocomplete="off" />
         <UiInput v-model="form.phone" class="c-6" label="Teléfono" type="tel" icon="ph:phone" placeholder="600 000 000" :error="errors.phone" autocomplete="off" />
+
+        <UiInput v-if="form.kind === 'company'" v-model="form.contactPerson" label="Persona de contacto" icon="ph:user" placeholder="Con quién tratas en la empresa" :error="errors.contactPerson" autocomplete="off" />
 
         <UiInput v-model="form.address" label="Dirección" placeholder="Calle, número, piso" :error="errors.address" autocomplete="off" />
         <UiInput v-model="form.postalCode" class="c-4" label="C. postal" inputmode="numeric" maxlength="10" :error="errors.postalCode" autocomplete="off" />

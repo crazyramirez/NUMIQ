@@ -4,7 +4,7 @@ import { z } from 'zod'
 const query = z.object({
   role: z.enum(['client', 'supplier']).optional(),
   q: z.string().trim().max(100).optional(),
-  limit: z.coerce.number().int().min(1).max(500).default(200),
+  limit: z.coerce.number().int().min(1).max(10_000).default(5000),
 })
 
 export default defineEventHandler(async (event) => {

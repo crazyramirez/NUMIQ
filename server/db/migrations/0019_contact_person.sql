@@ -1,0 +1,1 @@
+ALTER TABLE `contacts` ADD `contact_person` varchar(120);

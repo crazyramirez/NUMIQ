@@ -178,6 +178,7 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
         <p class="sub">{{ t.sub }}</p>
       </div>
       <div class="page-actions">
+        <UiButton icon="ph:upload-simple" compact :to="`${base}/importar`">Importar</UiButton>
         <UiButton variant="primary" icon="ph:plus-bold" compact @click="creating = true">{{ t.add }}</UiButton>
       </div>
     </header>
@@ -227,7 +228,10 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
       </div>
 
       <UiEmpty v-else-if="!rows.length && !q" :icon="isClient ? 'ph:users' : 'ph:storefront'" :title="t.emptyTitle" :text="t.emptyText">
-        <UiButton variant="primary" icon="ph:plus-bold" compact @click="creating = true">{{ t.add }}</UiButton>
+        <div class="empty-actions">
+          <UiButton variant="primary" icon="ph:plus-bold" @click="creating = true">{{ t.add }}</UiButton>
+          <UiButton icon="ph:upload-simple" :to="`${base}/importar`">Importar desde Excel o PDF</UiButton>
+        </div>
       </UiEmpty>
 
       <UiEmpty v-else-if="!rows.length" compact icon="ph:magnifying-glass" title="Sin resultados" :text="`Nada coincide con «${q}».`">
@@ -354,6 +358,13 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
 </template>
 
 <style scoped>
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s-2);
+}
+
 .act-col {
   width: 50px;
   text-align: right;

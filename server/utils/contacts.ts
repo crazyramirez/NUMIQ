@@ -11,6 +11,7 @@ export const contactInputSchema = z.object({
   kind: z.enum(['company', 'person']).default('company'),
   name: z.string().trim().min(1, 'Escribe el nombre o la razón social').max(200),
   tradeName: optional(200),
+  contactPerson: optional(120),
   nif: optional(20).transform(v => (v ? normalizeNif(v) : null)),
   nifType: z.enum(['nif', 'vat_eu', 'passport', 'other']).default('nif'),
   email: optionalEmailField(),

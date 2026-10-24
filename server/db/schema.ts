@@ -188,6 +188,8 @@ export const contacts = mysqlTable('contacts', {
   kind: mysqlEnum('kind', ['company', 'person']).notNull().default('company'),
   name: varchar('name', { length: 200 }).notNull(),
   tradeName: varchar('trade_name', { length: 200 }),
+  /** Persona con la que se trata dentro de la empresa */
+  contactPerson: varchar('contact_person', { length: 120 }),
   nif: varchar('nif', { length: 20 }),
   /** NIF español, NIF-IVA intracomunitario (VIES), pasaporte u otro documento extranjero */
   nifType: mysqlEnum('nif_type', ['nif', 'vat_eu', 'passport', 'other']).notNull().default('nif'),

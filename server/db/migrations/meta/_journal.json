@@ -134,6 +134,13 @@
       "when": 1792852422794,
       "tag": "0018_auth_push_approvals",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1792857463560,
+      "tag": "0019_contact_person",
+      "breakpoints": true
     }
   ]
 }

@@ -33,6 +33,7 @@ interface ContactFull {
   kind: 'company' | 'person'
   name: string
   tradeName: string | null
+  contactPerson: string | null
   nif: string | null
   nifType: string
   email: string | null
@@ -538,6 +539,10 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
             <UiButton size="sm" variant="ghost" icon="ph:pencil-simple" @click="editing = true">Editar</UiButton>
           </template>
           <dl class="dl">
+            <div v-if="c.contactPerson">
+              <dt>Persona de contacto</dt>
+              <dd>{{ c.contactPerson }}</dd>
+            </div>
             <div v-if="c.email">
               <dt>Email</dt>
               <dd><a :href="`mailto:${c.email}`" class="link">{{ c.email }}</a></dd>
