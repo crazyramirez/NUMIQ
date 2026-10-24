@@ -1,5 +1,27 @@
+import { spawnSync } from 'node:child_process'
 import { chownSync, existsSync, readdirSync, statSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+
+/** Node de Plesk: la consola SSH suele traer el del sistema (p. ej. 18), demasiado antiguo */
+const PLESK_NODE_BINS = [24, 25, 22].map(v => `/opt/plesk/node/${v}/bin`)
+
+/** Con un Node anterior al 22 se relanza el mismo comando con el Node de Plesk, si lo hay */
+function ensureNode() {
+  if (Number(process.versions.node.split('.')[0]) >= 22) return
+  const bin = PLESK_NODE_BINS.find(dir => existsSync(join(dir, 'npx')))
+  if (!bin || process.env.NUMIQ_NODE_REEXEC) {
+    console.error(`❌ Node ${process.versions.node} es demasiado antiguo: NUMIQ necesita Node 22.22 o superior.`)
+    console.error('   En Plesk: export PATH=/opt/plesk/node/24/bin:$PATH y repite el comando.')
+    process.exit(1)
+  }
+  console.log(`• Node ${process.versions.node} en la consola: se usa el de Plesk (${bin}/node)`)
+  const r = spawnSync(join(bin, 'npx'), ['--yes', 'tsx', ...process.argv.slice(1)], {
+    stdio: 'inherit',
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, NUMIQ_NODE_REEXEC: '1' },
+  })
+  if (r.error) console.error(`❌ No se pudo lanzar ${bin}/npx: ${r.error.message}`)
+  process.exit(r.status ?? 1)
+}
 
 /**
  * Datos de conexión para clone:export / clone:import. En el servidor las variables del panel de
@@ -7,6 +29,7 @@ import { join, resolve } from 'node:path'
  * Sin datos de la base se para, en vez de intentar el MariaDB local de desarrollo (127.0.0.1:3308).
  */
 export function loadCloneEnv() {
+  ensureNode()
   const file = resolve(process.cwd(), '.env')
   if (existsSync(file)) process.loadEnvFile(file)
   const e = process.env
