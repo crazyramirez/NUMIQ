@@ -70,10 +70,6 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
           Así va tu negocio este trimestre<template v-if="quarterRangeLabel"> ({{ quarterRangeLabel }})</template>.
         </p>
       </div>
-      <div class="page-actions">
-        <UiButton icon="ph:wallet" to="/gastos?nuevo=1">Añadir gasto</UiButton>
-        <UiButton variant="primary" icon="ph:plus-bold" to="/facturas/nueva">Nueva factura</UiButton>
-      </div>
     </header>
 
     <!-- Error -->
@@ -1044,8 +1040,6 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
     display: block;
   }
 
-  /* En el móvil crear va en el «+» de la barra inferior */
-  .page-head .page-actions,
   .page-head .sub {
     display: none;
   }
