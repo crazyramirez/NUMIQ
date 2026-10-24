@@ -86,13 +86,12 @@ export const NAV: readonly NavArea[][] = Object.freeze([
       ],
     },
     {
-      key: 'bandeja',
-      label: 'Bandeja',
-      to: '/bandeja',
-      icon: 'ph:tray',
-      keywords: 'bandeja entrada correo email facturas recibidas documentos',
+      key: 'documentos',
+      label: 'Documentos',
+      to: '/documentos/archivo',
+      icon: 'ph:folder-simple',
+      keywords: 'documentos archivo importar subir',
       tabs: [
-        { label: 'Bandeja', to: '/bandeja', icon: 'ph:tray', keywords: 'bandeja entrada correo email facturas recibidas' },
         { label: 'Archivo', to: '/documentos/archivo', icon: 'ph:folder-simple', keywords: 'archivo trimestre pedidos albaranes contratos documentos' },
         { label: 'Importar', to: '/documentos', icon: 'ph:upload-simple', keywords: 'importar subir zip excel otro programa migrar' },
       ],

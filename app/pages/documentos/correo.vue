@@ -1,4 +1,4 @@
 <script setup lang="ts">
-// El correo con facturas vive ahora en la Bandeja
-await navigateTo('/bandeja', { replace: true })
+// El correo con facturas ya no tiene pantalla: los enlaces antiguos van a Documentos
+await navigateTo('/documentos/archivo', { replace: true })
 </script>

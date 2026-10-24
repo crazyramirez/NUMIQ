@@ -12,7 +12,7 @@ watch(() => route.fullPath, () => (navOpen.value = false))
 const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path === to || route.path.startsWith(`${to}/`))
 // Área de la pantalla actual: Ventas sigue marcada en Presupuestos, Impuestos en Gestoría…
 const activeArea = computed(() => areaOf(route.path).area?.key ?? null)
-// Contador de la Bandeja: lo que espera una decisión
+// Contador de Documentos: importaciones leídas por la IA que esperan confirmación
 const inbox = useInboxCount()
 watch(() => route.path, () => inbox.refresh(), { immediate: true })
 
@@ -92,7 +92,7 @@ const userItems = computed<MenuItem[]>(() => [
           >
             <Icon :name="activeArea === item.key ? `${item.icon}-fill` : item.icon" class="ic" aria-hidden="true" />
             <span v-if="!mini" class="grow truncate">{{ item.label }}</span>
-            <span v-if="item.key === 'bandeja' && inbox.count.value" class="badge-n num" :aria-label="`${inbox.count.value} por revisar`">{{ inbox.count.value > 99 ? '99+' : inbox.count.value }}</span>
+            <span v-if="item.key === 'documentos' && inbox.count.value" class="badge-n num" :aria-label="`${inbox.count.value} por revisar`">{{ inbox.count.value > 99 ? '99+' : inbox.count.value }}</span>
             <span v-if="!mini && item.soon" class="soon">Pronto</span>
           </NuxtLink>
         </div>

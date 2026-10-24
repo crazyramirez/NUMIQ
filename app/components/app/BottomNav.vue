@@ -12,7 +12,7 @@ const { open: openScan } = useScan()
 const readOnly = computed(() => me.value?.company?.role === 'advisor')
 const area = computed(() => areaOf(route.path).area?.key ?? null)
 const isMore = computed(() => !!area.value && !['inicio', 'ventas', 'gastos'].includes(area.value))
-// Punto en «Más» si hay algo en la Bandeja
+// Punto en «Más» si hay importaciones por confirmar en Documentos
 const inbox = useInboxCount()
 
 const sheet = ref(false)

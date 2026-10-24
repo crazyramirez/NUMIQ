@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
-  const { company, user, role } = await requireCompany(event, 'advisor')
+  const { company, role } = await requireCompany(event, 'advisor')
   const now = new Date()
   const year = now.getFullYear()
   const quarter = quarterOf(now)
@@ -51,7 +51,7 @@ export default defineEventHandler(async (event) => {
   const concepts = await salesConcepts(recent)
 
   // Lo que hay que hacer hoy, cada cosa con su botón (Inicio lo pone lo primero)
-  const tasks = await todayTasks(company, now, { user, role })
+  const tasks = await todayTasks(company, now, { role })
   // Tu dinero: saldo del banco menos lo que es de Hacienda y lo que debes
   const money = await freeMoney(company, now)
 

@@ -22,7 +22,7 @@ const daysTo = (iso: string, today: string) => Math.round((Date.parse(`${iso}T12
  * Lo que hay que hacer hoy, de lo más urgente a lo menos, cada cosa con su botón.
  * Solo tareas con algo pendiente de verdad: si no hay nada, la lista viene vacía («todo al día»).
  */
-export async function todayTasks(company: Company, now = new Date(), viewer?: { user: { email: string }, role: string }): Promise<TodayTask[]> {
+export async function todayTasks(company: Company, now = new Date(), viewer?: { role: string }): Promise<TodayTask[]> {
   const db = useDb()
   const today = toISODate(now)
   const s = tables.salesDocuments
@@ -122,23 +122,27 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
     })
   }
 
-  // Lo que ha llegado y espera una decisión (correo, importaciones, gastos leídos por la IA)
-  if (viewer) {
-    const inbox = await inboxCount(company, viewer.user, viewer.role)
-    if (inbox.total > 0) {
-      rest.push({
-        key: 'inbox',
-        icon: 'ph:tray',
-        tone: 'brand',
-        title: `${plural(inbox.total, 'cosa', 'cosas')} en la bandeja`,
-        detail: [
-          inbox.mail ? plural(inbox.mail, 'correo con factura', 'correos con facturas') : null,
-          inbox.imports ? plural(inbox.imports, 'importación por confirmar', 'importaciones por confirmar') : null,
-          inbox.expenses ? `${plural(inbox.expenses, 'gasto', 'gastos')} por revisar` : null,
-        ].filter(Boolean).join(' · '),
-        action: { label: 'Revisar', to: '/bandeja' },
-      })
-    }
+  // Lo que la IA ha leído y espera una decisión
+  const review = await inboxCount(company)
+  if (review.imports > 0) {
+    rest.push({
+      key: 'imports',
+      icon: 'ph:upload-simple',
+      tone: 'brand',
+      title: plural(review.imports, 'importación por confirmar', 'importaciones por confirmar'),
+      detail: 'La IA ya ha leído los documentos: revisa y confirma',
+      action: { label: 'Revisar', to: '/documentos' },
+    })
+  }
+  if (review.expenses > 0) {
+    rest.push({
+      key: 'review',
+      icon: 'ph:sparkle',
+      tone: 'brand',
+      title: `${plural(review.expenses, 'gasto leído', 'gastos leídos')} por la IA por revisar`,
+      detail: 'Comprueba importes y categoría; un toque y listo',
+      action: { label: 'Revisar', to: '/gastos?estado=review&periodo=all' },
+    })
   }
 
   if (bank!.n > 0) {

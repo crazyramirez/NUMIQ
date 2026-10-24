@@ -117,12 +117,8 @@ async function run() {
             <span>{{ n(plan.bank, 'movimiento del banco conciliado vuelve', 'movimientos del banco conciliados vuelven') }} a pendiente.</span>
           </p>
         </div>
-        <div v-if="kept.length || plan.mails" class="note info">
+        <div v-if="kept.length" class="note info">
           <p v-for="k in kept" :key="k"><Icon name="ph:shield-check" class="n-ic" aria-hidden="true" /><span>{{ k }}</span></p>
-          <p v-if="plan.mails">
-            <Icon name="ph:envelope-simple" class="n-ic" aria-hidden="true" />
-            <span>{{ plan.mails === 1 ? 'El correo vuelve' : `Los ${plan.mails} correos vuelven` }} a la bandeja para importarlo{{ plan.mails === 1 ? '' : 's' }} otra vez.</span>
-          </p>
         </div>
       </template>
     </div>

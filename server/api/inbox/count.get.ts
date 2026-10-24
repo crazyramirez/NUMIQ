@@ -1,5 +1,5 @@
-/** Contador de la bandeja para el menú: cuántas cosas esperan una decisión */
+/** Contador de Documentos para el menú: importaciones que esperan confirmación */
 export default defineEventHandler(async (event) => {
-  const { company, user, role } = await requireCompany(event, 'advisor')
-  return inboxCount(company, user, role)
+  const { company } = await requireCompany(event, 'advisor')
+  return inboxCount(company)
 })

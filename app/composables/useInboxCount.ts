@@ -1,8 +1,8 @@
 import { createSharedComposable } from '@vueuse/core'
 
 /**
- * Cuántas cosas esperan en la Bandeja (contador del menú). Se refresca al navegar, como mucho
- * cada 30 segundos, o al momento tras una acción en la propia bandeja.
+ * Cuántas importaciones esperan confirmación (contador de Documentos en el menú). Se refresca
+ * al navegar, como mucho cada 30 segundos.
  */
 export const useInboxCount = createSharedComposable(() => {
   const count = useState('inboxCount', () => 0)
@@ -15,7 +15,7 @@ export const useInboxCount = createSharedComposable(() => {
       count.value = (await $fetch<{ total: number }>('/api/inbox/count')).total
     }
     catch {
-      // Sin contador no pasa nada: la bandeja sigue ahí
+      // Sin contador no pasa nada: Documentos sigue ahí
     }
   }
 
