@@ -2,6 +2,10 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { restoreFullClone } from '../server/utils/clone.ts'
+import { dbTarget } from '../server/utils/db.ts'
+import { fixUploadsOwner, loadCloneEnv, uploadsDir } from './clone-env.mjs'
+
+loadCloneEnv()
 
 const fileArg = process.argv[2]
 if (!fileArg) {
@@ -16,11 +20,16 @@ if (!existsSync(filePath)) {
   process.exit(1)
 }
 
+const target = dbTarget()
 console.log(`• Leyendo archivo de clonación: ${filePath}…`)
+console.log(`• Base de datos destino: ${target.user}@${target.socketPath ?? `${target.host}:${target.port}`}/${target.database}`)
+console.log(`• Carpeta de archivos  : ${uploadsDir()}`)
 try {
   const data = readFileSync(filePath)
   console.log(`• Restaurando base de datos y archivos en el servidor…`)
   const result = await restoreFullClone(data)
+  const owner = fixUploadsOwner()
+  if (owner) console.log(`• Archivos devueltos al usuario del dominio (uid ${owner.uid})`)
 
   console.log('════════════════════════════════════════════════════════════════════')
   console.log(' ✔ CLONACIÓN RESTAURADA CON ÉXITO')
@@ -33,6 +42,7 @@ try {
   process.exit(0)
 }
 catch (err) {
+  fixUploadsOwner()
   console.error('❌ Error al restaurar el clon:', err)
   process.exit(1)
 }

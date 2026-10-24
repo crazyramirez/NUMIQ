@@ -2,6 +2,9 @@
 import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { buildFullClone } from '../server/utils/clone.ts'
+import { loadCloneEnv } from './clone-env.mjs'
+
+loadCloneEnv()
 
 console.log('• Conectando a la base de datos y preparando clonación completa…')
 try {

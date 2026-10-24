@@ -257,7 +257,7 @@ Se ejecutan dentro del propio servidor Nitro (`server/plugins`):
 
 Si la base no conecta, `https://tu-dominio/api/me` responde 503 con la causa (contraseña incorrecta, base inexistente…).
 
-Para mover una instalación con todos sus datos usa `npm run clone:export` en el origen y `npm run clone:import <zip>` en el destino.
+Para mover una instalación con todos sus datos usa `npm run clone:export` en el origen y `npm run clone:import <zip>` en el destino. Por SSH las variables del panel no llegan a la consola: los dos comandos leen los `DB_*` (y `NUXT_UPLOADS_DIR`, si se cambió) de un `.env` en la carpeta de la app.
 
 ---
 
