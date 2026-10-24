@@ -65,7 +65,7 @@ export default defineNuxtConfig({
       link: [
         { rel: 'icon', type: 'image/svg+xml', href: '/icon.svg' },
         { rel: 'manifest', href: '/manifest.webmanifest' },
-        { rel: 'apple-touch-icon', href: '/icons/apple-touch-icon.png' },
+        { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
       ],
       // Tema antes del primer pintado: sin destello claro en modo oscuro
       script: [{
