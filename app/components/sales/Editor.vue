@@ -371,6 +371,37 @@ const title = computed(() => {
 })
 useHead({ title: `${title.value} · NUMIQ` })
 
+// ─── Pasos en el móvil: Cliente → Conceptos → Revisar ───
+// La hoja entera no cabe en un móvil: se rellena por partes y al final se ve completa
+const STEPS = [
+  { n: 1, label: 'Cliente' },
+  { n: 2, label: 'Conceptos' },
+  { n: 3, label: 'Revisar' },
+] as const
+const step = ref<1 | 2 | 3>(doc.value ? 3 : form.contactId ? 2 : 1)
+function goStep(n: 1 | 2 | 3) {
+  step.value = n
+  if (import.meta.client) window.scrollTo({ top: 0, behavior: 'smooth' })
+}
+function nextStep() {
+  if (step.value === 1) {
+    errors.contact = null
+    if (!form.contactId && !isQuote.value) {
+      errors.contact = 'Elige el cliente de la factura'
+      return
+    }
+    goStep(2)
+  }
+  else if (step.value === 2) {
+    errors.lines = validLines.value.length ? null : 'Añade al menos un concepto'
+    if (errors.lines) {
+      toast.error('Falta un concepto', 'Escribe qué facturas o búscalo en tu catálogo.')
+      return
+    }
+    goStep(3)
+  }
+}
+
 function validate(issue: boolean) {
   errors.contact = null
   errors.lines = null
@@ -385,6 +416,9 @@ function validate(issue: boolean) {
 async function save(issue: boolean) {
   if (!validate(issue)) {
     toast.error('Revisa la factura', errors.contact ?? errors.lines ?? undefined)
+    // En el móvil, al paso donde está lo que falta
+    if (errors.contact) goStep(1)
+    else if (errors.lines) goStep(2)
     return
   }
   if (issue && !isQuote.value) {
@@ -500,7 +534,7 @@ const R_CODES = [
 </script>
 
 <template>
-  <div class="editor">
+  <div class="editor" :data-step="step">
     <!-- Barra superior -->
     <div class="ed-bar">
       <div class="ed-bar-in">
@@ -523,6 +557,25 @@ const R_CODES = [
         </div>
       </div>
     </div>
+
+    <!-- Pasos del móvil -->
+    <nav class="m-steps" aria-label="Pasos">
+      <button
+        v-for="s in STEPS"
+        :key="s.n"
+        type="button"
+        class="m-step"
+        :class="{ on: step === s.n, done: step > s.n }"
+        :aria-current="step === s.n ? 'step' : undefined"
+        @click="goStep(s.n)"
+      >
+        <span class="m-step-n num" aria-hidden="true">
+          <Icon v-if="step > s.n" name="ph:check-bold" />
+          <template v-else>{{ s.n }}</template>
+        </span>
+        {{ s.label }}
+      </button>
+    </nav>
 
     <!-- Mide el espacio real (sin el menú lateral) para colocar la hoja y el panel -->
     <div class="ed-fit">
@@ -760,7 +813,8 @@ const R_CODES = [
       <UiButton :loading="saving === 'draft'" :disabled="!!saving" @click="save(false)">
         {{ isAlreadyIssued || (isQuote && doc && doc.status !== 'draft') ? 'Guardar cambios' : 'Guardar' }}
       </UiButton>
-      <UiButton v-if="!isAlreadyIssued && !(isQuote && doc && doc.status !== 'draft')" variant="primary" :loading="saving === 'issue'" :disabled="!!saving" @click="save(true)">Emitir</UiButton>
+      <UiButton v-if="step < 3" variant="primary" icon-right="ph:arrow-right" @click="nextStep">Siguiente</UiButton>
+      <UiButton v-else-if="!isAlreadyIssued && !(isQuote && doc && doc.status !== 'draft')" variant="primary" :loading="saving === 'issue'" :disabled="!!saving" @click="save(true)">Emitir</UiButton>
     </div>
 
     <ContactModal v-model="contactModal" role="client" :contact-id="editContactId" :prefill-name="prefillName" @saved="onContactSaved" />
@@ -1272,6 +1326,10 @@ const R_CODES = [
   display: none;
 }
 
+.m-steps {
+  display: none;
+}
+
 /* Sin sitio para la hoja y el panel a la vez (p. ej. 1280 px con el menú abierto): el panel baja */
 @container editor (max-width: 1180px) {
   .ed-body {
@@ -1286,6 +1344,103 @@ const R_CODES = [
 }
 
 @media (max-width: 767px) {
+  /* Pasos: 1 fechas y cliente · 2 conceptos · 3 la factura entera con sus opciones */
+  .m-steps {
+    position: sticky;
+    top: calc(var(--topbar-h) + 64px);
+    z-index: calc(var(--z-sticky) - 2);
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding: 8px var(--s-3);
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .m-step {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 36px;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-3);
+    border-radius: var(--r-full);
+  }
+
+  .m-step.on {
+    color: var(--brand-text);
+    background: var(--brand-soft);
+  }
+
+  .m-step-n {
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-3);
+    background: var(--surface-sunken);
+    border-radius: 50%;
+  }
+
+  .m-step.on .m-step-n {
+    color: var(--on-brand);
+    background: var(--brand);
+  }
+
+  .m-step.done .m-step-n {
+    color: var(--on-brand);
+    background: var(--success-solid);
+  }
+
+  .editor[data-step='1'] .paper-head,
+  .editor[data-step='1'] .paper-party:not(.client),
+  .editor[data-step='1'] .desc-block,
+  .editor[data-step='1'] .lines,
+  .editor[data-step='1'] .repeat,
+  .editor[data-step='1'] .paper-bottom,
+  .editor[data-step='1'] .paper-pay,
+  .editor[data-step='1'] .side,
+  .editor[data-step='2'] .paper-head,
+  .editor[data-step='2'] .paper-meta,
+  .editor[data-step='2'] .paper-parties,
+  .editor[data-step='2'] .rect-box,
+  .editor[data-step='2'] .paper-bottom,
+  .editor[data-step='2'] .paper-pay,
+  .editor[data-step='2'] .side {
+    display: none;
+  }
+
+  .editor[data-step='1'] .paper-meta,
+  .editor[data-step='2'] .repeat,
+  .editor[data-step='2'] .desc-block {
+    margin-top: 0;
+  }
+
+  .editor[data-step='2'] .repeat {
+    margin-bottom: 20px;
+  }
+
+  .editor[data-step='1'] .paper-parties {
+    margin-top: 24px;
+  }
+
+  .repeat {
+    flex-wrap: wrap;
+  }
+
+  .repeat > .grow {
+    flex-basis: calc(100% - 32px);
+  }
+
+  .repeat > :last-child {
+    width: 100%;
+  }
+
   .ed-bar-in,
   .ed-body {
     padding-left: var(--s-3);
