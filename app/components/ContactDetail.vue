@@ -187,6 +187,132 @@ const address = computed(() => {
 const docPath = (d: DocRow) => (d.kind === 'quote' || d.kind === 'proforma' ? `/presupuestos/${d.id}` : `/facturas/${d.id}`)
 const docStatus = (d: DocRow) => salesStatus(d.kind, d.status, isOpen(d.status) && !!d.dueDate && d.dueDate < today)
 const expenseStatus = (e: ExpenseRow) => e.status === 'paid' ? { label: 'Pagado', tone: 'success' as const } : e.status === 'partial' ? { label: 'Pago parcial', tone: 'warning' as const } : { label: 'Pendiente', tone: 'warning' as const }
+// ─── Documentos de la ficha: una sola forma de fila para facturas, presupuestos y gastos ───
+
+type EntryState = 'paid' | 'accepted' | 'open' | 'overdue' | 'draft' | 'closed'
+interface Entry {
+  id: number
+  path: string
+  title: string
+  number: string | null
+  date: string
+  due: string | null
+  /** «vence en 5 días», «venció hace 3 días»: solo lo que sigue abierto */
+  dueRel: string | null
+  /** Lo mismo, corto para ir junto al estado en el móvil: «vence en 5 días», «hace 3 días» */
+  dueShort: string | null
+  status: { label: string, tone: ReturnType<typeof docStatus>['tone'] }
+  state: EntryState
+  icon: string
+  amount: number
+  note: string | null
+}
+
+const filter = ref('all')
+watch(tab, () => (filter.value = 'all'))
+
+const dueText = (iso: string) => (daysUntil(iso) >= 0 ? `vence ${relDays(iso)}` : `venció ${relDays(iso)}`)
+
+const entries = computed<Entry[]>(() => {
+  if (tab.value === 'gastos') {
+    return expenses.value.map(e => ({
+      id: e.id,
+      path: `/gastos?ver=${e.id}`,
+      title: e.description || 'Gasto',
+      number: e.number,
+      date: e.issueDate,
+      due: null,
+      dueRel: null,
+      dueShort: null,
+      status: expenseStatus(e),
+      state: e.status === 'paid' ? 'paid' : 'open',
+      icon: 'ph:wallet',
+      amount: e.total,
+      note: null,
+    }))
+  }
+  const isQ = tab.value === 'presupuestos'
+  return (isQ ? quotes.value : invoices.value).map((d) => {
+    const overdue = isOpen(d.status) && !!d.dueDate && d.dueDate < today
+    const state: EntryState = d.status === 'draft'
+      ? 'draft'
+      : overdue
+        ? 'overdue'
+        : ['paid', 'accepted', 'invoiced'].includes(d.status)
+            ? (isQ ? 'accepted' : 'paid')
+            : ['cancelled', 'rejected', 'expired'].includes(d.status) ? 'closed' : 'open'
+    return {
+      id: d.id,
+      path: docPath(d),
+      title: d.conceptPreview || d.number || 'Borrador',
+      number: d.number,
+      date: d.issueDate,
+      due: d.dueDate,
+      dueRel: !isQ && isOpen(d.status) && d.dueDate ? dueText(d.dueDate) : null,
+      dueShort: !isQ && isOpen(d.status) && d.dueDate ? (overdue ? relDays(d.dueDate) : dueText(d.dueDate)) : null,
+      status: docStatus(d),
+      state,
+      icon: isQ ? 'ph:file-text' : 'ph:receipt',
+      // Presupuestos, por su base (rotulada); facturas, por su importe total
+      amount: isQ ? d.taxBase : d.total,
+      note: isQ ? 'base imponible' : d.status === 'partial' ? `pend. ${eur(d.total - d.paidTotal)}` : null,
+    }
+  })
+})
+
+const isPending = (e: Entry) => e.state === 'open' || e.state === 'overdue'
+const FILTERS: Record<string, Array<{ value: string, label: string, tone?: string, test?: (e: Entry) => boolean }>> = {
+  facturas: [
+    { value: 'all', label: 'Todas' },
+    { value: 'open', label: 'Pendientes', test: isPending },
+    { value: 'overdue', label: 'Vencidas', tone: 'danger', test: e => e.state === 'overdue' },
+  ],
+  presupuestos: [
+    { value: 'all', label: 'Todos' },
+    { value: 'open', label: 'Abiertos', test: isPending },
+    { value: 'accepted', label: 'Aceptados', test: e => e.state === 'accepted' },
+  ],
+  gastos: [
+    { value: 'all', label: 'Todos' },
+    { value: 'open', label: 'Pendientes', test: isPending },
+    { value: 'paid', label: 'Pagados', test: e => e.state === 'paid' },
+  ],
+}
+
+// Solo los filtros que de verdad separan algo: ni vacíos ni con todo (además de «Todas»)
+const filters = computed(() => (FILTERS[tab.value] ?? [])
+  .map(f => ({ ...f, count: f.test ? entries.value.filter(f.test).length : entries.value.length }))
+  .filter(f => f.value === 'all' || (f.count > 0 && f.count < entries.value.length)))
+
+const shown = computed(() => {
+  const f = (FILTERS[tab.value] ?? []).find(x => x.value === filter.value)
+  return f?.test ? entries.value.filter(f.test) : entries.value
+})
+
+// Por años (la lista ya viene de más reciente a más antigua); el total no cuenta borradores ni anulados
+const groups = computed(() => {
+  const out: Array<{ year: string, items: Entry[], total: number }> = []
+  for (const e of shown.value) {
+    const year = e.date.slice(0, 4)
+    let g = out.find(x => x.year === year)
+    if (!g) out.push(g = { year, items: [], total: 0 })
+    g.items.push(e)
+    if (e.state !== 'draft' && e.state !== 'closed') g.total += e.amount
+  }
+  return out
+})
+
+const dueLabel = computed(() => (tab.value === 'facturas' ? 'Vencimiento' : tab.value === 'presupuestos' ? 'Válido hasta' : null))
+const amountLabel = computed(() => (tab.value === 'presupuestos' ? 'Base imponible' : 'Total'))
+const unit = computed(() => (tab.value === 'facturas' ? ['factura', 'facturas'] : tab.value === 'presupuestos' ? ['presupuesto', 'presupuestos'] : ['gasto', 'gastos']))
+
+const emptyOf = computed(() => {
+  const id = c.value?.id
+  if (tab.value === 'gastos') return { icon: 'ph:wallet', title: 'Sin gastos todavía', text: 'Registra sus facturas para controlar lo que te cuesta.', to: `/gastos?nuevo=1&proveedor=${id}`, cta: 'Registrar gasto' }
+  if (tab.value === 'presupuestos') return { icon: 'ph:file-text', title: 'Sin presupuestos todavía', text: 'Cuando le envíes uno aparecerá aquí con su estado.', to: `/presupuestos/nuevo?cliente=${id}`, cta: 'Crear presupuesto' }
+  return { icon: 'ph:receipt', title: 'Sin facturas todavía', text: 'Cuando emitas una aparecerá aquí con su estado de cobro.', to: `/facturas/nueva?cliente=${id}`, cta: 'Crear factura' }
+})
+
 const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', passport: 'Pasaporte', other: 'Documento' }
 </script>
 
@@ -290,115 +416,110 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
             <h2 v-else class="section-title">{{ tabs[0]?.label ?? 'Documentos' }}</h2>
           </template>
 
-          <template v-if="tab === 'facturas' || tab === 'presupuestos'">
-            <UiEmpty
-              v-if="!(tab === 'facturas' ? invoices : quotes).length"
-              compact
-              :icon="tab === 'facturas' ? 'ph:receipt' : 'ph:file-text'"
-              :title="tab === 'facturas' ? 'Sin facturas todavía' : 'Sin presupuestos todavía'"
-              text="Cuando emitas uno aparecerá aquí con su estado de cobro."
-            >
-              <UiButton variant="soft" icon="ph:plus-bold" :to="tab === 'facturas' ? `/facturas/nueva?cliente=${c.id}` : `/presupuestos/nuevo?cliente=${c.id}`">
-                {{ tab === 'facturas' ? 'Crear factura' : 'Crear presupuesto' }}
-              </UiButton>
-            </UiEmpty>
-            <!-- Móvil: concepto entero; debajo, nº, fecha, estado e importe -->
-            <ul v-if="(tab === 'facturas' ? invoices : quotes).length" class="mob-list">
-              <li v-for="d in (tab === 'facturas' ? invoices : quotes)" :key="d.id">
-                <UiListRow :to="docPath(d)">
-                  <template #title>{{ d.conceptPreview || d.number || 'Borrador' }}</template>
-                  <template #info>
-                    <template v-if="d.number"><span class="mono">{{ d.number }}</span> · </template>{{ fdate(d.issueDate) }}
-                  </template>
-                  <template #status>
-                    <UiBadge :tone="docStatus(d).tone" size="sm" dot>{{ docStatus(d).label }}</UiBadge>
-                  </template>
-                  <template #amount>
-                    {{ eur(tab === 'facturas' ? d.total : d.taxBase) }}
-                    <small v-if="tab !== 'facturas'">base imponible</small>
-                  </template>
-                </UiListRow>
-              </li>
-            </ul>
-            <div v-if="(tab === 'facturas' ? invoices : quotes).length" class="table-wrap desk-table">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Número</th>
-                    <th>Fecha</th>
-                    <th class="hide-sm">{{ tab === 'facturas' ? 'Vencimiento' : 'Válido hasta' }}</th>
-                    <th>Estado</th>
-                    <th class="r">{{ tab === 'facturas' ? 'Total' : 'Base imponible' }}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="d in (tab === 'facturas' ? invoices : quotes)"
-                    :key="d.id"
-                    class="clickable"
-                    tabindex="0"
-                    @click="navigateTo(docPath(d))"
-                    @keydown.enter="navigateTo(docPath(d))"
-                  >
-                    <td class="strong mono">{{ d.number ?? 'Borrador' }}</td>
-                    <td class="muted">{{ fdate(d.issueDate) }}</td>
-                    <td class="muted hide-sm">{{ d.dueDate ? fdate(d.dueDate) : '—' }}</td>
-                    <td><UiBadge :tone="docStatus(d).tone" dot>{{ docStatus(d).label }}</UiBadge></td>
-                    <td class="r num strong">{{ eur(tab === 'facturas' ? d.total : d.taxBase) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </template>
+          <UiEmpty v-if="!entries.length" compact :icon="emptyOf.icon" :title="emptyOf.title" :text="emptyOf.text">
+            <UiButton variant="soft" icon="ph:plus-bold" :to="emptyOf.to">{{ emptyOf.cta }}</UiButton>
+          </UiEmpty>
 
           <template v-else>
-            <UiEmpty v-if="!expenses.length" compact icon="ph:wallet" title="Sin gastos todavía" text="Registra sus facturas para controlar lo que te cuesta.">
-              <UiButton variant="soft" icon="ph:plus-bold" :to="`/gastos?nuevo=1&proveedor=${c.id}`">Registrar gasto</UiButton>
-            </UiEmpty>
-            <ul v-if="expenses.length" class="mob-list">
-              <li v-for="e in expenses" :key="e.id">
-                <UiListRow :to="`/gastos?ver=${e.id}`">
-                  <template #title>{{ e.description || 'Gasto' }}</template>
-                  <template #info>
-                    <template v-if="e.number"><span class="mono">{{ e.number }}</span> · </template>{{ fdate(e.issueDate) }}
-                  </template>
-                  <template #status>
-                    <UiBadge :tone="expenseStatus(e).tone" size="sm" dot>{{ expenseStatus(e).label }}</UiBadge>
-                  </template>
-                  <template #amount>{{ eur(e.total) }}</template>
-                </UiListRow>
-              </li>
-            </ul>
-            <div v-if="expenses.length" class="table-wrap desk-table">
-              <table class="table">
-                <thead>
-                  <tr>
-                    <th>Fecha</th>
-                    <th>Concepto</th>
-                    <th>Estado</th>
-                    <th class="r">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="e in expenses"
-                    :key="e.id"
-                    class="clickable"
-                    tabindex="0"
-                    @click="navigateTo(`/gastos?ver=${e.id}`)"
-                    @keydown.enter="navigateTo(`/gastos?ver=${e.id}`)"
-                  >
-                    <td class="muted">{{ fdate(e.issueDate) }}</td>
-                    <td>
-                      <span class="strong">{{ e.description || 'Gasto' }}</span>
-                      <span v-if="e.number" class="sub mono">{{ e.number }}</span>
-                    </td>
-                    <td><UiBadge :tone="expenseStatus(e).tone" dot>{{ expenseStatus(e).label }}</UiBadge></td>
-                    <td class="r num strong">{{ eur(e.total) }}</td>
-                  </tr>
-                </tbody>
-              </table>
+            <!-- Filtros rápidos con contador -->
+            <div v-if="filters.length > 1" class="doc-filters" role="group" aria-label="Filtrar la lista">
+              <button
+                v-for="f in filters"
+                :key="f.value"
+                type="button"
+                class="fchip"
+                :class="[f.tone, { on: filter === f.value }]"
+                :aria-pressed="filter === f.value"
+                @click="filter = f.value"
+              >
+                {{ f.label }} <span class="n num">{{ f.count }}</span>
+              </button>
             </div>
+
+            <UiEmpty v-if="!shown.length" compact icon="ph:funnel" title="Nada en este filtro">
+              <UiButton size="sm" @click="filter = 'all'">Ver todo</UiButton>
+            </UiEmpty>
+
+            <template v-else>
+              <!-- Móvil: agrupado por año; concepto entero y, debajo, nº, fecha, estado e importe -->
+              <div class="mob-list">
+                <section v-for="g in groups" :key="g.year" class="grp" :aria-label="g.year">
+                  <header class="grp-h">
+                    <span class="grp-y">{{ g.year }}</span>
+                    <span class="grp-s num">{{ g.items.length }} · {{ eur(g.total, false) }}</span>
+                  </header>
+                  <ul>
+                    <li v-for="e in g.items" :key="e.id">
+                      <UiListRow :to="e.path">
+                        <template #lead>
+                          <span class="st-ic" :class="e.state" aria-hidden="true"><Icon :name="e.icon" /></span>
+                        </template>
+                        <template #title>{{ e.title }}</template>
+                        <template #info>
+                          <template v-if="e.number && e.number !== e.title"><span class="mono">{{ e.number }}</span> · </template>{{ fdate(e.date) }}
+                        </template>
+                        <template #status>
+                          <UiBadge :tone="e.status.tone" size="sm" dot>{{ e.status.label }}</UiBadge>
+                          <span v-if="e.dueShort" class="st-rel" :class="{ late: e.state === 'overdue' }">{{ e.dueShort }}</span>
+                        </template>
+                        <template #amount>
+                          {{ eur(e.amount) }}
+                          <small v-if="e.note">{{ e.note }}</small>
+                        </template>
+                      </UiListRow>
+                    </li>
+                  </ul>
+                </section>
+              </div>
+
+              <!-- Escritorio: concepto como columna principal, agrupado por año -->
+              <div class="table-wrap desk-table">
+                <table class="table doc-table">
+                  <thead>
+                    <tr>
+                      <th>Concepto</th>
+                      <th>Fecha</th>
+                      <th v-if="dueLabel">{{ dueLabel }}</th>
+                      <th>Estado</th>
+                      <th class="r">{{ amountLabel }}</th>
+                    </tr>
+                  </thead>
+                  <tbody v-for="g in groups" :key="g.year">
+                    <tr class="grp-row">
+                      <th :colspan="dueLabel ? 5 : 4" scope="rowgroup">
+                        <span class="grp-in">
+                          <span class="grp-y">{{ g.year }}</span>
+                          <span class="grp-s num">{{ g.items.length }} {{ g.items.length === 1 ? unit[0] : unit[1] }} · {{ eur(g.total) }}</span>
+                        </span>
+                      </th>
+                    </tr>
+                    <tr
+                      v-for="e in g.items"
+                      :key="e.id"
+                      class="clickable"
+                      tabindex="0"
+                      @click="navigateTo(e.path)"
+                      @keydown.enter="navigateTo(e.path)"
+                    >
+                      <td class="c-concept">
+                        <span class="c-title">{{ e.title }}</span>
+                        <span v-if="e.number && e.number !== e.title" class="c-num mono">{{ e.number }}</span>
+                      </td>
+                      <td class="muted nowrap">{{ fdate(e.date) }}</td>
+                      <td v-if="dueLabel" class="nowrap">
+                        <span class="muted">{{ e.due ? fdate(e.due) : '—' }}</span>
+                        <span v-if="e.dueRel" class="c-rel" :class="{ late: e.state === 'overdue' }">{{ e.dueRel }}</span>
+                      </td>
+                      <td><UiBadge :tone="e.status.tone" dot>{{ e.status.label }}</UiBadge></td>
+                      <td class="r num nowrap">
+                        <span class="strong">{{ eur(e.amount) }}</span>
+                        <span v-if="e.note" class="c-note">{{ e.note }}</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
           </template>
         </UiCard>
 
@@ -456,11 +577,198 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
 </template>
 
 <style scoped>
+/* ─── Documentos: filtros, grupos por año y filas ─── */
+
+.doc-filters {
+  display: flex;
+  gap: 6px;
+  padding: 12px var(--s-5);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-subtle);
+  scrollbar-width: none;
+}
+
+.doc-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.fchip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  font-size: var(--text-sm);
+  font-weight: 560;
+  color: var(--text-2);
+  white-space: nowrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+}
+
+.fchip:hover {
+  background: var(--surface-hover);
+}
+
+.fchip .n {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.fchip.on {
+  color: var(--brand-text);
+  background: var(--brand-soft);
+  border-color: transparent;
+}
+
+.fchip.on .n {
+  color: inherit;
+}
+
+.fchip.danger.on {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
 .mob-list {
   display: none;
+}
+
+.grp ul {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.grp-h {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: 10px var(--s-4);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.grp + .grp .grp-h {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.grp-y {
+  font-size: var(--text-xs);
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+
+.grp-s {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+/* Icono del documento teñido por su estado: se escanea de un vistazo */
+.st-ic {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  font-size: 18px;
+  color: var(--text-3);
+  background: var(--surface-sunken);
+  border-radius: 11px;
+}
+
+.st-ic.paid,
+.st-ic.accepted {
+  color: var(--success);
+  background: var(--success-soft);
+}
+
+.st-ic.open {
+  color: var(--warning);
+  background: var(--warning-soft);
+}
+
+.st-ic.overdue {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.c-rel,
+.st-rel {
+  color: var(--text-3);
+}
+
+.st-rel {
+  align-self: center;
+  font-size: var(--text-xs);
+}
+
+.st-rel.late {
+  font-weight: 560;
+  color: var(--danger);
+}
+
+.c-rel.late {
+  font-weight: 560;
+  color: var(--danger);
+}
+
+/* Escritorio */
+
+.doc-table .grp-row th {
+  position: static;
+  padding: 8px 16px;
+  text-transform: none;
+  letter-spacing: 0;
+  background: var(--surface-2);
+}
+
+.grp-in {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+
+.c-concept {
+  min-width: 220px;
+}
+
+.c-title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-weight: 560;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.c-num {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.doc-table .c-rel,
+.c-note {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--text-xs);
+}
+
+.c-note {
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.nowrap {
+  white-space: nowrap;
 }
 
 .back {
@@ -635,6 +943,10 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
 
   .mob-list {
     display: block;
+  }
+
+  .doc-filters {
+    padding-inline: var(--s-4);
   }
 
   /* La tarjeta que queda sola en la última fila ocupa las dos columnas */
