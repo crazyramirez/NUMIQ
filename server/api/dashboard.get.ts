@@ -52,6 +52,8 @@ export default defineEventHandler(async (event) => {
 
   // Lo que hay que hacer hoy, cada cosa con su botón (Inicio lo pone lo primero)
   const tasks = await todayTasks(company, now, { user, role })
+  // Tu dinero: saldo del banco menos lo que es de Hacienda y lo que debes
+  const money = await freeMoney(company, now)
 
   const insights = await computeInsights(company, { quarter, year, vat303, irpf130, receivables: recv, monthly, top, ytd })
 
@@ -73,6 +75,7 @@ export default defineEventHandler(async (event) => {
     recent: recent.map(({ description: _description, ...r }) => ({ ...r, conceptPreview: concepts.get(r.id)?.conceptPreview ?? null, overdue: isOpenStatus(r.status) && !!r.dueDate && r.dueDate < today })),
     deadlines: upcomingDeadlines(now, company.kind, 4),
     tasks,
+    money,
     insights,
   }
 })

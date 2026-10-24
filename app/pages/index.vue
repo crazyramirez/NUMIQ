@@ -5,7 +5,8 @@ const { me, companyName } = useMe()
 const readOnly = computed(() => me.value?.company?.role === 'advisor')
 // Lo que ya es una tarea de «Hoy» no se repite como recomendación del asesor
 const TASK_INSIGHTS = /^(overdue|drafts|bank:)/
-const insights = computed(() => (data.value?.insights ?? []).filter(i => !TASK_INSIGHTS.test(i.key)))
+// «Aparta X para impuestos» ya lo cuenta «Tu dinero libre» cuando hay banco
+const insights = computed(() => (data.value?.insights ?? []).filter(i => !TASK_INSIGHTS.test(i.key) && !(data.value?.money && i.key.startsWith('reserve:'))))
 const { data, status, error, refresh } = await useFetch('/api/dashboard', { lazy: true })
 
 const showAllInsights = ref(false)
@@ -104,6 +105,9 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
     <div v-else-if="data" class="layout">
       <!-- Hoy: lo que hay que hacer, con su botón -->
       <DashboardToday class="rise" :tasks="data.tasks" :read-only="readOnly" @done="refresh()" />
+
+      <!-- Tu dinero libre: banco − Hacienda − pagos pendientes -->
+      <DashboardMoney v-if="data.money" class="rise" style="--i: 1" :money="data.money" />
 
       <!-- KPIs -->
       <section class="kpis" aria-label="Indicadores del trimestre">
