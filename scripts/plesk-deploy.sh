@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Acción posterior al despliegue en Plesk (Git → games.viseni.com). En Plesk, una sola línea:
+# Acción posterior al despliegue en Plesk (Git → numiq.viseni.com). En Plesk, una sola línea:
 #   bash scripts/plesk-deploy.sh
 # - Si llega un push mientras otro se está compilando, espera su turno: nunca hay dos builds a la vez.
 # - Compila en .output-next y solo lo pone en producción si el build termina bien: un fallo no rompe la web.
@@ -11,7 +11,7 @@ cd "$(dirname "$0")/.."
 export PATH="/opt/plesk/node/24/bin:$PATH"
 # Las páginas se prerenderizan en el build: las vistas previas (og:image) necesitan el dominio ya aquí,
 # no basta con la variable del panel Node.js, que solo llega a la app en marcha.
-export NUXT_PUBLIC_SITE_URL="${NUXT_PUBLIC_SITE_URL:-https://games.viseni.com}"
+export NUXT_PUBLIC_SITE_URL="${NUXT_PUBLIC_SITE_URL:-https://numiq.viseni.com}"
 # Google Analytics (ID de medición G-…): vacío, la web no carga Analytics ni muestra el aviso de cookies.
 export NUXT_PUBLIC_GA_ID="${NUXT_PUBLIC_GA_ID:-G-YTQGH108KN}"
 mkdir -p logs tmp
