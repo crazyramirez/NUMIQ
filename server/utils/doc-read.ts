@@ -241,6 +241,7 @@ export function folderSignals(path: string): FolderSignals {
   const signals: FolderSignals = { direction: null, kind: null, folders: folders.join('/') }
   for (const raw of [...folders].reverse()) {
     const s = ` ${raw.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()} `
+    if (documentFolder(s)) continue
     if (!signals.kind) signals.kind = FOLDER_KINDS.find(([, re]) => re.test(s))?.[0] ?? null
     if (!signals.direction) {
       const issued = FOLDER_ISSUED.test(s)
@@ -266,6 +267,19 @@ export function pathHints(path: string): PathHints {
     quarter: quarter || null,
     direction: issued && !received ? 'issued' : received && !issued ? 'received' : null,
   }
+}
+
+const FOLDER_FILLER = / (de|del|la|las|los|el|y|e|a|en|por|para|mis|my|and|of|the|ene(ro)?|feb(rero)?|mar(zo)?|abr(il)?|may(o)?|jun(io)?|jul(io)?|ago(sto)?|sep(tiembre)?|oct(ubre)?|nov(iembre)?|dic(iembre)?|trimestre|mes|ano|year) /
+
+/**
+ * Carpeta con el nombre de un documento («004_Factura_Cliente_Proyecto_2025», con la factura, su Excel y el pedido
+ * del cliente): no es una carpeta de facturas, así que no dice el tipo de lo que contiene. Se reconoce porque
+ * nombra al menos tres cosas que no son tipos, sentidos, fechas ni números.
+ */
+function documentFolder(s: string) {
+  const words = s.trim().split(' ').filter(w => !/^\d+$/.test(w) && !/^([1-4](t|q|tr|trim)|(t|q)[1-4])$/.test(w))
+  const generic = (w: string) => FOLDER_FILLER.test(` ${w} `) || FOLDER_ISSUED.test(` ${w} `) || FOLDER_RECEIVED.test(` ${w} `) || FOLDER_KINDS.some(([, re]) => re.test(` ${w} `))
+  return words.filter(w => !generic(w)).length >= 3
 }
 
 // Nombres de carpeta habituales (sin tildes; cada nombre va entre espacios). Lo más concreto primero:

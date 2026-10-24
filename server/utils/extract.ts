@@ -179,7 +179,7 @@ Reglas:
 - bodyText: el texto descriptivo del cuerpo del documento que está FUERA de la tabla de conceptos: asunto o título del trabajo, alcance, descripción del servicio, condiciones, costes explicados, plazos u observaciones. Transcríbelo completo y literal, en el mismo orden y sin resumir. Formato: cada línea del original en su propia línea; los títulos de apartado y el asunto empiezan por "## "; las viñetas por "- " y las listas numeradas por "1. ". No repitas el texto de los conceptos: si el título o el párrafo encima de la tabla dice lo mismo que una línea, omítelo. No incluyas el encabezado con el número o la fecha, los datos del emisor y del cliente, la tabla de conceptos, el cuadro de bases, IVA y total, los datos bancarios ni los textos legales del pie (protección de datos, registro mercantil). null si no hay texto así (lo normal en tickets).
 - itemized: true si el documento detalla lo facturado en conceptos con su propio importe, cantidad o precio (tabla o lista de líneas con importes). false si solo describe el trabajo con texto (asunto, descripción, periodo) y los importes aparecen únicamente en el cuadro de base, IVA y total. Con itemized false, pon ese texto completo en bodyText y una sola línea por tipo de IVA con su base.
 - confidence: de 0 a 100, tu seguridad en la lectura (baja si está borroso, cortado o manuscrito).
-- warnings: avisos breves en español solo si algo no cuadra, es ilegible o falta un dato importante.`
+- warnings: avisos breves en español solo si algo no cuadra, es ilegible o falta un dato importante. No avises de quién emite o recibe el documento ni de si encaja con las carpetas o con lo que indica el usuario (eso lo decide la app con roleEvidence y sus propios datos), ni de cómo has normalizado nombres, NIF o formatos, ni de erratas del original.`
 
 function contextText(ctx: ExtractContext) {
   const c = ctx.company
@@ -259,8 +259,15 @@ export async function extractDocuments(parts: AiPart[], ctx: ExtractContext): Pr
       best = { ...best, ms: first.ms + second.ms, tokens: { input: first.tokens.input + second.tokens.input, output: first.tokens.output + second.tokens.output } }
     }
   }
-  return { documents: best.data.documents, model: best.model, ms: best.ms, tokens: best.tokens }
+  const documents = best.data.documents.map(d => ({ ...d, warnings: usefulAiWarnings(d.warnings) }))
+  return { documents, model: best.model, ms: best.ms, tokens: best.tokens }
 }
+
+// Avisos de la IA que no le sirven al usuario y lo confunden: quién emite o recibe y si encaja con la carpeta (lo decide
+// resolveInvoiceParties con sus pruebas y avisa él mismo; folderMismatch, del tipo) y notas de transcripción
+// (un nombre o un NIF normalizado, una errata del original)
+const NOISE_WARNING = /carpeta|emitid[oa]|recibid[oa]|dirigid[oa]|tercero|emisor|destinatari|receptor|normaliz|errata|transcri/i
+export const usefulAiWarnings = (warnings: string[]) => warnings.filter(w => !NOISE_WARNING.test(w))
 
 /** Partes de la petición a la IA según el tipo de archivo */
 export function aiPartsFor(kind: ImportKind, data: Buffer, name: string): AiPart[] {

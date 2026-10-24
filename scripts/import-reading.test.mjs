@@ -329,3 +329,30 @@ test('conserva advertencias ajenas al desglose y el documento original', () => {
   assert.ok(result.warnings.includes('Falta firma'))
   assert.deepEqual(source, snapshot)
 })
+
+test('una carpeta con el nombre de un documento no dice el tipo de lo que contiene (el sentido, la de arriba)', () => {
+  const inDocFolder = docRead.folderSignals('2025/1T/Emitidas/004_Factura_Absolute_MITMA_2025_Dinámica_Photo_AI_P/OP242163 DIEGO RAMÍREZ_P.pdf')
+  assert.equal(inDocFolder.kind, null)
+  assert.equal(inDocFolder.direction, 'issued')
+  assert.equal(extraction.folderMismatch('purchase_order', inDocFolder), null)
+  for (const [path, kind, direction] of [
+    ['Facturas_Emitidas_2025_1T/f.pdf', 'invoice', 'issued'],
+    ['Facturas de compra 2025 1T/f.pdf', 'invoice', 'received'],
+    ['2025/Presupuestos/p.pdf', 'quote', null],
+    ['Gastos/Nóminas enero 2025/n.pdf', 'payroll', 'received'],
+  ]) {
+    const f = docRead.folderSignals(path)
+    assert.equal(f.kind, kind, path)
+    assert.equal(f.direction, direction, path)
+  }
+})
+
+test('los avisos de la IA sobre quién emite, la carpeta o la transcripción no llegan al usuario', () => {
+  assert.deepEqual(extraction.usefulAiWarnings([
+    'La carpeta indica \'Emitidas\', pero el documento está emitido por un tercero y va dirigido a Viseni Design S.L.',
+    'El nombre del emisor aparece como \'Viseni Design S.L.\'; se ha normalizado la denominación.',
+    'La descripción contiene una errata literal: \'pesonalizado\'.',
+    'El total está cortado y no se lee',
+    'Falta firma',
+  ]), ['El total está cortado y no se lee', 'Falta firma'])
+})
