@@ -118,7 +118,8 @@ const form = reactive({
   issueDate: today,
   dueDate: addDaysISO(today, isQuote.value ? 30 : defaultTerms) as string | null,
   operationDate: null as string | null,
-  irpfRate: company.value?.kind === 'autonomo' ? Number(company.value?.defaultIrpfRate ?? 0) : 0,
+  // La retención la decide el cliente al elegirlo (empresa o profesional sí, particular no)
+  irpfRate: 0,
   paymentMethod: 'transfer',
   description: null as RichDoc | null,
   notes: isQuote.value ? '' : design.value?.design.defaultNotes ?? '',
@@ -208,7 +209,7 @@ watch(() => form.contactId, (v, old) => {
 })
 
 const irpfHint = computed(() => {
-  if (!contact.value) return null
+  if (!contact.value) return 'Se ajusta sola al elegir el cliente'
   if (contact.value.kind === 'person' && form.irpfRate === 0) return 'Sin retención: el cliente es un particular'
   if (contact.value.irpfRate != null) return 'Retención guardada en la ficha del cliente'
   return null
@@ -224,6 +225,7 @@ watch(() => form.issueDate, (d, old) => {
   if (old && form.dueDate) form.dueDate = addDaysISO(d, daysUntil(form.dueDate) - daysUntil(old))
 })
 const showOperationDate = ref(!!form.operationDate)
+const showReference = ref(!!form.customerReference)
 
 // ─── Líneas ──────────────────────────────────────────────────────────────────
 const pricesWithVat = ref(false)
@@ -233,6 +235,10 @@ function setSurcharge(on: boolean) {
   surcharge.value = on
   form.lines.forEach(l => (l.surchargeRate = on ? SURCHARGE_BY_VAT[l.vatRate] ?? 0 : 0))
 }
+
+// «Más opciones»: cuántas están en uso; si alguna lo está, el bloque se abre solo
+const moreCount = computed(() => [pricesWithVat.value, showReference.value || !!form.customerReference, showOperationDate.value, surcharge.value].filter(Boolean).length)
+const moreOpen = ref(moreCount.value > 0)
 
 function addLine(after?: number) {
   const line = blankLine()
@@ -317,6 +323,36 @@ async function reloadAttachments() {
 if (!doc.value && !source.value && form.contactId) applyContactDefaults()
 const fromItem = !doc.value && items.value?.find(i => i.id === Number(route.query.producto))
 if (fromItem) pickItem(form.lines[0]!, fromItem)
+
+// ─── Repetir la última a este cliente ────────────────────────────────────────
+// Al elegir cliente en un documento nuevo y vacío: sus conceptos de la última vez, con un toque
+interface LastDoc { id: number, number: string | null, status: string, issueDate: string, total: number, taxBase: number, conceptPreview: string | null }
+const lastDoc = ref<LastDoc | null>(null)
+const linesEmpty = computed(() => form.lines.every(l => !l.description.trim()))
+const salesListUrl = (contactId: number) => `/api/sales?kind=${kind.value === 'proforma' ? 'proforma' : kind.value === 'quote' ? 'quote' : 'invoice'}&contactId=${contactId}&limit=5` as string
+watch(() => form.contactId, async (id) => {
+  lastDoc.value = null
+  if (!id || doc.value || source.value) return
+  try {
+    const list = await $fetch<LastDoc[]>(salesListUrl(id))
+    if (form.contactId === id) lastDoc.value = list.find(d => d.status !== 'draft' && d.status !== 'cancelled') ?? null
+  }
+  catch { /* sin sugerencia: no pasa nada */ }
+}, { immediate: true })
+
+async function repeatLast() {
+  if (!lastDoc.value) return
+  try {
+    const full = await $fetch<SalesDoc>(`/api/sales/${lastDoc.value.id}` as string)
+    form.lines = full.lines.map(({ id: _id, ...l }) => ({ ...l, key: ++keySeq }))
+    if (full.description && !form.description) form.description = full.description
+    surcharge.value = form.lines.some(l => l.surchargeRate > 0)
+    toast.success('Conceptos copiados', 'Revisa cantidades y fechas antes de emitir.')
+  }
+  catch (err) {
+    toast.error('No se pudieron copiar los conceptos', errorMessage(err))
+  }
+}
 
 // ─── Totales ─────────────────────────────────────────────────────────────────
 const validLines = computed(() => form.lines.filter(l => l.description.trim()))
@@ -528,7 +564,7 @@ const R_CODES = [
                 <option v-for="(label, value) in PAYMENT_METHODS" :key="value" :value="value">{{ label }}</option>
               </select>
             </div>
-            <div>
+            <div v-if="showReference || form.customerReference">
               <span class="paper-label">{{ design?.design?.customerReferenceLabel || 'Orden de Pedido' }}</span>
               <input v-model="form.customerReference" class="cell" placeholder="Nº de pedido (opcional)" :aria-label="design?.design?.customerReferenceLabel || 'Orden de Pedido'" maxlength="80">
             </div>
@@ -579,6 +615,18 @@ const R_CODES = [
               </select>
               <input v-model="form.rectificationReason" class="cell" placeholder="Explica brevemente el motivo (importe erróneo, devolución…)" aria-label="Motivo de la rectificación">
             </div>
+          </div>
+
+          <!-- Repetir la última vez: el caso más habitual (iguala mensual, mismo servicio) -->
+          <div v-if="lastDoc && linesEmpty" class="repeat no-print">
+            <Icon name="ph:arrow-counter-clockwise" class="repeat-ic" aria-hidden="true" />
+            <div class="grow min0">
+              <p class="repeat-t">¿Lo mismo que la última vez?</p>
+              <p class="repeat-s">
+                {{ lastDoc.number ?? 'Borrador' }} · {{ fdateShort(lastDoc.issueDate) }} · {{ eur(isQuote ? lastDoc.taxBase : lastDoc.total) }}<template v-if="lastDoc.conceptPreview"> · {{ lastDoc.conceptPreview }}</template>
+              </p>
+            </div>
+            <UiButton size="sm" variant="soft" icon="ph:copy" @click="repeatLast">Repetir conceptos</UiButton>
           </div>
 
           <!-- Descripción con formato -->
@@ -648,7 +696,7 @@ const R_CODES = [
                 <span>{{ eur(g.vat) }}</span>
               </div>
               <div v-if="totals.surchargeTotal" class="t-row"><span>Recargo de equivalencia</span><span>{{ eur(totals.surchargeTotal) }}</span></div>
-              <div v-if="form.irpfRate" class="t-row minus"><span>Retención IRPF {{ num(form.irpfRate) }} %</span><span>{{ totals.irpfTotal ? '−' : '' }}{{ eur(totals.irpfTotal) }}</span></div>
+              <div v-if="form.irpfRate && (contact || doc)" class="t-row minus"><span>Retención IRPF {{ num(form.irpfRate) }} %</span><span>{{ totals.irpfTotal ? '−' : '' }}{{ eur(totals.irpfTotal) }}</span></div>
               <div class="t-total"><span>Total</span><strong>{{ eur(totals.total) }}</strong></div>
             </div>
           </div>
@@ -662,7 +710,7 @@ const R_CODES = [
 
         <!-- Panel de opciones -->
         <aside class="side">
-          <UiCard title="Documento" icon="ph:file-text">
+          <UiCard title="Condiciones" icon="ph:file-text">
             <div class="stack gap-4">
               <UiSelect v-if="seriesOptions.length > 1" v-model="form.seriesId" label="Serie" :options="seriesOptions.map(s => ({ value: s.id, label: `${s.name} (${s.prefix})` }))" />
               <div v-if="!isQuote" class="field">
@@ -672,18 +720,26 @@ const R_CODES = [
                 </div>
                 <p v-if="form.dueDate" class="hint">Vence el {{ fdate(form.dueDate) }}</p>
               </div>
-              <UiSwitch v-if="!isQuote" v-model="showOperationDate" label="Fecha de operación distinta" hint="Si el servicio se prestó en otra fecha" />
-              <UiInput v-if="showOperationDate && !isQuote" v-model="form.operationDate" type="date" label="Fecha de la operación" />
+              <IrpfField v-model="form.irpfRate" label="Retención de IRPF" :hint="irpfHint ?? 'Solo cuando facturas a empresas o profesionales'" />
             </div>
           </UiCard>
 
-          <UiCard title="Impuestos" icon="ph:percent">
-            <div class="stack gap-4">
-              <IrpfField v-model="form.irpfRate" label="Retención de IRPF" :hint="irpfHint ?? 'Solo cuando facturas a empresas o profesionales'" />
-              <UiSwitch :model-value="surcharge" label="Recargo de equivalencia" hint="Cliente comerciante minorista" @update:model-value="setSurcharge" />
+          <!-- Lo que casi nunca hace falta, plegado: se abre solo si ya se está usando -->
+          <details class="card more" :open="moreOpen">
+            <summary class="more-sum" @click.prevent="moreOpen = !moreOpen">
+              <Icon name="ph:sliders-horizontal" class="more-ic" aria-hidden="true" />
+              <span class="grow">Más opciones</span>
+              <span v-if="moreCount" class="more-n num">{{ moreCount }}</span>
+              <Icon name="ph:caret-down" class="more-caret" aria-hidden="true" />
+            </summary>
+            <div class="stack gap-4 more-body">
               <UiSwitch v-model="pricesWithVat" label="Escribir precios con IVA" hint="Calcula la base a partir del precio final" />
+              <UiSwitch :model-value="showReference || !!form.customerReference" label="Nº de pedido del cliente" hint="Lo pide en la factura para tramitar el pago" @update:model-value="v => { showReference = v; if (!v) form.customerReference = '' }" />
+              <UiSwitch v-if="!isQuote" v-model="showOperationDate" label="Fecha de operación distinta" hint="Si el servicio se prestó en otra fecha" />
+              <UiInput v-if="showOperationDate && !isQuote" v-model="form.operationDate" type="date" label="Fecha de la operación" />
+              <UiSwitch :model-value="surcharge" label="Recargo de equivalencia" hint="Cliente comerciante minorista" @update:model-value="setSurcharge" />
             </div>
-          </UiCard>
+          </details>
 
           <SalesAttachments v-if="id" :doc-id="id" :items="attachments" @changed="reloadAttachments" />
           <div v-else class="card att-hint">
@@ -691,14 +747,6 @@ const R_CODES = [
             <p>Guarda el borrador para adjuntar la orden de pedido, el albarán u otros documentos.</p>
           </div>
 
-          <div class="sum card">
-            <div class="sum-row"><span class="muted">Base</span><span class="num">{{ eur(totals.taxBase) }}</span></div>
-            <div class="sum-row"><span class="muted">IVA{{ totals.surchargeTotal ? ' + recargo' : '' }}</span><span class="num">{{ eur(totals.vatTotal + totals.surchargeTotal) }}</span></div>
-            <div v-if="totals.irpfTotal" class="sum-row"><span class="muted">Retención</span><span class="num neg">−{{ eur(totals.irpfTotal) }}</span></div>
-            <hr class="divider">
-            <div class="sum-total"><span>Total {{ isQuote ? 'presupuestado' : 'a cobrar' }}</span><strong class="num">{{ eur(totals.total) }}</strong></div>
-            <p class="sum-note"><Icon name="ph:shield-check-fill" /> Cálculo por tipo de IVA, como en el 303{{ verifactu ? ' y VeriFactu' : '' }}</p>
-          </div>
         </aside>
       </div>
     </div>
@@ -1119,8 +1167,90 @@ const R_CODES = [
   border-color: transparent;
 }
 
-.sum {
-  padding: var(--s-5);
+.repeat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 24px;
+  padding: 12px 14px;
+  font-family: var(--font-sans);
+  background: color-mix(in srgb, var(--brand-soft) 70%, #fff);
+  border: 1px dashed color-mix(in srgb, var(--brand) 35%, transparent);
+  border-radius: 12px;
+}
+
+.repeat-ic {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  color: var(--brand);
+}
+
+.repeat-t {
+  font-size: 14px;
+  font-weight: 650;
+  color: #1b1d27;
+}
+
+.repeat-s {
+  margin-top: 1px;
+  overflow: hidden;
+  font-size: 12.5px;
+  color: #5b6070;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.more {
+  padding: 0;
+}
+
+.more-sum {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: var(--s-4) var(--s-5);
+  font-weight: 600;
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+}
+
+.more-sum::-webkit-details-marker {
+  display: none;
+}
+
+.more-ic {
+  width: 18px;
+  height: 18px;
+  color: var(--text-3);
+}
+
+.more-n {
+  display: grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  font-size: var(--text-xs);
+  color: var(--brand-text);
+  background: var(--brand-soft);
+  border-radius: var(--r-full);
+}
+
+.more-caret {
+  width: 16px;
+  height: 16px;
+  color: var(--text-3);
+  transition: transform var(--t-fast);
+}
+
+.more[open] .more-caret {
+  transform: rotate(180deg);
+}
+
+.more-body {
+  padding: 0 var(--s-5) var(--s-5);
 }
 
 .att-hint {
@@ -1138,41 +1268,6 @@ const R_CODES = [
   margin-top: 1px;
 }
 
-.sum-row {
-  display: flex;
-  justify-content: space-between;
-  padding: 4px 0;
-}
-
-.sum .divider {
-  margin: var(--s-3) 0;
-}
-
-.sum-total {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  font-weight: 600;
-}
-
-.sum-total strong {
-  font-size: var(--text-2xl);
-  letter-spacing: -0.03em;
-}
-
-.sum-note {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: var(--s-3);
-  font-size: var(--text-xs);
-  color: var(--text-3);
-}
-
-.sum-note :deep(svg) {
-  color: var(--success-solid);
-}
-
 .m-bar {
   display: none;
 }
@@ -1187,10 +1282,6 @@ const R_CODES = [
     position: static;
     display: grid;
     grid-template-columns: 1fr 1fr;
-  }
-
-  .sum {
-    grid-column: span 2;
   }
 }
 
@@ -1208,10 +1299,6 @@ const R_CODES = [
 
   .side {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .sum {
-    grid-column: auto;
   }
 
   .m-bar {

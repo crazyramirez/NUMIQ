@@ -373,4 +373,8 @@ select.control {
   html.bnav {
     --bnav: var(--bnav-h);
   }
+
+  html.edbar {
+    --bnav: 72px;
+  }
 }

@@ -6,7 +6,8 @@ const { open: openScan } = useScan()
 
 // Barra inferior del móvil en todas las pantallas salvo los editores (tienen su propia barra de guardar)
 const bottomNav = computed(() => !/^\/(facturas|presupuestos)\/(nueva|nuevo|\d+\/editar)$/.test(route.path))
-useHead({ htmlAttrs: { class: computed(() => (bottomNav.value ? 'bnav' : '')) } })
+// En los editores la barra de abajo es la de guardar: lo fijo (botón de subir, avisos) se coloca encima de ella
+useHead({ htmlAttrs: { class: computed(() => (bottomNav.value ? 'bnav' : 'edbar')) } })
 
 // ?escanear=1 en cualquier página abre el escaneo rápido (paleta, menú Nuevo, enlaces)
 watch(() => route.query.escanear, (v) => {
