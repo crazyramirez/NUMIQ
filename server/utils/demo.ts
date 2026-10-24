@@ -174,7 +174,7 @@ export async function seedDemoData(companyId: number, userId: number) {
       isInvestment: e.isInvestment ?? false,
       paymentMethod: e.kind === 'ticket' ? 'card' : 'direct_debit',
       paid,
-    })
+    }, undefined, { checkDuplicates: false })
   }
 
   for (let m = 11; m >= 0; m--) {

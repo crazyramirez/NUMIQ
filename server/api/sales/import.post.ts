@@ -4,6 +4,8 @@ const schema = z.object({
   data: importInvoiceSchema,
   contactId: z.number().int().positive().nullish().transform(v => v ?? null),
   fileId: z.number().int().positive().nullish().transform(v => v ?? null),
+  /** El usuario confirmó que no es un duplicado (solo frena una coincidencia segura) */
+  allowDuplicate: z.boolean().optional(),
 })
 
 /** Registra una factura emitida escaneada (de otro programa o de papel): conserva su número */

@@ -156,6 +156,14 @@ async function importNow() {
   }
 }
 
+/** Coincidencia solo probable (fecha cercana, nombre parecido) que el usuario sabe que es otro documento */
+const likelyDuplicate = computed(() => item.value?.status === 'duplicate' && item.value.duplicate?.certain === false && !!invoice.value)
+async function importAnyway() {
+  if (!invoice.value) return
+  invoice.value.allowDuplicate = true
+  await importNow()
+}
+
 const folderOptions = VAULT_FOLDERS.map(f => ({ value: f.key, label: f.label }))
 const quarterOptions = [1, 2, 3, 4].map(q => ({ value: q, label: `${q}T` }))
 const kindOptions = [{ value: 'service', label: 'Servicio' }, { value: 'product', label: 'Producto' }]
@@ -217,8 +225,9 @@ const duplicateLink = computed(() => {
         <div v-if="item.duplicate" class="note dup">
           <Icon name="ph:copy" aria-hidden="true" />
           <div class="grow">
-            <p class="n-t">{{ item.duplicate.label }}</p>
-              <p class="n-s">{{ item.type === 'contact' && item.status !== 'duplicate' ? 'Se reutilizará el contacto existente, añadiendo su papel de cliente o proveedor si falta.' : 'Se omitirá para evitar duplicados. Si corriges sus datos, volveremos a comprobarlo.' }}</p>
+            <p class="n-t">{{ likelyDuplicate ? `Parece repetido. ${item.duplicate.label}` : item.duplicate.label }}</p>
+            <p class="n-s">{{ item.type === 'contact' && item.status !== 'duplicate' ? 'Se reutilizará el contacto existente, añadiendo su papel de cliente o proveedor si falta.' : likelyDuplicate ? 'Se omitirá para no duplicarlo. Si es otro documento distinto, impórtalo igualmente.' : 'Se omitirá para evitar duplicados. Si corriges sus datos, volveremos a comprobarlo.' }}</p>
+            <button v-if="likelyDuplicate && !locked" type="button" class="link small" :disabled="importing || saving" @click="importAnyway">Es otro: importarlo igualmente</button>
           </div>
           <NuxtLink v-if="duplicateLink" :to="duplicateLink" class="link small">Ver</NuxtLink>
         </div>

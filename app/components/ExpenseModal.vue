@@ -41,6 +41,7 @@ interface Category { id: number, kind: string, name: string, accountCode: string
 
 const toast = useToast()
 const { confirm } = useConfirm()
+const guardDuplicate = useDuplicateGuard()
 const formId = useId()
 
 const newLine = (vatRate = 21): TaxLineForm => ({ base: null, vatRate, vatAmount: null, manual: false })
@@ -406,7 +407,12 @@ async function save() {
     }
     let id = props.expenseId ?? 0
     if (props.expenseId) await $fetch(`/api/expenses/${props.expenseId}`, { method: 'PATCH', body })
-    else id = (await $fetch<{ id: number }>('/api/expenses', { method: 'POST', body })).id
+    else {
+      // Nunca dos veces el mismo gasto: lo seguro se avisa y lo probable se pregunta
+      const created = await guardDuplicate(allowDuplicate => $fetch<{ id: number }>('/api/expenses', { method: 'POST', body: { ...body, allowDuplicate } }))
+      if (!created) return
+      id = created.id
+    }
     const who = supplier.value?.name ?? scan.value?.newSupplier?.name
     toast.success(isEdit.value ? 'Gasto actualizado' : 'Gasto registrado', `${eur(totals.value.total)}${who ? ` · ${who}` : ''}`)
     emit('saved', id)

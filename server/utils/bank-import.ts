@@ -86,7 +86,22 @@ export async function importStatement(company: Company, file: { name: string, da
     throw createError({ statusCode: 409, statusMessage: `Este extracto es de otra cuenta (${parsed.iban.slice(0, 4)} ··· ${parsed.iban.slice(-4)}). Elige «Detectar la cuenta» o la cuenta correcta.` })
   }
   if (!account && parsed.iban) account = accounts.find(a => clean(a.iban) === parsed.iban) ?? null
-  if (!account && !parsed.iban && accounts.length === 1 && !opts.accountName) account = accounts[0]!
+  // Sin IBAN, o con un IBAN que aún no tiene ninguna cuenta: la cuenta que ya tiene estos movimientos
+  // (un CSV importado antes y ahora el Norma 43 del mismo periodo). Nunca se duplica la cuenta entera.
+  const overlap = accounts.length && (!account || !parsed.iban) ? await overlapByAccount(company.id, parsed.rows) : new Map<number, number>()
+  const enough = Math.min(parsed.rows.length, Math.max(2, Math.ceil(parsed.rows.length * 0.3)))
+  const owner = [...overlap].filter(([id, n]) => n >= enough && accounts.some(a => a.id === id && (!parsed.iban || !a.iban))).sort((a, b) => b[1] - a[1])[0]
+  const ownerAccount = owner ? accounts.find(a => a.id === owner[0]) ?? null : null
+  if (ownerAccount && ((account && !parsed.iban && ownerAccount.id !== account.id && !overlap.get(account.id)) || (!account && opts.accountName))) {
+    throw createError({ statusCode: 409, statusMessage: `Estos movimientos ya están en la cuenta «${ownerAccount.name}». Elige esa cuenta o «Detectar la cuenta».` })
+  }
+  if (!account && ownerAccount && !opts.accountName) account = ownerAccount
+  if (!account && !opts.accountName && accounts.length === 1) {
+    // Una sola cuenta: el extracto sin IBAN es suyo; con IBAN, si ella no tiene y el banco no contradice
+    const only = accounts[0]!
+    const bank = parsed.bankName ?? bankNameOf(parsed.iban)
+    if (!parsed.iban || (!only.iban && (!only.bankName || !bank || only.bankName === bank))) account = only
+  }
   if (!account) {
     const bankName = parsed.bankName ?? bankNameOf(parsed.iban)
     // "CaixaBank"; con dos cuentas del mismo banco, "CaixaBank ···1332"
@@ -103,13 +118,9 @@ export async function importStatement(company: Company, file: { name: string, da
   }
 
   const hashes = txHashes(account.id, parsed.rows)
-  const existing = new Set<string>()
-  for (let i = 0; i < hashes.length; i += 500) {
-    const rows = await db.select({ hash: tables.bankTransactions.hash }).from(tables.bankTransactions)
-      .where(and(eq(tables.bankTransactions.companyId, company.id), inArray(tables.bankTransactions.hash, hashes.slice(i, i + 500))))
-    rows.forEach(r => existing.add(r.hash))
-  }
-  const fresh = parsed.rows.map((r, i) => ({ r, hash: hashes[i]! })).filter(x => !existing.has(x.hash))
+  // Lo que ya estaba (mismo extracto, uno solapado o el mismo periodo en otro formato) no se vuelve a importar
+  const known = await knownMovements(company.id, account.id, parsed.rows, hashes)
+  const fresh = parsed.rows.map((r, i) => ({ r, hash: hashes[i]! })).filter((_, i) => !known[i])
   for (let i = 0; i < fresh.length; i += 500) {
     await db.insert(tables.bankTransactions).values(fresh.slice(i, i + 500).map(({ r, hash }) => ({
       companyId: company.id,

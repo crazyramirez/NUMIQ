@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
-import { findImportContact } from '../../shared/utils/duplicate-matching'
+import { findSimilarContact } from '../../shared/utils/duplicate-matching'
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha con formato AAAA-MM-DD')
 
@@ -31,6 +31,8 @@ export const expenseInputSchema = z.object({
   fileId: z.number().int().positive().nullish(),
   newSupplier: importPartySchema.nullish(),
   aiConfidence: z.number().int().min(0).max(100).nullish(),
+  /** El usuario confirmó que no es un duplicado: solo frena una coincidencia segura (mismo número, mismo archivo…) */
+  allowDuplicate: z.boolean().optional(),
 })
 
 export type ExpenseInput = z.infer<typeof expenseInputSchema>
@@ -50,11 +52,16 @@ export function expenseTotals(input: Pick<ExpenseInput, 'taxLines' | 'irpfRate'>
   return { lines, taxBase, vatTotal, surchargeTotal, irpfTotal, total: round2(taxBase + vatTotal + surchargeTotal - irpfTotal) }
 }
 
-export async function saveExpense(companyId: number, userId: number, input: ExpenseInput, id?: number) {
-  return id ? saveExpenseLocked(companyId, userId, input, id) : withImportLock(companyId, () => saveExpenseLocked(companyId, userId, input))
+/**
+ * Crea o actualiza un gasto. Uno nuevo se compara antes con los ya registrados (número, proveedor, fecha,
+ * importe y concepto) y no se guarda si ya está: 409 con `data.duplicate`. `checkDuplicates: false` solo
+ * para quien ya lo ha comprobado a su manera (el banco: cada cargo es un pago distinto).
+ */
+export async function saveExpense(companyId: number, userId: number, input: ExpenseInput, id?: number, opts: { checkDuplicates?: boolean } = {}) {
+  return id ? saveExpenseLocked(companyId, userId, input, id) : withImportLock(companyId, () => saveExpenseLocked(companyId, userId, input, undefined, opts.checkDuplicates ?? true))
 }
 
-async function saveExpenseLocked(companyId: number, userId: number, input: ExpenseInput, id?: number) {
+async function saveExpenseLocked(companyId: number, userId: number, input: ExpenseInput, id?: number, checkDuplicates = false) {
   const db = useDb()
   let supplier = null
   const file = id ? null : await claimScanFile(companyId, input.fileId)
@@ -65,8 +72,8 @@ async function saveExpenseLocked(companyId: number, userId: number, input: Expen
     supplier = contactSnapshot(c)
   }
   const t = expenseTotals(input)
-  if (!id && (file || input.newSupplier)) {
-    const duplicate = await findSavedImportDuplicate(companyId, { type: 'expense', kind: input.kind, party: supplier ?? input.newSupplier, number: input.number, issueDate: input.issueDate, total: t.total }, input.fileId)
+  if (!id && checkDuplicates) {
+    const duplicate = await findSavedImportDuplicate(companyId, { type: 'expense', kind: input.kind, party: supplier ?? input.newSupplier, number: input.number, issueDate: input.issueDate, total: t.total, description: input.description }, input.fileId, { certainOnly: !!input.allowDuplicate })
     if (duplicate) throw createError({ statusCode: 409, statusMessage: duplicate.label, data: { duplicate } })
   }
   if (!input.supplierId && input.newSupplier) {
@@ -117,6 +124,64 @@ async function saveExpenseLocked(companyId: number, userId: number, input: Expen
   })
   if (file) await db.update(tables.files).set({ linkedType: 'expense', linkedId: expenseId }).where(eq(tables.files.id, file.id))
   return expenseId
+}
+
+/**
+ * Adjunta el documento escaneado a un gasto ya registrado sin él (creado desde el banco, a mano…) en vez
+ * de crear otro: completa su número, vencimiento y los datos del proveedor que faltaban. Si el gasto salió
+ * de un cargo del banco (fecha del pago, IVA estimado) y el total cuadra, toma la fecha y el desglose de
+ * IVA y retención de la factura, que son los que valen para los impuestos.
+ */
+export async function attachExpenseDocument(companyId: number, expenseId: number, input: {
+  fileId: number
+  number?: string | null
+  dueDate?: string | null
+  party?: z.infer<typeof importPartySchema> | null
+  issueDate?: string | null
+  taxLines?: ExpenseInput['taxLines'] | null
+  irpfRate?: number | null
+}) {
+  return withImportLock(companyId, async () => {
+    const db = useDb()
+    const [e] = await db.select().from(tables.expenses).where(and(eq(tables.expenses.id, expenseId), eq(tables.expenses.companyId, companyId)))
+    if (!e) throw createError({ statusCode: 404, statusMessage: 'Gasto no encontrado' })
+    if (e.fileId) throw createError({ statusCode: 409, statusMessage: 'Este gasto ya tiene su documento' })
+    const file = (await claimScanFile(companyId, input.fileId))!
+    let supplierId = e.supplierId
+    if (input.party) {
+      if (supplierId) await fillContactGaps(companyId, supplierId, input.party)
+      else supplierId = await ensureSupplier(companyId, input.party)
+    }
+    const [c] = supplierId ? await db.select().from(tables.contacts).where(eq(tables.contacts.id, supplierId)) : []
+    const fromBank = !!e.notes?.startsWith('Creado desde el banco')
+    const doc = fromBank && input.taxLines?.length ? expenseTotals({ taxLines: input.taxLines, irpfRate: input.irpfRate ?? 0 }) : null
+    const fiscal = doc && Math.abs(doc.total - e.total) <= 0.01 ? doc : null
+    await db.transaction(async (tx) => {
+      await tx.update(tables.expenses).set({
+        fileId: file.id,
+        number: e.number || input.number?.slice(0, 60) || null,
+        dueDate: e.dueDate ?? input.dueDate ?? null,
+        supplierId,
+        supplier: c ? contactSnapshot(c) : e.supplier,
+        ...(fiscal
+          ? {
+              issueDate: input.issueDate ?? e.issueDate,
+              taxBase: fiscal.taxBase,
+              vatTotal: fiscal.vatTotal,
+              surchargeTotal: fiscal.surchargeTotal,
+              irpfRate: input.irpfRate ?? 0,
+              irpfTotal: fiscal.irpfTotal,
+            }
+          : {}),
+      }).where(eq(tables.expenses.id, e.id))
+      if (fiscal) {
+        await tx.delete(tables.expenseTaxLines).where(eq(tables.expenseTaxLines.expenseId, e.id))
+        await tx.insert(tables.expenseTaxLines).values(fiscal.lines.map(l => ({ ...l, expenseId: e.id })))
+      }
+    })
+    await db.update(tables.files).set({ linkedType: 'expense', linkedId: e.id }).where(eq(tables.files.id, file.id))
+    return { fiscal: !!fiscal }
+  })
 }
 
 export interface DeductibleGuess {
@@ -170,14 +235,18 @@ export async function deductibleGuesser(companyId: number) {
   }
 }
 
-/** Proveedor leído de un escaneo: el existente con ese NIF o nombre, o uno nuevo */
+/**
+ * Proveedor leído de un escaneo, del banco o del asistente: el existente con ese NIF, datos o un nombre
+ * parecido («Endesa» y «Endesa Energía, S.A.U.»), completando lo que le falte; si no hay, uno nuevo.
+ */
 export async function ensureSupplier(companyId: number, p: z.infer<typeof importPartySchema>, notes = 'Creado al escanear una factura') {
   const db = useDb()
   const contacts = await db.select()
     .from(tables.contacts).where(eq(tables.contacts.companyId, companyId))
-  const hit = findImportContact(contacts, p)
+  const hit = findSimilarContact(contacts, p)
   if (hit) {
     if (!hit.isSupplier) await db.update(tables.contacts).set({ isSupplier: true }).where(eq(tables.contacts.id, hit.id))
+    await fillContactGaps(companyId, hit.id, p)
     return hit.id
   }
   const [res] = await db.insert(tables.contacts).values({

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { ImportDuplicate } from '#shared/types/import'
+
 /** Alta y edición de clientes y proveedores (también desde el editor de facturas y de gastos) */
 const props = defineProps<{
   role: 'client' | 'supplier'
@@ -268,7 +270,13 @@ watch(otherRole, async (v) => {
   }
 })
 
-async function save() {
+// ─── Sin duplicados: si ya existe, se usa esa ficha (o se crea otro si de verdad es distinto) ───
+
+const duplicate = ref<ImportDuplicate | null>(null)
+const dupEl = ref<HTMLElement>()
+watch(() => [form.value.name, form.value.nif, form.value.email], () => (duplicate.value = null))
+
+async function save(flags: { allowDuplicate?: boolean, useExisting?: boolean } = {}) {
   errors.value = {}
   if (!form.value.name.trim()) {
     errors.value.name = 'Escribe el nombre o la razón social'
@@ -279,7 +287,17 @@ async function save() {
     const body = { ...form.value, name: form.value.name.trim() }
     let id = props.contactId ?? 0
     if (props.contactId) await $fetch(`/api/contacts/${props.contactId}`, { method: 'PATCH', body })
-    else id = (await $fetch<{ id: number }>('/api/contacts', { method: 'POST', body })).id
+    else {
+      const r = await $fetch<{ id: number, existing: boolean }>('/api/contacts', { method: 'POST', body: { ...body, ...flags } })
+      id = r.id
+      if (r.existing) {
+        // Ficha existente: con su papel de cliente o proveedor y los datos que le faltaban
+        toast.success('Usando la ficha que ya tenías', 'Sin crear otro contacto')
+        emit('saved', id)
+        open.value = false
+        return
+      }
+    }
     if (logoPending.value) {
       const fd = new FormData()
       fd.append('file', logoPending.value, logoPending.value.type === 'image/png' ? 'logo.png' : 'logo.jpg')
@@ -293,6 +311,12 @@ async function save() {
     open.value = false
   }
   catch (err) {
+    const dup = errorDuplicate(err)
+    if (dup && !props.contactId) {
+      duplicate.value = dup
+      nextTick(() => dupEl.value?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+      return
+    }
     const field = errorField(err)
     const msg = errorMessage(err)
     if (field) {
@@ -364,7 +388,18 @@ async function remove() {
       <div v-for="i in 6" :key="i" class="skeleton" :style="{ height: '38px', width: i % 2 ? '100%' : '70%' }" />
     </div>
 
-    <form v-else :id="formId" class="contact-form" novalidate @submit.prevent="save" @paste="picker?.onPaste($event)">
+    <form v-else :id="formId" class="contact-form" novalidate @submit.prevent="save()" @paste="picker?.onPaste($event)">
+      <div v-if="duplicate" ref="dupEl" class="dup" role="alert">
+        <Icon name="ph:copy" aria-hidden="true" />
+        <div class="grow min0">
+          <p class="dup-t">{{ duplicate.label }}</p>
+          <p class="dup-s">{{ duplicate.certain === false ? 'Si es el mismo, usa esa ficha. Si es otro distinto, créalo igualmente.' : 'No se creará otro: usa esa ficha y se completará con lo que le falte.' }}</p>
+          <div class="row gap-2 wrap">
+            <UiButton size="sm" variant="primary" icon="ph:check" :loading="saving" @click="save({ useExisting: true })">Usar esa ficha</UiButton>
+            <UiButton v-if="duplicate.certain === false" size="sm" :disabled="saving" @click="save({ allowDuplicate: true })">Crear igualmente</UiButton>
+          </div>
+        </div>
+      </div>
       <div class="ai-fill" :class="{ open: aiOpen }">
         <button type="button" class="af-toggle" :aria-expanded="aiOpen" @click="aiOpen = !aiOpen">
           <span class="af-ic" aria-hidden="true"><Icon name="ph:sparkle-fill" /></span>
@@ -501,6 +536,32 @@ async function remove() {
 <style scoped>
 .spacer {
   flex: 1;
+}
+
+.dup {
+  display: flex;
+  gap: var(--s-2);
+  margin-bottom: var(--s-4);
+  padding: 12px;
+  font-size: var(--text-sm);
+  color: var(--info);
+  background: var(--info-soft);
+  border-radius: var(--r-lg);
+}
+
+.dup > .icon,
+.dup > svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.dup-t {
+  font-weight: 600;
+}
+
+.dup-s {
+  margin: 2px 0 var(--s-2);
+  opacity: 0.9;
 }
 
 .del {

@@ -11,12 +11,12 @@ const schema = z.object({
   vatDeductiblePct: z.number().min(0).max(100).nullish(),
 })
 
-/** Crea el gasto de un cargo del banco (ya pagado) y lo deja conciliado */
+/** Crea el gasto de un cargo del banco (ya pagado) y lo deja conciliado; si ya estaba anotado, lo enlaza (linked) */
 export default defineEventHandler(async (event) => {
   const { company, user } = await requireCompany(event)
   const id = idParam(event)
   const input = await readInput(event, schema)
-  const expenseId = await expenseFromTx(company, user.id, id, input)
-  await audit(event, { companyId: company.id, userId: user.id, action: 'bank.expense', entity: 'bank_transaction', entityId: id, data: { expenseId } })
-  return { ok: true, expenseId }
+  const { expenseId, linked } = await expenseFromTx(company, user.id, id, input)
+  await audit(event, { companyId: company.id, userId: user.id, action: linked ? 'bank.match' : 'bank.expense', entity: 'bank_transaction', entityId: id, data: { expenseId, linked } })
+  return { ok: true, expenseId, linked }
 })

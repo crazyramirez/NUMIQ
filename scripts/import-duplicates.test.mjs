@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { ImportDuplicateIndex, importDuplicateReason, sameImportParty, findImportContact } from '../shared/utils/duplicate-matching.ts'
+import { ImportDuplicateIndex, duplicateMatch, findSimilarContact, importDuplicateReason, sameImportParty, similarNames, findImportContact } from '../shared/utils/duplicate-matching.ts'
 import { mergeInvoiceSheetRows } from '../server/utils/sheet-import.ts'
 import { round2 } from '../shared/utils/tax.ts'
 
@@ -43,9 +43,23 @@ for (const type of ['expense', 'sales']) {
     assert.ok(importDuplicateReason({ ...document, type }, { ...document, type, number: ' f001_26 ' }))
   })
   test(`${type}: sin número compara contraparte, fecha e importe`, () => {
-    assert.ok(importDuplicateReason({ ...document, type, number: null }, { ...document, type, party: { name: 'ARBOL SERVICIOS' } }))
-    assert.equal(importDuplicateReason({ ...document, type, number: null }, { ...document, type, issueDate: '2026-10-21' }), null)
+    assert.equal(duplicateMatch({ ...document, type, number: null }, { ...document, type, party: { name: 'ARBOL SERVICIOS' } })?.certain, true)
     assert.equal(importDuplicateReason({ ...document, type, number: null }, { ...document, type, total: 122 }), null)
+  })
+  test(`${type}: sin número, la misma contraparte e importe con pocos días de diferencia es probable`, () => {
+    assert.equal(duplicateMatch({ ...document, type, number: null }, { ...document, type, issueDate: '2026-10-21' })?.certain, false)
+    assert.equal(duplicateMatch({ ...document, type, number: null }, { ...document, type, issueDate: '2026-10-25' })?.certain, false)
+    assert.equal(duplicateMatch({ ...document, type, number: null }, { ...document, type, issueDate: '2026-10-26' }), null)
+  })
+  test(`${type}: el mismo número escrito de otra forma (ceros, serie) con el mismo importe es probable`, () => {
+    const a = { ...document, type, number: 'F-0046/26' }
+    assert.equal(duplicateMatch(a, { ...document, type, number: '46-26' })?.certain, false)
+    assert.equal(duplicateMatch(a, { ...document, type, number: '46-26', total: 50 }), null)
+    assert.equal(duplicateMatch(a, { ...document, type, number: '47-26' }), null)
+  })
+  test(`${type}: otros ceros a la izquierda o separadores son el mismo número`, () => {
+    assert.equal(duplicateMatch({ ...document, type, number: 'FE26-000123' }, { ...document, type, number: 'fe26/123' })?.certain, true)
+    assert.equal(duplicateMatch({ ...document, type, number: 'A-12' }, { ...document, type, number: 'B-12' }), null)
   })
   test(`${type}: dos números distintos con igual fecha e importe son documentos diferentes`, () => {
     assert.equal(importDuplicateReason({ ...document, type }, { ...document, type, number: 'F00226' }), null)
@@ -116,4 +130,74 @@ test('Excel: mantiene desgloses de IVA diferentes y omite las repeticiones', () 
   const rows = mergeInvoiceSheetRows([{ key: 'F1', doc: first }, { key: 'F1', doc: second }, { key: 'F1', doc: structuredClone(second) }])
   assert.equal(rows[0].total, 341)
   assert.equal(rows[0].taxLines.length, 2)
+})
+
+test('gasto: el mismo número e importe aunque el proveedor esté escrito de otra forma', () => {
+  const a = { ...document, party: { name: 'REPSOL' } }
+  assert.equal(duplicateMatch(a, { ...document, party: { name: 'Repsol Comercial de Productos Petrolíferos', nif: 'A80298839' } })?.certain, true)
+  assert.equal(duplicateMatch(a, { ...document, total: 99, party: { name: 'Repsol Comercial' } }), null)
+})
+
+test('gasto del banco y ticket escaneado: mismo importe, nombre parecido y fechas cercanas', () => {
+  const bank = { type: 'expense', kind: 'ticket', party: { name: 'Repsol' }, number: null, issueDate: '2026-10-22', total: 60.5, description: 'COMPRA TARJ REPSOL 1234' }
+  const ticket = { type: 'expense', kind: 'ticket', party: { name: 'REPSOL ESTACIÓN DE SERVICIO', nif: 'A12345674' }, number: 'T-998', issueDate: '2026-10-20', total: 60.5, description: 'Gasolina' }
+  assert.equal(duplicateMatch(ticket, bank)?.certain, false)
+  assert.equal(duplicateMatch({ ...ticket, total: 61 }, bank), null)
+  assert.equal(duplicateMatch({ ...ticket, issueDate: '2026-10-10' }, bank), null)
+  assert.equal(duplicateMatch({ ...ticket, party: { name: 'Cepsa' }, description: null }, bank), null)
+})
+
+test('gastos sin proveedor se reconocen por el concepto', () => {
+  const a = { type: 'expense', party: null, number: null, issueDate: '2026-10-30', total: 294, description: 'Cuota de autónomos' }
+  const b = { type: 'expense', party: { name: 'Tesorería General de la Seguridad Social' }, number: null, issueDate: '2026-10-31', total: 294, description: 'Cuota autónomos octubre' }
+  assert.equal(duplicateMatch(a, b)?.certain, false)
+  assert.equal(duplicateMatch({ ...a, description: 'Material de oficina' }, b), null)
+})
+
+test('nombres parecidos: palabras significativas, sin formas jurídicas ni relleno', () => {
+  assert.ok(similarNames('Endesa', 'Endesa Energía, S.A.U.'))
+  assert.ok(similarNames('TRANSF. ARBOL SERVICIOS', 'Transferencia a favor de Árbol Servicios SL · Fra 46/2026'))
+  assert.equal(similarNames('Juan', 'Juan Pérez'), false)
+  assert.equal(similarNames('Servicios Lumbre', 'Árbol Servicios'), false)
+  assert.equal(similarNames('Recibo', 'Recibo Endesa'), false)
+})
+
+test('contacto parecido: único, y nunca entre dos NIF distintos', () => {
+  const contacts = [{ id: 1, name: 'Endesa' }, { id: 2, name: 'Movistar', nif: 'A82018474' }]
+  assert.equal(findSimilarContact(contacts, { name: 'Endesa Energía S.A.U.', nif: 'A81948077' })?.id, 1)
+  assert.equal(findSimilarContact(contacts, { name: 'Movistar Telefónica', nif: 'B00000000' }), undefined)
+  assert.equal(findSimilarContact(contacts, { name: 'Movistar Telefónica' })?.id, 2)
+  // «Endesa» a secas puede ser cualquiera de las dos: no se adjudica al azar
+  assert.equal(findSimilarContact([{ id: 1, name: 'Endesa Energía' }, { id: 3, name: 'Endesa Distribución' }], { name: 'Endesa' }), undefined)
+})
+
+test('índice: lo seguro antes que lo probable, y certainOnly descarta lo probable', () => {
+  const index = new ImportDuplicateIndex()
+  index.add({ ...document, number: null, issueDate: '2026-10-18' }, 'cercano')
+  assert.equal(index.find({ ...document, number: null })?.value, 'cercano')
+  assert.equal(index.find({ ...document, number: null })?.certain, false)
+  assert.equal(index.find({ ...document, number: null }, { certainOnly: true }), null)
+  index.add(document, 'mismo')
+  assert.equal(index.find(document)?.value, 'mismo')
+  assert.equal(index.find(document)?.certain, true)
+})
+
+test('gasto creado desde el banco: la factura puede ser hasta 35 días anterior al cargo', () => {
+  const bank = { type: 'expense', party: { name: 'Endesa' }, number: null, issueDate: '2026-10-05', total: 60.5, description: 'RECIBO ENDESA', paidOnBank: true }
+  const invoice = { type: 'expense', party: { name: 'Endesa Energía S.A.U.', nif: 'A81948077' }, number: 'FE26-123', issueDate: '2026-09-15', total: 60.5 }
+  assert.equal(duplicateMatch(invoice, bank)?.certain, false)
+  assert.match(duplicateMatch(invoice, bank).reason, /pagado en el banco 20 días/)
+  // Una factura posterior al cargo o de hace más de 35 días es otra
+  assert.equal(duplicateMatch({ ...invoice, issueDate: '2026-10-20' }, bank), null)
+  assert.equal(duplicateMatch({ ...invoice, issueDate: '2026-08-20' }, bank), null)
+  // Sin la marca del banco sigue haciendo falta una fecha cercana
+  assert.equal(duplicateMatch(invoice, { ...bank, paidOnBank: false }), null)
+})
+
+test('índice: entre varias probables gana la de fecha más cercana', () => {
+  const index = new ImportDuplicateIndex()
+  const bank = { type: 'expense', party: { name: 'Movistar' }, number: null, total: 45, paidOnBank: true }
+  index.add({ ...bank, issueDate: '2026-10-05' }, 'octubre')
+  index.add({ ...bank, issueDate: '2026-09-05' }, 'septiembre')
+  assert.equal(index.find({ type: 'expense', party: { name: 'Movistar' }, number: 'M-9', issueDate: '2026-09-01', total: 45 })?.value, 'septiembre')
 })

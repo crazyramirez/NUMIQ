@@ -9,6 +9,7 @@ import type { ImportInvoiceData, ScanReading } from '#shared/types/import'
 const { state, close } = useScan()
 const toast = useToast()
 const router = useRouter()
+const guardDuplicate = useDuplicateGuard()
 
 const open = computed({ get: () => state.value.open, set: (v: boolean) => { if (!v) close() } })
 
@@ -166,9 +167,11 @@ async function saveExpense() {
   const cat = category.value
   saving.value = true
   try {
-    const { id } = await $fetch<{ id: number }>('/api/expenses', {
+    // Nunca dos veces el mismo gasto: lo seguro se avisa y lo probable se pregunta
+    const saved = await guardDuplicate(allowDuplicate => $fetch<{ id: number }>('/api/expenses', {
       method: 'POST',
       body: {
+        allowDuplicate,
         kind: inv.docType === 'ticket' || inv.docType === 'simplified' ? 'ticket' : 'invoice',
         supplierId: contactId.value,
         newSupplier: contactId.value ? null : inv.party,
@@ -188,8 +191,8 @@ async function saveExpense() {
         fileId: r.fileId,
         aiConfidence: r.confidence,
       },
-    })
-    done('Gasto registrado', `${eur(inv.total)} · ${partyName.value}`, `/gastos?ver=${id}`)
+    }))
+    if (saved) done('Gasto registrado', `${eur(inv.total)} · ${partyName.value}`, `/gastos?ver=${saved.id}`)
   }
   catch (err) {
     toast.error('No se pudo guardar', errorMessage(err))
@@ -202,8 +205,8 @@ async function saveExpense() {
 async function saveSales() {
   saving.value = true
   try {
-    const { id } = await $fetch<{ id: number }>('/api/sales/import', { method: 'POST', body: { data: invoice.value, contactId: contactId.value, fileId: result.value!.fileId } })
-    done(isQuote.value ? 'Presupuesto registrado' : 'Factura emitida registrada', `${invoice.value!.number ?? ''} · ${eur(invoice.value!.total)}`, `/${isQuote.value ? 'presupuestos' : 'facturas'}/${id}`)
+    const saved = await guardDuplicate(allowDuplicate => $fetch<{ id: number }>('/api/sales/import', { method: 'POST', body: { data: invoice.value, contactId: contactId.value, fileId: result.value!.fileId, allowDuplicate } }))
+    if (saved) done(isQuote.value ? 'Presupuesto registrado' : 'Factura emitida registrada', `${invoice.value!.number ?? ''} · ${eur(invoice.value!.total)}`, `/${isQuote.value ? 'presupuestos' : 'facturas'}/${saved.id}`)
   }
   catch (err) {
     toast.error('No se pudo guardar', errorMessage(err))
@@ -248,11 +251,38 @@ async function saveVault() {
 
 const pickOptions = [{ value: 'auto', label: 'Detectar' }, { value: 'received', label: 'Gasto' }, { value: 'issued', label: 'Emitida' }]
 const pickModel = computed({ get: () => pick.value as string, set: (v: string) => { pick.value = v as typeof pick.value } })
-const duplicateLink = computed(() => {
+const duplicateLink = computed(() => duplicateUrl(result.value?.duplicate))
+
+/** Gasto ya registrado sin su documento (desde el banco, a mano…): se le adjunta este en vez de duplicarlo */
+const canAttach = computed(() => direction.value === 'received' && !!result.value?.duplicate?.attachable)
+async function attachToExisting() {
   const dup = result.value?.duplicate
-  if (!dup?.id) return null
-  return dup.type === 'sales' ? `/facturas/${dup.id}` : dup.type === 'expense' ? `/gastos?ver=${dup.id}` : null
-})
+  if (!dup?.id) return
+  saving.value = true
+  try {
+    const url: string = `/api/expenses/${dup.id}/document`
+    const inv = invoice.value
+    const r = await $fetch<{ fiscal: boolean }>(url, {
+      method: 'POST',
+      body: {
+        fileId: result.value!.fileId,
+        number: inv?.number ?? null,
+        dueDate: inv?.dueDate ?? null,
+        party: inv?.party ?? null,
+        issueDate: inv?.issueDate ?? null,
+        taxLines: inv?.taxLines.map(t => ({ base: t.base, vatRate: t.vatRate, vatAmount: t.vatAmount, surchargeRate: t.surchargeRate })) ?? null,
+        irpfRate: inv?.irpfRate ?? null,
+      },
+    })
+    done('Documento adjuntado', r.fiscal ? 'Al gasto que ya tenías, con la fecha y el IVA de la factura: no se ha duplicado' : 'Al gasto que ya tenías registrado: no se ha duplicado', `/gastos?ver=${dup.id}`)
+  }
+  catch (err) {
+    toast.error('No se pudo adjuntar', errorMessage(err))
+  }
+  finally {
+    saving.value = false
+  }
+}
 </script>
 
 <template>
@@ -303,7 +333,10 @@ const duplicateLink = computed(() => {
       <div class="res">
         <div v-if="result.duplicate" class="note dup">
           <Icon name="ph:copy" aria-hidden="true" />
-          <span class="grow">{{ result.duplicate.label }}</span>
+          <span class="grow">
+            {{ result.duplicate.certain === false ? `Puede que ya lo tengas. ${result.duplicate.label}` : result.duplicate.label }}
+            <template v-if="canAttach"><br>Le falta su documento: adjúntale este en vez de registrarlo otra vez.</template>
+          </span>
           <NuxtLink v-if="duplicateLink" :to="duplicateLink" class="link" @click="close()">Ver</NuxtLink>
         </div>
 
@@ -396,7 +429,8 @@ const duplicateLink = computed(() => {
       <span class="grow" />
       <template v-if="isInvoice && direction === 'received'">
         <UiButton variant="secondary" icon="ph:pencil-simple" :disabled="saving" @click="expenseOpen = true">Revisar en el formulario</UiButton>
-        <UiButton variant="primary" icon="ph:check" :loading="saving" :disabled="!d?.issueDate" @click="saveExpense">Guardar gasto</UiButton>
+        <UiButton v-if="canAttach" variant="primary" icon="ph:paperclip" :loading="saving" @click="attachToExisting">Adjuntar al gasto</UiButton>
+        <UiButton v-else variant="primary" icon="ph:check" :loading="saving" :disabled="!d?.issueDate" @click="saveExpense">Guardar gasto</UiButton>
       </template>
       <template v-else-if="isInvoice">
         <UiButton variant="secondary" :icon="editing ? 'ph:eye' : 'ph:pencil-simple'" :disabled="saving" @click="editing = !editing">{{ editing ? 'Ver resumen' : 'Editar' }}</UiButton>

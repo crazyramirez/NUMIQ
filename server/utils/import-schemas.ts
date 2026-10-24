@@ -57,6 +57,7 @@ export const importInvoiceSchema = z.object({
   categoryId: z.number().int().positive().nullish().transform(v => v ?? null),
   description: text(255),
   bodyText: text(8000),
+  allowDuplicate: z.boolean().optional(),
 })
 
 export const importContactSchema = z.object({

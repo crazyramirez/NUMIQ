@@ -143,6 +143,8 @@ export interface ImportInvoiceData {
   description: string | null
   /** Texto descriptivo del documento ("## título", "- viñeta"): descripción de la factura emitida o notas del gasto */
   bodyText?: string | null
+  /** El usuario confirmó que no es un duplicado: solo se descartan las coincidencias probables, nunca las seguras */
+  allowDuplicate?: boolean
 }
 
 export interface ImportContactData {
@@ -193,6 +195,10 @@ export interface ImportDuplicate {
   type: 'sales' | 'expense' | 'contact' | 'item' | 'file'
   id: number
   label: string
+  /** false: muy probable pero no seguro (fecha cercana, nombre parecido…); se puede guardar igualmente. Sin indicar: seguro */
+  certain?: boolean
+  /** Gasto registrado sin su documento (p. ej. desde el banco): se le puede adjuntar el escaneado */
+  attachable?: boolean
 }
 
 /** Lo que se borra al eliminar una importación con todo lo que creó */

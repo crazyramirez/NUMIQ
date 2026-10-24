@@ -1760,9 +1760,13 @@ export async function planNewContact(ctx: OpCtx, a: NewContactIn): Promise<OpPla
   })
   if (!parsed.success) throw new OpError(parsed.error.issues[0]?.message ?? 'Datos no válidos')
   const input = parsed.data
-  const existing = contactMatches(await companyContacts(ctx.company.id), input.nif ?? input.name)
+  const all = await companyContacts(ctx.company.id)
+  const existing = contactMatches(all, input.nif ?? input.name)
     .filter(c => (input.nif && c.nif && normalizeNif(c.nif) === input.nif) || comparableName(c.name) === comparableName(input.name))
-  if (existing.length) throw new OpError(`Ya existe «${existing[0]!.name}»`, { contacto: { nombre: existing[0]!.name, nif: existing[0]!.nif, url: contactUrl(existing[0]!) } })
+  // También el mismo email o NIF escrito de otra forma: nunca dos fichas del mismo contacto
+  const similar = existing.length ? null : await findContactDuplicate(ctx.company.id, input)
+  const dup = existing[0] ?? all.find(c => c.id === similar?.id)
+  if (dup) throw new OpError(`Ya existe «${dup.name}»`, { contacto: { nombre: dup.name, nif: dup.nif, url: contactUrl(dup) } })
   const role = contactRole(input)
   return {
     kind: 'contactos.crear',

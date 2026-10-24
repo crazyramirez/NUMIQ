@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { and, eq, isNotNull, or } from 'drizzle-orm'
 import { z } from 'zod'
 
 /**
@@ -23,6 +24,18 @@ export async function saveVaultFile(companyId: number, userId: number, file: { f
   if (file.data.length > MAX_VAULT_BYTES) throw createError({ statusCode: 413, statusMessage: `${originalName} supera 25 MB` })
   const kind = detectDocument(file.data, originalName) ?? (/\.xml$/i.test(originalName) && file.data.subarray(0, 256).toString('utf8').trimStart().startsWith('<') ? { ext: 'xml', mime: 'application/xml' } : null)
   if (!kind) throw createError({ statusCode: 415, statusMessage: `${originalName}: formato no admitido (PDF, imagen, Word, Excel, CSV, XML o ZIP)` })
+  const sha256 = createHash('sha256').update(file.data).digest('hex')
+  // El mismo archivo (misma huella) ya guardado en el archivo o como documento de una factura o gasto
+  const f = tables.files
+  const [same] = await useDb().select({ kind: f.kind, folder: f.folder, year: f.year, quarter: f.quarter, linkedType: f.linkedType }).from(f)
+    .where(and(eq(f.companyId, companyId), eq(f.sha256, sha256), or(eq(f.kind, 'vault'), isNotNull(f.linkedId))))
+    .limit(1)
+  if (same) {
+    const where = same.kind === 'vault'
+      ? `ya está en el archivo (${same.quarter}T ${same.year}${same.folder ? ` · ${same.folder.charAt(0).toUpperCase()}${same.folder.slice(1)}` : ''})`
+      : same.linkedType === 'expense' ? 'ya es el documento de un gasto' : same.linkedType === 'sales_document' ? 'ya está en una factura' : 'ya está guardado'
+    throw createError({ statusCode: 409, statusMessage: `${originalName} ${where}` })
+  }
   const path = await saveCompanyFile(companyId, `vault/${meta.year}-${meta.quarter}`, file.data, kind.ext)
   const [res] = await useDb().insert(tables.files).values({
     companyId,
@@ -31,7 +44,7 @@ export async function saveVaultFile(companyId: number, userId: number, file: { f
     mime: kind.mime,
     size: file.data.length,
     path,
-    sha256: createHash('sha256').update(file.data).digest('hex'),
+    sha256,
     year: meta.year,
     quarter: meta.quarter,
     folder: meta.folder,

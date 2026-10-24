@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, lte, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, lte, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import type { RecurringTemplate } from '../db/schema'
 
@@ -244,7 +244,18 @@ async function generateExpense(rec: Recurring, company: Company, date: string, u
     paymentMethod: t.paymentMethod ?? null,
     paid: !!t.paid,
   })
-  const id = await saveExpense(company.id, userId, input)
+  let id: number
+  try {
+    id = await saveExpense(company.id, userId, input)
+  }
+  catch (err) {
+    // Ya registrado este periodo (escaneado, importado o desde el banco): se enlaza en vez de duplicarlo
+    const duplicate = (err as { data?: { duplicate?: { type: string, id: number } } }).data?.duplicate
+    if (duplicate?.type !== 'expense' || !duplicate.id) throw err
+    await useDb().update(tables.expenses).set({ recurringId: rec.id })
+      .where(and(eq(tables.expenses.id, duplicate.id), eq(tables.expenses.companyId, company.id), isNull(tables.expenses.recurringId)))
+    return { type: 'expense', id: duplicate.id, number: null, warning: 'Este periodo ya estaba registrado: se ha enlazado sin duplicarlo' }
+  }
   // Modo revisión: queda marcado en Gastos para confirmarlo
   await useDb().update(tables.expenses).set({ recurringId: rec.id, reviewed: rec.autoIssue }).where(eq(tables.expenses.id, id))
   return { type: 'expense', id, number: null, warning: null }

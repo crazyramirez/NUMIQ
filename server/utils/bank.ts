@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto'
-import { and, desc, eq, gte, inArray, isNotNull, ne } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, isNotNull, lte, ne } from 'drizzle-orm'
 import type { BankSuggestion } from '../db/schema'
+import { significantWords, similarNames } from '../../shared/utils/duplicate-matching'
 
 type Company = typeof tables.companies.$inferSelect
 type BankTx = typeof tables.bankTransactions.$inferSelect
 
 const DAY = 86_400_000
 const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / DAY)
+const shiftDay = (d: string, n: number) => new Date(Date.parse(`${d}T12:00:00Z`) + n * DAY).toISOString().slice(0, 10)
 /** Texto comparable: sin tildes, mayúsculas ni signos */
 const plain = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
 const compact = (s: string) => plain(s).replace(/\s/g, '')
@@ -311,6 +313,73 @@ export function isSafeSuggestion(s: BankSuggestion | null | undefined) {
   return s.source === 'rule' && s.confidence >= 90
 }
 
+type StoredTx = Pick<BankTx, 'id' | 'hash' | 'date' | 'valueDate' | 'amount' | 'description' | 'counterparty' | 'reference' | 'balance'>
+
+/** ¿Es el mismo movimiento? Mismo día (de operación o de valor) e importe y, además, el mismo saldo o un concepto compatible */
+function sameMovement(row: BankRow, tx: StoredTx) {
+  if (Math.round(row.amount * 100) !== Math.round(tx.amount * 100)) return false
+  const rowDays = [row.date, row.valueDate].filter(Boolean)
+  if (![tx.date, tx.valueDate].some(d => d && rowDays.includes(d))) return false
+  // El saldo tras el movimiento lo identifica sin dudas
+  if (row.balance != null && tx.balance != null) return Math.round(row.balance * 100) === Math.round(tx.balance * 100)
+  if (row.reference && tx.reference && plain(row.reference) === plain(tx.reference)) return true
+  const a = [row.description, row.counterparty].filter((x): x is string => !!x)
+  const b = [tx.description, tx.counterparty].filter((x): x is string => !!x)
+  if (a.some(x => b.some(y => plain(x) === plain(y) || similarNames(x, y)))) return true
+  // Un concepto genérico («Recibo», «Transferencia») no contradice al otro
+  return !a.some(x => significantWords(x).length) || !b.some(y => significantWords(y).length)
+}
+
+/**
+ * Movimientos del extracto que ya estaban en la cuenta, aunque llegaran en otro formato (Norma 43 y luego
+ * Excel) o con el concepto escrito de otra forma. Cada movimiento guardado empareja con uno solo del
+ * extracto: dos cafés iguales el mismo día siguen siendo dos.
+ */
+export async function knownMovements(companyId: number, accountId: number, rows: BankRow[], hashes: string[]) {
+  const dates = rows.flatMap(r => [r.date, r.valueDate]).filter((d): d is string => !!d).sort()
+  if (!dates.length) return rows.map(() => false)
+  const t = tables.bankTransactions
+  const stored: StoredTx[] = await useDb().select({ id: t.id, hash: t.hash, date: t.date, valueDate: t.valueDate, amount: t.amount, description: t.description, counterparty: t.counterparty, reference: t.reference, balance: t.balance })
+    .from(t).where(and(eq(t.companyId, companyId), eq(t.accountId, accountId), gte(t.date, shiftDay(dates[0]!, -3)), lte(t.date, shiftDay(dates.at(-1)!, 3))))
+  // Primero las huellas exactas (el mismo extracto otra vez); después, por datos, lo que quede
+  const byHash = new Map(stored.map(s => [s.hash, s]))
+  const used = new Set<number>()
+  const known = rows.map((_, i) => {
+    const same = byHash.get(hashes[i]!)
+    if (same) used.add(same.id)
+    return !!same
+  })
+  rows.forEach((row, i) => {
+    if (known[i]) return
+    const same = stored.find(s => !used.has(s.id) && sameMovement(row, s))
+    if (same) {
+      used.add(same.id)
+      known[i] = true
+    }
+  })
+  return known
+}
+
+/** Cuántos movimientos del extracto (mismo día e importe) tiene ya cada cuenta: dice de qué cuenta es un extracto sin IBAN */
+export async function overlapByAccount(companyId: number, rows: BankRow[]) {
+  const dates = rows.map(r => r.date).sort()
+  const out = new Map<number, number>()
+  if (!dates.length) return out
+  const t = tables.bankTransactions
+  const stored = await useDb().select({ accountId: t.accountId, date: t.date, valueDate: t.valueDate, amount: t.amount }).from(t)
+    .where(and(eq(t.companyId, companyId), gte(t.date, shiftDay(dates[0]!, -3)), lte(t.date, shiftDay(dates.at(-1)!, 3))))
+  const keys = new Map<number, Set<string>>()
+  for (const s of stored) {
+    const set = keys.get(s.accountId) ?? new Set<string>()
+    for (const d of [s.date, s.valueDate]) if (d) set.add(`${d}|${Math.round(s.amount * 100)}`)
+    keys.set(s.accountId, set)
+  }
+  for (const [accountId, set] of keys) {
+    out.set(accountId, rows.filter(r => [r.date, r.valueDate].some(d => d && set.has(`${d}|${Math.round(r.amount * 100)}`))).length)
+  }
+  return out
+}
+
 /** Huellas de los movimientos: iguales en el mismo día se distinguen por su orden */
 export function txHashes(accountId: number, rows: BankRow[]) {
   const seen = new Map<string, number>()
@@ -377,7 +446,16 @@ export async function confirmMatch(company: Company, userId: number, txId: numbe
     if (tx.amount <= 0) throw createError({ statusCode: 400, statusMessage: 'Un cargo no puede cobrar una factura' })
     const [doc] = await db.select().from(tables.salesDocuments).where(and(eq(tables.salesDocuments.id, target.id), eq(tables.salesDocuments.companyId, company.id)))
     if (!doc) throw createError({ statusCode: 404, statusMessage: 'Factura no encontrada' })
-    if (!isOpenStatus(doc.status)) throw createError({ statusCode: 409, statusMessage: 'Esta factura no tiene cobros pendientes' })
+    if (!isOpenStatus(doc.status)) {
+      // Ya cobrada a mano: se enlaza su cobro con este ingreso en vez de anotar otro
+      const used = (await db.select({ id: t.paymentId }).from(t).where(and(eq(t.companyId, company.id), eq(t.status, 'matched'), isNotNull(t.paymentId)))).map(r => r.id)
+      const paid = await db.select({ id: tables.payments.id, amount: tables.payments.amount, date: tables.payments.date }).from(tables.payments)
+        .where(and(eq(tables.payments.companyId, company.id), eq(tables.payments.salesDocumentId, doc.id), eq(tables.payments.direction, 'in')))
+      const same = paid.filter(p => !used.includes(p.id) && Math.abs(p.amount - amount) <= MATCH_TOLERANCE)
+        .sort((a, b) => Math.abs(daysBetween(a.date, tx.date)) - Math.abs(daysBetween(b.date, tx.date)))[0]
+      if (same) return confirmMatch(company, userId, tx.id, { kind: 'payment', id: same.id })
+      throw createError({ statusCode: 409, statusMessage: 'Esta factura no tiene cobros pendientes' })
+    }
     const pending = round2(doc.total - doc.paidTotal)
     if (amount > pending + MATCH_TOLERANCE) throw createError({ statusCode: 400, statusMessage: `El movimiento supera lo pendiente de la factura (${eurText(pending)})` })
     const [res] = await db.insert(tables.payments).values({
@@ -415,7 +493,39 @@ export async function confirmMatch(company: Company, userId: number, txId: numbe
   await db.update(t).set({ ...done, paymentId: res!.id, expenseId: e.id, salesDocumentId: null, ownsPayment: true }).where(eq(t.id, tx.id))
 }
 
-/** Crea el gasto de un cargo (comisión, cuota de autónomos, suministro…) ya pagado y lo concilia */
+/**
+ * Gasto ya anotado que corresponde a un cargo: el mismo importe, fecha cercana (la factura hasta 60 días
+ * antes del cargo o poco después) y algo en común: proveedor, concepto, número de factura o tipo (cuota de
+ * autónomos, nómina, impuestos). Los gastos ya unidos a otro movimiento no cuentan: son otro pago.
+ */
+async function recordedExpenseFor(company: Company, tx: BankTx, input: { kind?: string | null, supplier: string | null, description: string | null }) {
+  const db = useDb()
+  const e = tables.expenses
+  const t = tables.bankTransactions
+  const amount = Math.abs(tx.amount)
+  const rows = await db.select({ id: e.id, kind: e.kind, number: e.number, supplier: e.supplier, description: e.description, issueDate: e.issueDate, total: e.total, paidTotal: e.paidTotal, status: e.status })
+    .from(e).where(and(
+      eq(e.companyId, company.id), ne(e.approval, 'rejected'),
+      gte(e.issueDate, shiftDay(tx.date, -60)), lte(e.issueDate, shiftDay(tx.date, 10)),
+      gte(e.total, round2(amount - 0.01)), lte(e.total, round2(amount + 0.01)),
+    ))
+  if (!rows.length) return null
+  const linked = new Set((await db.select({ id: t.expenseId }).from(t)
+    .where(and(eq(t.companyId, company.id), eq(t.status, 'matched'), ne(t.id, tx.id), inArray(t.expenseId, rows.map(r => r.id))))).map(r => r.id))
+  const text = `${tx.description} ${tx.counterparty ?? ''} ${tx.reference ?? ''}`
+  const typed = !!input.kind && ['social_security', 'payroll', 'tax'].includes(input.kind)
+  const found = rows.filter(r => !linked.has(r.id) && (r.status !== 'partial' || Math.abs(round2(r.total - r.paidTotal) - amount) <= 0.01)).filter(r =>
+    nameScore(r.supplier?.name, text) >= 0.5 || nameScore(r.description, text) >= 0.5 || numberInText(r.number, text)
+    || similarNames(input.supplier, r.supplier?.name) || similarNames(input.supplier, r.description) || similarNames(input.description, r.description)
+    || (typed && r.kind === input.kind))
+  // El más cercano en fecha
+  return found.sort((a, b) => Math.abs(daysBetween(a.issueDate, tx.date)) - Math.abs(daysBetween(b.issueDate, tx.date)))[0]?.id ?? null
+}
+
+/**
+ * Crea el gasto de un cargo (comisión, cuota de autónomos, suministro…) ya pagado y lo concilia.
+ * Si ese gasto ya estaba anotado (escaneado, importado o a mano), lo concilia con él en vez de duplicarlo.
+ */
 export async function expenseFromTx(company: Company, userId: number, txId: number, input: {
   kind: BankSuggestion['expenseKind']
   categoryId: number | null
@@ -430,6 +540,11 @@ export async function expenseFromTx(company: Company, userId: number, txId: numb
   const tx = await loadTx(company.id, txId)
   if (tx.status === 'matched') throw createError({ statusCode: 409, statusMessage: 'Este movimiento ya está conciliado' })
   if (tx.amount >= 0) throw createError({ statusCode: 400, statusMessage: 'Solo los cargos pueden ser gastos' })
+  const recorded = await recordedExpenseFor(company, tx, input)
+  if (recorded) {
+    await confirmMatch(company, userId, tx.id, { kind: 'expense', id: recorded })
+    return { expenseId: recorded, linked: true }
+  }
   const guess = input.deductiblePct == null ? (await deductibleGuesser(company.id))({ supplierName: input.supplier, categoryId: input.categoryId }) : null
   const deductiblePct = guess?.deductiblePct ?? input.deductiblePct ?? 100
   // Sin IVA el % de IVA no importa: se guarda igual que el del gasto para que se lea «no deducible» o «50 %»
@@ -452,14 +567,14 @@ export async function expenseFromTx(company: Company, userId: number, txId: numb
     paid: true,
     notes: `Creado desde el banco: ${tx.description}`.slice(0, 5000),
     newSupplier: input.supplier ? { name: input.supplier.slice(0, 200), nif: null, address: null, postalCode: null, city: null, province: null, country: 'ES', email: null, phone: null, isPerson: false } : null,
-  })
+  }, undefined, { checkDuplicates: false })
   const [res] = await db.insert(tables.payments).values({
     companyId: company.id, direction: 'out', expenseId, amount: total, date: tx.date, method, bankAccountId: tx.accountId, notes: 'Conciliado con el banco',
   }).$returningId()
   await db.update(tables.bankTransactions).set({
     status: 'matched', matchedAt: new Date(), matchedBy: userId, expenseId, paymentId: res!.id, salesDocumentId: null, ownsPayment: true, ignoreReason: null,
   }).where(eq(tables.bankTransactions.id, tx.id))
-  return expenseId
+  return { expenseId, linked: false }
 }
 
 /**

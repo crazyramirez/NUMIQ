@@ -132,18 +132,23 @@ function accept(tx: Tx) {
 /** Gasto con la propuesta del cargo; sin indicar la deducibilidad, el servidor aplica la aprendida */
 function createExpense(tx: Tx, deductible?: number) {
   const s = tx.suggestion?.kind === 'new_expense' ? tx.suggestion : null
-  return run(tx.id, () => call(`/api/bank/transactions/${tx.id}/expense`, {
-    method: 'POST',
-    body: {
-      kind: s?.expenseKind ?? 'ticket',
-      categoryId: s?.categoryId ?? null,
-      supplier: s?.supplier ?? null,
-      vatRate: s?.vatRate ?? (s ? 0 : 21),
-      description: null,
-      deductiblePct: deductible ?? s?.deductiblePct ?? null,
-      vatDeductiblePct: deductible ?? s?.vatDeductiblePct ?? null,
-    },
-  }), deductible === 0 ? 'Gasto no deducible creado' : 'Gasto creado y conciliado', s?.label ?? tx.description)
+  return run(tx.id, async () => {
+    const r = await call(`/api/bank/transactions/${tx.id}/expense`, {
+      method: 'POST',
+      body: {
+        kind: s?.expenseKind ?? 'ticket',
+        categoryId: s?.categoryId ?? null,
+        supplier: s?.supplier ?? null,
+        vatRate: s?.vatRate ?? (s ? 0 : 21),
+        description: null,
+        deductiblePct: deductible ?? s?.deductiblePct ?? null,
+        vatDeductiblePct: deductible ?? s?.vatDeductiblePct ?? null,
+      },
+    }) as { linked?: boolean }
+    // Ya estaba anotado (escaneado, importado o a mano): se concilia con él en vez de duplicarlo
+    if (r.linked) toast.success('Ya estaba anotado', 'Conciliado con el gasto que tenías, sin duplicarlo')
+    else toast.success(deductible === 0 ? 'Gasto no deducible creado' : 'Gasto creado y conciliado', s?.label ?? tx.description)
+  })
 }
 
 /** «No deducible» o «50 %» si la propuesta de gasto no es deducible del todo */

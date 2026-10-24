@@ -67,8 +67,11 @@ async function submit() {
   if (!props.tx) return
   busy.value = true
   try {
-    await $fetch(`/api/bank/transactions/${props.tx.id}/expense`, { method: 'POST', body: { ...form, supplier: form.supplier || null, description: form.description || null } })
-    toast.success('Gasto creado y conciliado', `${eur(total.value)} · ya cuenta en tus impuestos`)
+    const url: string = `/api/bank/transactions/${props.tx.id}/expense`
+    const r = await $fetch<{ linked?: boolean }>(url, { method: 'POST', body: { ...form, supplier: form.supplier || null, description: form.description || null } })
+    // Ya estaba anotado (escaneado, importado o a mano): se concilia con él en vez de duplicarlo
+    if (r.linked) toast.success('Ya estaba anotado', `${eur(total.value)} · conciliado con el gasto que tenías, sin duplicarlo`)
+    else toast.success('Gasto creado y conciliado', `${eur(total.value)} · ya cuenta en tus impuestos`)
     open.value = false
     emit('created')
   }

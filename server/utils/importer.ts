@@ -3,7 +3,7 @@ import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArray, or, sql 
 import type { Column } from 'drizzle-orm'
 import type { ExtractedDocType, ExtractedDocument, ImportCatalogData, ScanReading, ImportContactData, ImportDirection, ImportDocRef, ImportDuplicate, ImportInvoiceData, ImportItemStatus, ImportItemType, ImportLink, ImportParty, ImportUndoSummary, ImportVaultData } from '../../shared/types/import'
 import type { ImportOptions } from '../db/schema'
-import { ImportDuplicateIndex, findImportContact } from '../../shared/utils/duplicate-matching'
+import { ImportDuplicateIndex, findImportContact, findSimilarContact } from '../../shared/utils/duplicate-matching'
 import type { DuplicateParty, DuplicateRecord } from '../../shared/utils/duplicate-matching'
 import { resolveDocumentDate, sourceDateWarning } from '../../shared/utils/source-date'
 import type { SourceFileDate } from '../../shared/utils/source-date'
@@ -72,6 +72,14 @@ export async function addBatchFile(companyId: number, userId: number, batchId: n
     result.skipped.push({ name: sourcePath, reason: 'Supera 40 MB' })
     return result
   }
+  const sha256 = createHash('sha256').update(file.data).digest('hex')
+  // El mismo archivo dos veces en la importación (arrastrado otra vez o en dos carpetas del ZIP): se lee una
+  const [twin] = await useDb().select({ id: tables.files.id }).from(tables.files)
+    .where(and(eq(tables.files.companyId, companyId), eq(tables.files.batchId, batchId), eq(tables.files.sha256, sha256))).limit(1)
+  if (twin) {
+    result.skipped.push({ name: sourcePath, reason: 'Repetido: ya está en esta importación' })
+    return result
+  }
   const path = await saveCompanyFile(companyId, `imports/${batchId}`, file.data, kind.ext)
   const sourceDate = await resolveFileDate(file.data, kind.ext, { lastModified: file.lastModified, archiveDate: file.sourceDate })
   await useDb().insert(tables.files).values({
@@ -83,7 +91,7 @@ export async function addBatchFile(companyId: number, userId: number, batchId: n
     mime: kind.mime,
     size: file.data.length,
     path,
-    sha256: createHash('sha256').update(file.data).digest('hex'),
+    sha256,
     batchId,
     aiStatus: 'pending',
     uploadedBy: userId,
@@ -132,7 +140,7 @@ async function loadKnowledge(company: Company, direction: ImportDirection | 'aut
       .where(eq(tables.contacts.companyId, company.id)),
     db.select({ id: tables.salesDocuments.id, number: tables.salesDocuments.number, kind: tables.salesDocuments.kind, customer: tables.salesDocuments.customer, issueDate: tables.salesDocuments.issueDate, total: tables.salesDocuments.total }).from(tables.salesDocuments)
       .where(eq(tables.salesDocuments.companyId, company.id)),
-    db.select({ id: tables.expenses.id, number: tables.expenses.number, issueDate: tables.expenses.issueDate, total: tables.expenses.total, supplier: tables.expenses.supplier }).from(tables.expenses)
+    db.select({ id: tables.expenses.id, number: tables.expenses.number, issueDate: tables.expenses.issueDate, total: tables.expenses.total, supplier: tables.expenses.supplier, description: tables.expenses.description, notes: tables.expenses.notes, fileId: tables.expenses.fileId }).from(tables.expenses)
       .where(eq(tables.expenses.companyId, company.id)),
     db.select({ id: tables.items.id, name: tables.items.name, sku: tables.items.sku }).from(tables.items)
       .where(eq(tables.items.companyId, company.id)),
@@ -163,8 +171,10 @@ async function loadKnowledge(company: Company, direction: ImportDirection | 'aut
   }
   for (const s of sales) k.duplicates.add({ type: 'sales', kind: s.kind, party: s.customer, number: s.number, issueDate: s.issueDate, total: s.total }, { type: 'sales', id: s.id, label: `Ya existe: ${s.kind === 'quote' ? 'Presupuesto' : s.kind === 'proforma' ? 'Proforma' : 'Factura'} ${s.number ?? '(sin número)'}` })
   for (const e of expenses) {
-    const label = `Gasto ${e.number ?? ''} de ${e.supplier?.name ?? ''}`.replace(/\s+/g, ' ')
-    k.duplicates.add({ type: 'expense', party: e.supplier, number: e.number, issueDate: e.issueDate, total: e.total }, { type: 'expense', id: e.id, label: `Ya existe: ${label}` })
+    const label = `Gasto ${e.number ?? ''} de ${e.supplier?.name ?? e.description ?? ''}`.replace(/\s+/g, ' ')
+    // Creado desde un cargo y aún sin factura: su fecha es la del pago
+    const paidOnBank = !e.fileId && !e.number && !!e.notes?.startsWith('Creado desde el banco')
+    k.duplicates.add({ type: 'expense', party: e.supplier, number: e.number, issueDate: e.issueDate, total: e.total, description: e.description, paidOnBank }, { type: 'expense', id: e.id, label: `Ya existe: ${label}${paidOnBank ? ` (pagado el ${e.issueDate.split('-').reverse().join('/')})` : ''}` })
   }
   for (const i of items) {
     k.itemsByName.set(comparableName(i.name), { id: i.id, label: i.name })
@@ -195,23 +205,26 @@ function itemKeys(type: ImportItemType, data: ItemRow['data']): string[] {
 }
 
 function matchContact(k: Knowledge, party: ImportParty | null) {
-  return party ? findImportContact(k.contacts, party)?.id ?? null : null
+  return party ? findSimilarContact(k.contacts, party)?.id ?? null : null
 }
 
 function duplicateRecord(type: ImportItemType, data: ItemRow['data']): DuplicateRecord | null {
   if (!data) return null
   if (type === 'sales' || type === 'expense') {
     const d = data as ImportInvoiceData
-    return { type, kind: d.docType, party: d.party, number: d.number, issueDate: d.issueDate, total: d.total }
+    return { type, kind: d.docType, party: d.party, number: d.number, issueDate: d.issueDate, total: d.total, description: d.description }
   }
   return type === 'contact' ? { type, party: (data as ImportContactData).party } : null
 }
 
+/** El usuario confirmó que no es un duplicado: solo cuentan las coincidencias seguras */
+const allowsDuplicate = (type: ImportItemType, data: ItemRow['data']) => (type === 'sales' || type === 'expense') && !!(data as ImportInvoiceData | null)?.allowDuplicate
+
 /** Duplicado en la base de datos o ya visto en el lote */
 function findDuplicate(k: Knowledge, type: ImportItemType, data: ItemRow['data']): ImportDuplicate | null {
   const record = duplicateRecord(type, data)
-  const match = record ? k.duplicates.find(record) : null
-  if (match) return { ...match.value, label: `${match.value.label}. ${match.reason}` }
+  const match = record ? k.duplicates.find(record, { certainOnly: allowsDuplicate(type, data) }) : null
+  if (match) return { ...match.value, label: `${match.value.label}. ${match.reason}`, certain: match.certain }
   if (type === 'item') {
     const d = data as ImportCatalogData
     const hit = (d.sku ? k.itemsByName.get(`sku:${d.sku.toLowerCase()}`) : undefined) ?? k.itemsByName.get(comparableName(d.name))
@@ -335,7 +348,20 @@ async function processFile(k: Knowledge, companyId: number, batchId: number, fil
       const type = same.linkedType === 'sales_document' ? 'sales' : 'expense'
       await db.insert(tables.importItems).values({
         companyId, batchId, fileId: file.id, position: 0, type, status: 'duplicate', data: null, contactId: null, confidence: null, warnings: [],
-        duplicate: { type, id: same.linkedId!, label: 'Este archivo ya se importó' },
+        duplicate: { type, id: same.linkedId!, label: 'Este archivo ya se importó', certain: true },
+      })
+      await db.update(tables.files).set({ aiStatus: 'done' }).where(eq(tables.files.id, file.id))
+      return
+    }
+    // Ya guardado en el archivo trimestral o como adjunto: no se vuelve a archivar
+    const [archived] = await db.select({ id: tables.files.id, folder: tables.files.folder, year: tables.files.year, quarter: tables.files.quarter }).from(tables.files)
+      .where(and(eq(tables.files.companyId, companyId), eq(tables.files.sha256, file.sha256!), ne(tables.files.id, file.id), inArray(tables.files.kind, ['vault', 'attachment'])))
+      .limit(1)
+    if (archived) {
+      const where = archived.year && archived.quarter ? ` (${archived.quarter}T ${archived.year}${archived.folder ? ` · ${archived.folder}` : ''})` : ''
+      await db.insert(tables.importItems).values({
+        companyId, batchId, fileId: file.id, position: 0, type: 'vault', status: 'duplicate', data: null, contactId: null, confidence: null, warnings: [],
+        duplicate: { type: 'file', id: archived.id, label: `Este documento ya está en el archivo${where}`, certain: true },
       })
       await db.update(tables.files).set({ aiStatus: 'done' }).where(eq(tables.files.id, file.id))
       return
@@ -650,11 +676,15 @@ const IMPORTED_CONTACT_NOTE = 'Creado al importar documentos'
 
 async function ensureContact(st: CommitState, party: ImportParty, role: { client: boolean, supplier: boolean }, existingId: number | null) {
   const db = useDb()
-  const id = existingId ?? findImportContact(st.contacts, party)?.id
+  const id = existingId ?? findSimilarContact(st.contacts, party)?.id
   if (id) {
     // Si ya existe, se marca también como cliente o proveedor según el caso
     const patch = { ...(role.client ? { isClient: true } : {}), ...(role.supplier ? { isSupplier: true } : {}) }
     if (Object.keys(patch).length) await db.update(tables.contacts).set(patch).where(and(eq(tables.contacts.id, id), eq(tables.contacts.companyId, st.company.id)))
+    // Y se completa con lo que faltaba en su ficha (NIF, email, dirección…), sin crear otro contacto.
+    // Elegido a mano para datos de otra empresa: no se le copia nada.
+    const known = st.contacts.find(c => c.id === id)
+    if (known && (!existingId || findSimilarContact([known], party))) Object.assign(known, await fillContactGaps(st.company.id, id, party))
     return id
   }
   const nif = party.nif
@@ -999,8 +1029,8 @@ async function commitBatchLocked(companyId: number, userId: number, batchId: num
       const selectedContact = item.contactId ? knowledge.contacts.find(c => c.id === item.contactId) : null
       const recordForContact = duplicateRecord(item.type, item.data)
       const matchedByContact = selectedContact && recordForContact && item.type !== 'contact'
-        ? knowledge.duplicates.find({ ...recordForContact, party: selectedContact }) : null
-      const duplicate = findDuplicate(knowledge, item.type, item.data) ?? (matchedByContact ? { ...matchedByContact.value, label: `${matchedByContact.value.label}. ${matchedByContact.reason}` } : null)
+        ? knowledge.duplicates.find({ ...recordForContact, party: selectedContact }, { certainOnly: allowsDuplicate(item.type, item.data) }) : null
+      const duplicate = findDuplicate(knowledge, item.type, item.data) ?? (matchedByContact ? { ...matchedByContact.value, label: `${matchedByContact.value.label}. ${matchedByContact.reason}`, certain: matchedByContact.certain } : null)
       if (duplicate) {
         if (item.type === 'contact' && item.data) {
           const d = item.data as ImportContactData
@@ -1300,8 +1330,13 @@ export async function readSingleDocument(company: Company, userId: number, file:
     const contactId = matchContact(k, party)
     const known = contactId ? k.contacts.find(c => c.id === contactId) : undefined
     const duplicate: ImportDuplicate | null = same?.linkedId
-      ? { type: same.linkedType === 'sales_document' ? 'sales' : 'expense', id: same.linkedId, label: 'Este documento ya está registrado' }
+      ? { type: same.linkedType === 'sales_document' ? 'sales' : 'expense', id: same.linkedId, label: 'Este documento ya está registrado', certain: true }
       : findDuplicate(k, first.type, first.data)
+    // Gasto ya anotado sin su factura o ticket (desde el banco, a mano…): se le puede adjuntar este
+    if (!same?.linkedId && duplicate?.type === 'expense' && duplicate.id) {
+      const [e] = await db.select({ fileId: tables.expenses.fileId }).from(tables.expenses).where(and(eq(tables.expenses.id, duplicate.id), eq(tables.expenses.companyId, company.id)))
+      duplicate.attachable = !!e && !e.fileId
+    }
     return {
       fileId,
       fileName: name,
@@ -1334,11 +1369,11 @@ export async function claimScanFile(companyId: number, fileId: number | null | u
 }
 
 /** Guarda una factura emitida leída de un escaneo (importada: conserva su número y no genera VeriFactu) */
-export async function importSingleInvoice(company: Company, userId: number, input: { data: ImportInvoiceData, contactId: number | null, fileId: number | null }) {
+export async function importSingleInvoice(company: Company, userId: number, input: { data: ImportInvoiceData, contactId: number | null, fileId: number | null, allowDuplicate?: boolean }) {
   return withImportLock(company.id, () => importSingleInvoiceLocked(company, userId, input))
 }
 
-async function importSingleInvoiceLocked(company: Company, userId: number, input: { data: ImportInvoiceData, contactId: number | null, fileId: number | null }) {
+async function importSingleInvoiceLocked(company: Company, userId: number, input: { data: ImportInvoiceData, contactId: number | null, fileId: number | null, allowDuplicate?: boolean }) {
   const d = reconcileInvoiceLines(input.data)
   if (!d.issueDate || !d.taxLines.length) throw createError({ statusCode: 400, statusMessage: 'Falta la fecha o los importes' })
   const db = useDb()
@@ -1348,7 +1383,7 @@ async function importSingleInvoiceLocked(company: Company, userId: number, input
     if (!c) throw createError({ statusCode: 400, statusMessage: 'Cliente no encontrado' })
     duplicateParty = c
   }
-  const duplicate = await findSavedImportDuplicate(company.id, { type: 'sales', kind: d.docType, party: duplicateParty, number: d.number, issueDate: d.issueDate, total: d.total }, input.fileId)
+  const duplicate = await findSavedImportDuplicate(company.id, { type: 'sales', kind: d.docType, party: duplicateParty, number: d.number, issueDate: d.issueDate, total: d.total }, input.fileId, { certainOnly: !!input.allowDuplicate })
   if (duplicate) throw createError({ statusCode: 409, statusMessage: duplicate.label, data: { duplicate } })
   const file = await claimScanFile(company.id, input.fileId)
   const st = await commitState(company, userId, { createItems: true, markPaid: false }, {})
@@ -1380,13 +1415,14 @@ async function duplicateImportedFile(companyId: number, fileId: number): Promise
   if (((file.aiResult as { documents?: unknown[] } | null)?.documents?.length ?? 0) > 1) return null
   const [same] = await db.select().from(tables.files).where(and(eq(tables.files.companyId, companyId), eq(tables.files.sha256, file.sha256), ne(tables.files.id, fileId), isNotNull(tables.files.linkedId), inArray(tables.files.linkedType, ['sales_document', 'expense']))).limit(1)
   if (((same?.aiResult as { documents?: unknown[] } | null)?.documents?.length ?? 0) > 1) return null
-  return same?.linkedId ? { type: same.linkedType === 'expense' ? 'expense' : 'sales', id: same.linkedId, label: 'Este archivo ya se importó' } : null
+  return same?.linkedId ? { type: same.linkedType === 'expense' ? 'expense' : 'sales', id: same.linkedId, label: 'Este archivo ya se importó', certain: true } : null
 }
 
-export async function findSavedImportDuplicate(companyId: number, record: DuplicateRecord, fileId?: number | null): Promise<ImportDuplicate | null> {
+/** Duplicado ya guardado; `certainOnly` cuando el usuario confirmó que no lo es (solo frena lo seguro) */
+export async function findSavedImportDuplicate(companyId: number, record: DuplicateRecord, fileId?: number | null, opts: { certainOnly?: boolean } = {}): Promise<ImportDuplicate | null> {
   const [company] = await useDb().select().from(tables.companies).where(eq(tables.companies.id, companyId))
   if (!company) throw createError({ statusCode: 404, statusMessage: 'Empresa no encontrada' })
   const k = await loadKnowledge(company, 'auto', null)
-  const hit = k.duplicates.find(record)
-  return hit ? { ...hit.value, label: `${hit.value.label}. ${hit.reason}` } : fileId ? duplicateImportedFile(companyId, fileId) : null
+  const hit = k.duplicates.find(record, opts)
+  return hit ? { ...hit.value, label: `${hit.value.label}. ${hit.reason}`, certain: hit.certain } : fileId ? duplicateImportedFile(companyId, fileId) : null
 }
