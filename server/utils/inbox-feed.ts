@@ -32,7 +32,6 @@ export async function inboxFeed(company: Company, user: { email: string }, role:
   return {
     mail: {
       configured,
-      alias: configured ? companyAlias(company) : null,
       wholeInbox: whole,
       lastSync: settings?.mailSyncAt ?? null,
       messages,

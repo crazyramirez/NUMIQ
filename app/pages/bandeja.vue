@@ -8,7 +8,7 @@ useHead({ title: 'Bandeja · NUMIQ' })
 interface MailMsg { id: number, fromName: string | null, fromAddress: string | null, subject: string | null, date: string | null, attachments: Array<{ filename: string, size: number, mime: string }> | null }
 interface ImportRow { id: number, name: string | null, source: 'upload' | 'scan' | 'email', status: string, totalFiles: number, processedFiles: number, createdAt: string, running: boolean }
 interface Feed {
-  mail: { configured: boolean, alias: string | null, wholeInbox: boolean, lastSync: string | null, messages: MailMsg[] }
+  mail: { configured: boolean, wholeInbox: boolean, lastSync: string | null, messages: MailMsg[] }
   imports: ImportRow[]
   unreviewedExpenses: number
 }
@@ -45,17 +45,6 @@ onBeforeUnmount(() => timer && clearInterval(timer))
 // ─── Correo ───
 
 const busy = ref<string | null>(null)
-
-async function copyAlias() {
-  if (!data.value?.mail.alias) return
-  try {
-    await navigator.clipboard.writeText(data.value.mail.alias)
-    toast.success('Dirección copiada', 'Dásela a tus proveedores o reenvía ahí sus facturas.')
-  }
-  catch {
-    toast.info(data.value.mail.alias)
-  }
-}
 
 async function sync() {
   busy.value = 'sync'
@@ -128,6 +117,17 @@ const SOURCE: Record<ImportRow['source'], { icon: string, label: string }> = {
         <p class="sub">Todo lo que te llega, en un sitio. Decide qué es cada cosa y deja la bandeja vacía.</p>
       </div>
       <div v-if="!readOnly" class="page-actions">
+        <UiButton
+          v-if="data?.mail.configured"
+          variant="soft"
+          icon="ph:arrows-clockwise"
+          compact
+          :loading="busy === 'sync'"
+          :title="data.mail.lastSync ? `Revisado ${relDays(data.mail.lastSync.slice(0, 10))}` : undefined"
+          @click="sync"
+        >
+          Buscar correo nuevo
+        </UiButton>
         <UiButton icon="ph:upload-simple" compact to="/documentos">Subir archivos</UiButton>
         <UiButton variant="ai" icon="ph:camera" compact @click="openScan()">Foto de un ticket</UiButton>
       </div>
@@ -145,21 +145,6 @@ const SOURCE: Record<ImportRow['source'], { icon: string, label: string }> = {
     </div>
 
     <template v-else-if="data">
-      <!-- Dirección para recibir facturas -->
-      <section v-if="data.mail.configured && data.mail.alias" class="card addr rise">
-        <span class="addr-ic" aria-hidden="true"><Icon name="ph:envelope-simple-open-fill" /></span>
-        <div class="grow min0">
-          <p class="addr-t">Tu dirección para recibir facturas</p>
-          <p class="addr-v mono">{{ data.mail.alias }}</p>
-          <p class="addr-s">Dásela a tus proveedores o reenvía ahí las facturas que te lleguen. Aparecen aquí para leerlas con IA.</p>
-        </div>
-        <div class="addr-acts">
-          <UiButton size="sm" icon="ph:copy" @click="copyAlias">Copiar</UiButton>
-          <UiButton v-if="!readOnly" size="sm" variant="soft" icon="ph:arrows-clockwise" :loading="busy === 'sync'" @click="sync">Buscar correo nuevo</UiButton>
-        </div>
-        <p v-if="data.mail.lastSync" class="addr-sync">Revisado {{ relDays(data.mail.lastSync.slice(0, 10)) }}</p>
-      </section>
-
       <!-- Vacía: la meta -->
       <UiCard v-if="!pending" class="rise" style="--i: 1">
         <div class="zero">
@@ -238,71 +223,13 @@ const SOURCE: Record<ImportRow['source'], { icon: string, label: string }> = {
       </template>
 
       <p v-if="!data.mail.configured" class="note">
-        <Icon name="ph:info" aria-hidden="true" /> El correo no está configurado: cuando lo esté, tendrás una dirección propia para recibir facturas y aparecerán aquí.
+        <Icon name="ph:info" aria-hidden="true" /> El correo no está configurado: cuando lo esté, las facturas que te lleguen por correo aparecerán aquí.
       </p>
     </template>
   </div>
 </template>
 
 <style scoped>
-.addr {
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s-4);
-  padding: var(--s-5);
-  margin-bottom: var(--s-5);
-  background: linear-gradient(135deg, color-mix(in srgb, var(--brand-soft) 70%, var(--surface)), var(--surface));
-}
-
-.addr-ic {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 46px;
-  height: 46px;
-  font-size: 22px;
-  color: var(--on-brand);
-  background: var(--brand);
-  border-radius: 14px;
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--brand) 30%, transparent);
-}
-
-.addr-t {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-2);
-}
-
-.addr-v {
-  margin-top: 2px;
-  font-size: var(--text-lg);
-  font-weight: 600;
-  color: var(--text);
-  overflow-wrap: anywhere;
-}
-
-.addr-s {
-  margin-top: 4px;
-  font-size: var(--text-sm);
-  color: var(--text-3);
-}
-
-.addr-acts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--s-2);
-}
-
-.addr-sync {
-  position: absolute;
-  top: 10px;
-  right: 14px;
-  font-size: var(--text-xs);
-  color: var(--text-4);
-}
-
 .zero {
   display: flex;
   flex-direction: column;
@@ -550,33 +477,6 @@ const SOURCE: Record<ImportRow['source'], { icon: string, label: string }> = {
 }
 
 @media (max-width: 767px) {
-  .addr {
-    align-items: flex-start;
-    gap: var(--s-3);
-    padding: var(--s-4);
-  }
-
-  .addr-ic {
-    width: 38px;
-    height: 38px;
-    font-size: 18px;
-    border-radius: 11px;
-  }
-
-  .addr-v {
-    font-size: var(--text-base);
-  }
-
-  .addr-acts {
-    width: 100%;
-  }
-
-  .addr-sync {
-    position: static;
-    width: 100%;
-    margin-top: -8px;
-  }
-
   .row,
   .mail {
     padding: 14px var(--s-4);
