@@ -36,7 +36,7 @@ const overdue = computed(() => !!pay.value && !pay.value.paid && !!pay.value.due
 // Bizum: el móvil sin prefijo, y para leerlo en grupos de tres (612 345 678)
 const bizumPlain = (phone: string) => phone.replace(/^\+34/, '')
 const bizumPretty = (phone: string) => bizumPlain(phone).replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3')
-const ibanText = computed(() =>pay.value?.iban?.replace(/\s/g, '').replace(/(.{4})/g, '$1 ').trim() ?? '')
+const ibanText = computed(() => pay.value?.iban?.replace(/\s/g, '').replace(/(.{4})/g, '$1 ').trim() ?? '')
 const website = computed(() => {
   const w = data.value?.company.website
   return w ? (/^https?:\/\//i.test(w) ? w : `https://${w}`) : null
