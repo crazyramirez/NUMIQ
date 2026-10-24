@@ -233,164 +233,31 @@ Se ejecutan dentro del propio servidor Nitro (`server/plugins`):
 
 ---
 
-## Instalación en servidor
+## Instalación en servidor (Plesk)
 
-Pasos para Plesk (Git + Node.js), que es como se despliega hoy. Al final hay una guía corta para un VPS sin panel.
-
-**Necesitas:** Node.js ≥ 22.22 (en Plesk, Node 24), MariaDB ≥ 10.6 o MySQL ≥ 8.0 (en local se usa MariaDB 11.4), un dominio con HTTPS y acceso SSH para las tareas de mantenimiento.
-
-> **En producción la app no lee `.env`.** `node .output/server/index.mjs` solo ve las variables del proceso: en Plesk se ponen en el panel Node.js (paso 4) y en un VPS con `node --env-file=.env`.
-
-### 1. Base de datos
-
-En Plesk: **Sitios web y dominios → tu dominio → Bases de datos → Añadir base de datos**.
-
-| Campo | Valor |
-|---|---|
-| Nombre de la base | p. ej. `numiq`. Plesk puede añadir un prefijo (`usuario_numiq`): usa el nombre completo que aparezca en la lista. |
-| Servidor | El MariaDB/MySQL local (`localhost`). |
-| Usuario | Uno nuevo, solo para NUMIQ, con contraseña larga. Necesita todos los permisos sobre esa base, también `CREATE`, `ALTER`, `INDEX`, `REFERENCES` y `DROP`, porque las migraciones crean y cambian tablas. En Plesk es el rol por defecto de lectura y escritura. |
-| Acceso | Solo conexiones locales. |
-
-No importes nada: las tablas se crean solas en el primer arranque (paso 5).
-
-Antes de arrancar, abre la base en **phpMyAdmin → Operaciones** y comprueba que el cotejamiento es `utf8mb4_unicode_ci`. La app intenta ponerlo al arrancar, pero si el usuario no tiene permiso para `ALTER DATABASE` las tablas se crearían con el juego de caracteres del servidor, que puede ser `latin1` y perder emojis y algunos caracteres.
-
-Sin Plesk, como root de MySQL:
-
-```sql
-CREATE DATABASE numiq CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'numiq'@'localhost' IDENTIFIED BY 'una-contraseña-larga';
-GRANT ALL PRIVILEGES ON numiq.* TO 'numiq'@'localhost';
-FLUSH PRIVILEGES;
-```
-
-Apunta los datos para el paso 4:
-
-```ini
-DB_HOST=localhost
-DB_PORT=3306
-DB_USER=numiq
-DB_PASSWORD=una-contraseña-larga
-DB_NAME=numiq
-```
-
-- La contraseña va tal cual, sin codificar. En un archivo `.env`, si lleva `#`, espacios o comillas, enciérrala entre comillas simples (`DB_PASSWORD='a#b c'`): sin ellas el `#` corta el valor.
-- Si MySQL responde «usuario o contraseña incorrectos» con la contraseña buena, el usuario solo existe como `'numiq'@'localhost'` y la conexión llega por TCP desde `127.0.0.1`. Añade `DB_SOCKET` con el socket Unix del servidor (`/var/lib/mysql/mysql.sock` en AlmaLinux/CentOS, `/run/mysqld/mysqld.sock` en Debian/Ubuntu) o crea también el usuario `'numiq'@'127.0.0.1'`.
-
-### 2. Código y despliegue automático
-
-1. En el dominio, **Git → Añadir repositorio**: la URL de GitHub, rama `master` y despliegue automático en la carpeta de la app (p. ej. `/httpdocs`). Plesk da una clave SSH que hay que añadir en GitHub como *deploy key*, y una URL de webhook que va en **GitHub → Settings → Webhooks** para desplegar en cada push.
-2. En **Acciones de despliegue adicionales**, una sola línea:
+1. **Base de datos.** En el dominio, **Bases de datos → Añadir base de datos**: nombre (p. ej. `numiq`), usuario y contraseña. No hay que importar nada: las tablas se crean solas en el primer arranque.
+2. **Git.** **Git → Añadir repositorio**, rama `master`, despliegue automático. En **Acciones de despliegue adicionales**:
    ```bash
    bash scripts/plesk-deploy.sh
    ```
-   El script usa Node 24 de Plesk (`/opt/plesk/node/24/bin`), ejecuta `npm ci`, compila en `.output-next` y solo sustituye `.output` si el build sale bien, así que un fallo no tira la web. Después reinicia la app (`tmp/restart.txt`). Si llegan dos push seguidos, el segundo espera a que termine el primero. Cada ejecución queda en `logs/deploy.log`.
-3. Pulsa **Desplegar ahora** una vez para que exista `.output` antes de configurar Node.js.
-
-### 3. Aplicación Node.js
-
-En el dominio, **Node.js → Habilitar Node.js**:
-
-| Campo | Valor |
-|---|---|
-| Versión de Node.js | 24, la misma que usa `scripts/plesk-deploy.sh`. |
-| Modo de la aplicación | `production` |
-| Raíz de la aplicación | La carpeta del repositorio, p. ej. `/httpdocs`. |
-| Raíz del documento | `/httpdocs/.output/public`. nginx sirve los estáticos y el resto va a Node. Así `logs/`, `storage/` y el código quedan fuera de la web. |
-| Archivo de inicio | `.output/server/index.mjs` |
-
-No hace falta pulsar «NPM install» ni «Ejecutar script»: ya lo hace el script de despliegue.
-
-Activa también:
-
-- **SSL/TLS → Let's Encrypt** y la redirección a HTTPS. La cookie de sesión es `Secure`: por HTTP no se puede iniciar sesión.
-- En **Configuración de Apache y nginx → Directivas adicionales de nginx**, `client_max_body_size 300m;`. Las importaciones por lotes admiten ZIP de hasta 300 MB y la restauración de copias sube un ZIP completo.
-
-### 4. Variables de entorno
-
-En **Node.js → Variables de entorno personalizadas**. Al terminar, **Reiniciar aplicación**: los cambios no se aplican hasta reiniciar.
-
-| Variable | Valor en producción |
-|---|---|
-| `DB_HOST` `DB_PORT` `DB_USER` `DB_PASSWORD` `DB_NAME` | Los del paso 1. `DB_SOCKET` solo si hace falta. |
-| `NUXT_SESSION_PASSWORD` | Nueva, distinta de la de desarrollo (64 caracteres hex con el comando de [Puesta en marcha](#puesta-en-marcha-en-local)). Si la cambias, se cierran todas las sesiones. |
-| `NUXT_CERT_SECRET` | Recomendada: otra clave de 32+ caracteres que no cambie nunca. Sin ella, cambiar la de sesión obliga a volver a subir los certificados digitales. |
-| `NUXT_SITE_URL` | `https://tu-dominio`, sin barra final. Se usa en los enlaces de los correos. |
-| `NUXT_UPLOADS_DIR` | Ruta absoluta fuera del repositorio y de la web, p. ej. `/var/www/vhosts/tu-dominio/numiq-data/uploads`. Créala antes desde el Administrador de archivos; el usuario del dominio debe poder escribir en ella. |
-| `GOOGLE_APP_EMAIL` `GOOGLE_APP_PASSWORD` | Correo de envío y recepción, o las `NUXT_MAIL_*` si es otro proveedor. |
-| `NUXT_OPENAI_API_KEY` | Funciones de IA. |
-
-El resto de variables opcionales está en [Variables de entorno](#variables-de-entorno).
-
-### 5. Primer arranque y comprobación
-
-1. Reinicia la aplicación. En la primera petición a `/api/*` (o 30 s después de arrancar) se aplican las migraciones y se crean las tablas.
-2. Comprueba la conexión:
-   ```bash
-   curl -i https://tu-dominio/api/me
+   Instala, compila y solo publica la nueva versión si el build sale bien. Registro en `logs/deploy.log`.
+3. **Node.js.** Versión 24, archivo de inicio `.output/server/index.mjs` y raíz del documento `.output/public`.
+4. **Variables de entorno**, en el panel Node.js (en producción la app no lee `.env`):
+   ```ini
+   DB_HOST=localhost
+   DB_PORT=3306
+   DB_USER=usuario_de_la_base
+   DB_PASSWORD=contraseña_de_la_base
+   DB_NAME=numiq
+   NUXT_SESSION_PASSWORD=32+ caracteres aleatorios
+   NUXT_SITE_URL=https://tu-dominio
    ```
-   - `401 Sesión no válida`: la base de datos está bien (aún no has iniciado sesión).
-   - `503 Base de datos no disponible: …`: el mensaje dice la causa, por ejemplo usuario o contraseña incorrectos, la base no existe o no hay ningún MySQL en ese host/puerto.
-3. En los registros de la app (**Node.js → Registros** o **Registros** del dominio) debe aparecer `[db] Migraciones aplicadas`. Si sale `[config] Falta NUXT_SESSION_PASSWORD`, falta esa variable o es demasiado corta.
-4. En phpMyAdmin deberías ver las tablas y `__drizzle_migrations`, con una fila por migración.
-5. Abre `https://tu-dominio/registro` y crea la primera cuenta, que será la propietaria (`owner`) de su empresa. El registro está abierto: cualquiera con la URL puede crear su propia cuenta, con datos separados.
+   Los `DB_*` son los del paso 1, tal como aparecen en Plesk. Correo, IA y el resto, en [Variables de entorno](#variables-de-entorno).
+5. **Arranque.** Activa HTTPS (la cookie de sesión es `Secure`), reinicia la aplicación y crea la primera cuenta en `/registro`.
 
-### 6. Tareas programadas siempre activas
+Si la base no conecta, `https://tu-dominio/api/me` responde 503 con la causa (contraseña incorrecta, base inexistente…).
 
-Recurrentes, recordatorios y limpieza viven dentro del proceso de Node. Plesk (Passenger) arranca la app con la primera visita, así que después de un despliegue o un reinicio del servidor no se ejecutan hasta que alguien entra.
-
-Para evitarlo, crea en **Herramientas y configuración → Tareas programadas** (o en **Tareas programadas** del dominio) una tarea de tipo **Obtener una URL**, cada 5 minutos (`*/5 * * * *`), a:
-
-```
-https://tu-dominio/api/_auth/session
-```
-
-Responde `200` sin tocar la base de datos.
-
-### 7. Copias y traslado a otro servidor
-
-- **Copias:** la copia de seguridad de Plesk debe incluir la base de datos y la carpeta de `NUXT_UPLOADS_DIR`. Además, cada empresa puede descargar su ZIP completo desde **Ajustes**.
-- **Clonar la instalación entera** (todas las tablas y archivos) por SSH. Como las variables del panel no llegan a la consola, crea un `.env` en la raíz de la app solo con `DB_*` y `NUXT_UPLOADS_DIR`. La app en marcha no lo lee; solo lo usan estos comandos:
-  ```bash
-  cd /var/www/vhosts/tu-dominio/httpdocs
-  export PATH=/opt/plesk/node/24/bin:$PATH
-
-  # En el origen: genera numiq-clon-completo-AAAA-MM-DD.zip
-  npx tsx --env-file=.env scripts/clone-export.mjs
-
-  # En el destino, con la base ya creada (paso 1)
-  npx tsx --env-file=.env scripts/clone-import.mjs numiq-clon-completo-AAAA-MM-DD.zip
-  ```
-  **Cuidado:** `clone-import` borra y vuelve a crear todas las tablas de la base de destino y sobrescribe los archivos. Úsalo solo en una instalación vacía o de la que ya tengas copia. Después, reinicia la aplicación.
-
-### Sin Plesk (VPS)
-
-```bash
-git clone <repo> /srv/numiq && cd /srv/numiq
-npm ci && npm run build
-cp .env.example .env    # rellénalo como en el paso 4
-```
-
-Servicio systemd (`/etc/systemd/system/numiq.service`):
-
-```ini
-[Unit]
-Description=NUMIQ
-After=network.target mariadb.service
-
-[Service]
-User=numiq
-WorkingDirectory=/srv/numiq
-Environment=HOST=127.0.0.1 PORT=3000
-ExecStart=/usr/bin/node --env-file=/srv/numiq/.env .output/server/index.mjs
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-`systemctl enable --now numiq`. Delante, nginx con HTTPS, `proxy_pass http://127.0.0.1:3000;`, `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` (los límites de intentos de acceso, registro y recuperación van por IP) y `client_max_body_size 300m;`. Para actualizar: `git pull && npm ci && npm run build && systemctl restart numiq`. El proceso queda siempre en marcha, así que aquí no hace falta el paso 6.
+Para mover una instalación con todos sus datos usa `npm run clone:export` en el origen y `npm run clone:import <zip>` en el destino.
 
 ---
 
