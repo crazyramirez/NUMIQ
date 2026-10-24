@@ -48,6 +48,7 @@ export const importInvoiceSchema = z.object({
   irpfRate: z.number().min(0).max(100).default(0),
   irpfAmount: amount.default(0),
   total: amount,
+  currency: z.string().trim().regex(/^[A-Za-z]{3}$/).transform(v => v.toUpperCase()).nullish(),
   paymentMethod: z.enum(['transfer', 'card', 'cash', 'direct_debit', 'bizum', 'other']).nullish().transform(v => v ?? null),
   paid: z.boolean().nullable().default(null),
   rectifiedNumber: text(60),

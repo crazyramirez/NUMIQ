@@ -24,6 +24,7 @@ export default defineEventHandler(async (event) => {
   // Sin IVA en la factura, el % de IVA deducible no cuenta
   const full = and(eq(e.deductiblePct, 100), or(eq(e.vatDeductiblePct, 100), eq(e.vatTotal, 0)))!
   const none = and(eq(e.deductiblePct, 0), or(eq(e.vatDeductiblePct, 0), eq(e.vatTotal, 0)))!
+  await ensureReviewNotes(company.id)
 
   return useDb().select({
     id: e.id,
@@ -48,6 +49,7 @@ export default defineEventHandler(async (event) => {
     isInvestment: e.isInvestment,
     paidTotal: e.paidTotal,
     reviewed: e.reviewed,
+    reviewNotes: e.reviewNotes,
     aiConfidence: e.aiConfidence,
     fileId: e.fileId,
     approval: e.approval,

@@ -363,6 +363,13 @@ function validDate(s: string | null | undefined) {
   return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s && d.getUTCFullYear() >= 1990 ? s : null
 }
 
+/** Un gasto se pasa a euros al importarlo (cambio del BCE); una factura emitida, no */
+export function currencyWarning(currency: string, direction: ImportDirection) {
+  return direction === 'received'
+    ? `Importes en ${currency}: se pasarán a euros con el cambio oficial del BCE de su fecha al importar`
+    : `Importes en ${currency}: conviértelos a euros`
+}
+
 export interface InvoiceConversion {
   data: ImportInvoiceData
   warnings: string[]
@@ -434,7 +441,7 @@ export function toInvoiceData(d: ExtractedDocument, direction: ImportDirection, 
   if (importParty?.nif && importParty.country === 'ES' && !validateNif(importParty.nif).valid) warnings.push(`El NIF ${importParty.nif} no es válido: revísalo`)
   if (!importParty && docType === 'invoice') warnings.push(direction === 'issued' ? 'No figura el cliente' : 'No figura el proveedor')
   if (d.confidence < 75) warnings.push(`Lectura dudosa (confianza ${d.confidence} %): compárala con el original`)
-  if (d.currency && d.currency.toUpperCase() !== 'EUR') warnings.push(`Importes en ${d.currency.toUpperCase()}: conviértelos a euros`)
+  if (d.currency && d.currency.toUpperCase() !== 'EUR') warnings.push(currencyWarning(d.currency.toUpperCase(), direction))
 
   const category = d.category ? ctx.categories.find(c => comparableName(c.name) === comparableName(d.category)) : null
   const data = reconcileInvoiceLines({
@@ -451,6 +458,7 @@ export function toInvoiceData(d: ExtractedDocument, direction: ImportDirection, 
     irpfRate,
     irpfAmount,
     total: round2(total),
+    currency: d.currency?.trim().toUpperCase().slice(0, 3) || 'EUR',
     paymentMethod: d.paymentMethod,
     paid: docType === 'quote' || docType === 'proforma' ? null : d.paid ?? (docType === 'ticket' || docType === 'simplified' ? true : null),
     rectifiedNumber: d.rectifiedNumber?.trim().slice(0, 60) || null,

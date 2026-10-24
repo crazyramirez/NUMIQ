@@ -130,6 +130,8 @@ export interface ImportInvoiceData {
   irpfRate: number
   irpfAmount: number
   total: number
+  /** Moneda de los importes (EUR si no consta); un gasto en otra se pasa a euros al importarlo */
+  currency?: string | null
   paymentMethod: 'transfer' | 'card' | 'cash' | 'direct_debit' | 'bizum' | 'other' | null
   /** null = no consta (las antiguas se dan por cobradas o pagadas si así se elige al importar) */
   paid: boolean | null

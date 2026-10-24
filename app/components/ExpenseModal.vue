@@ -76,6 +76,10 @@ const categories = ref<Category[]>([])
 /** Escaneo con IA en curso de guardar y documento original de un gasto ya guardado */
 const scan = ref<{ fileId: number, fileName: string, mime: string, confidence: number | null, warnings: string[], newSupplier: ImportParty | null } | null>(null)
 const original = ref<{ id: number, name: string, mime: string, confidence: number | null } | null>(null)
+/** Por qué está «por revisar» (al guardar queda revisado) */
+const review = ref<string[] | null>(null)
+const reviewCurrencyCode = computed(() => reviewCurrency(review.value))
+const reviewing = ref<'confirm' | 'convert' | null>(null)
 /** Proveedor cuya deducibilidad de la última vez se ha propuesto */
 const learned = ref<string | null>(null)
 /** Mientras se cargan datos, los automatismos (categoría → deducible…) no actúan */
@@ -102,7 +106,8 @@ watch([open, () => props.expenseId], async ([v]) => {
   try {
     const listsReady = loadLists()
     if (props.expenseId) {
-      const e = await $fetch<Omit<ExpenseForm, 'taxLines' | 'paid'> & { status: string, aiConfidence: number | null, taxLines: Array<{ base: number, vatRate: number, vatAmount: number }>, file: { id: number, name: string, mime: string } | null }>(`/api/expenses/${props.expenseId}`)
+      const e = await $fetch<Omit<ExpenseForm, 'taxLines' | 'paid'> & { status: string, aiConfidence: number | null, reviewed: boolean, reviewNotes: string[] | null, taxLines: Array<{ base: number, vatRate: number, vatAmount: number }>, file: { id: number, name: string, mime: string } | null }>(`/api/expenses/${props.expenseId}`)
+      review.value = e.reviewed ? null : e.reviewNotes?.length ? e.reviewNotes : ['Revisa los datos con el documento original']
       scan.value = null
       learned.value = null
       original.value = e.file ? { ...e.file, confidence: e.aiConfidence } : null
@@ -131,6 +136,7 @@ watch([open, () => props.expenseId], async ([v]) => {
     }
     else {
       form.value = blank()
+      review.value = null
       scan.value = null
       original.value = null
       learned.value = null
@@ -152,6 +158,39 @@ watch([open, () => props.expenseId], async ([v]) => {
     hydrating = false
   }
 }, { immediate: true })
+
+/** Darlo por bueno sin tocar nada, o pasar a euros los importes en otra moneda */
+async function reviewAction(action: 'confirm' | 'convert') {
+  const id = props.expenseId
+  if (!id) return
+  reviewing.value = action
+  try {
+    const r = await $fetch<{ converted?: number, message?: string | null }>('/api/expenses/review', { method: 'POST', body: { ids: [id], action } })
+    if (action === 'confirm') {
+      toast.success('Gasto revisado')
+      emit('saved', id)
+      open.value = false
+      return
+    }
+    if (!r.converted) throw new Error(r.message ?? 'No se pudo pasar a euros')
+    const e = await $fetch<{ reviewed: boolean, reviewNotes: string[] | null, notes: string | null, taxLines: Array<{ base: number, vatRate: number, vatAmount: number }> }>(`/api/expenses/${id}`)
+    hydrating = true
+    form.value.taxLines = e.taxLines.map(l => ({ base: l.base, vatRate: l.vatRate, vatAmount: l.vatAmount, manual: Math.abs(l.vatAmount - pctOf(l.base, l.vatRate)) > 0.004 }))
+    form.value.notes = e.notes
+    advanced.value = true
+    review.value = e.reviewed ? null : e.reviewNotes
+    await nextTick()
+    hydrating = false
+    toast.success('Pasado a euros', 'El importe original y el cambio usado quedan en las notas.')
+    emit('saved', id)
+  }
+  catch (err) {
+    toast.error('No se pudo completar', errorMessage(err))
+  }
+  finally {
+    reviewing.value = null
+  }
+}
 
 // ─── Automatismos ───
 
@@ -500,6 +539,22 @@ async function remove() {
             <Icon name="ph:warning-fill" aria-hidden="true" /> {{ w }}
           </li>
         </ul>
+      </div>
+
+      <div v-if="isEdit && review?.length" class="review-box" role="status">
+        <div class="rb-main">
+          <p class="rb-t"><Icon name="ph:sparkle-fill" aria-hidden="true" /> Por revisar</p>
+          <ul class="rb-list">
+            <li v-for="(n, i) in review" :key="i">{{ n }}</li>
+          </ul>
+          <p class="rb-s">Corrige lo que haga falta y guarda: queda revisado.</p>
+        </div>
+        <div class="rb-acts">
+          <UiButton v-if="reviewCurrencyCode" size="sm" variant="ai" icon="ph:currency-eur" :loading="reviewing === 'convert'" @click="reviewAction('convert')">
+            Pasar a euros
+          </UiButton>
+          <UiButton size="sm" icon="ph:check-bold" :loading="reviewing === 'confirm'" @click="reviewAction('confirm')">Está bien así</UiButton>
+        </div>
       </div>
 
       <!-- ─── SECCIÓN 1: DATOS DEL GASTO ─── -->
@@ -989,6 +1044,53 @@ async function remove() {
   display: flex;
   gap: 6px;
   align-items: baseline;
+}
+
+/* ─── Motivo de «Por revisar» ─── */
+.review-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  align-items: flex-end;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--ai-soft) 75%, var(--surface)), var(--surface));
+  border: 1px solid color-mix(in srgb, var(--ai-2) 30%, var(--border));
+  border-radius: var(--r-xl);
+}
+
+.rb-main {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.rb-t {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 0 0 4px;
+  font-size: var(--text-sm);
+  font-weight: 650;
+  color: var(--ai-2);
+}
+
+.rb-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--text-sm);
+  color: var(--text);
+}
+
+.rb-s {
+  margin: 4px 0 0;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.rb-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-left: auto;
 }
 
 /* ─── Cards del formulario ─── */

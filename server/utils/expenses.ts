@@ -112,7 +112,8 @@ async function saveExpenseLocked(companyId: number, userId: number, input: Expen
       const [e] = await tx.select({ id: tables.expenses.id }).from(tables.expenses)
         .where(and(eq(tables.expenses.id, expenseId), eq(tables.expenses.companyId, companyId)))
       if (!e) throw createError({ statusCode: 404, statusMessage: 'Gasto no encontrado' })
-      await tx.update(tables.expenses).set({ ...values, reviewed: true }).where(eq(tables.expenses.id, expenseId))
+      // Guardarlo es darlo por revisado
+      await tx.update(tables.expenses).set({ ...values, reviewed: true, reviewNotes: null }).where(eq(tables.expenses.id, expenseId))
       await tx.delete(tables.expenseTaxLines).where(eq(tables.expenseTaxLines.expenseId, expenseId))
     }
     else {
@@ -123,6 +124,8 @@ async function saveExpenseLocked(companyId: number, userId: number, input: Expen
     return expenseId!
   })
   if (file) await db.update(tables.files).set({ linkedType: 'expense', linkedId: expenseId }).where(eq(tables.files.id, file.id))
+  // Dar por bueno un gasto de este proveedor resuelve las dudas de los demás suyos
+  if (id && input.supplierId) await recheckExpenseReviews(companyId, { supplierId: input.supplierId })
   return expenseId
 }
 

@@ -419,6 +419,8 @@ export const expenses = mysqlTable('expenses', {
   /** Extraído por IA de un escaneo: confianza 0-100 para pedir revisión */
   aiConfidence: smallint('ai_confidence'),
   reviewed: boolean('reviewed').notNull().default(true),
+  /** Por qué está por revisar (shared/utils/review): solo lo que pide una acción; null si está revisado */
+  reviewNotes: jsonText<string[]>('review_notes'),
   recurringId: int('recurring_id'),
   notes: text('notes'),
   paidAt: datetime('paid_at'),

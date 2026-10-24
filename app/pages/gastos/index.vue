@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BulkAction } from '~/components/ui/BulkBar.vue'
 import type { MenuItem } from '~/components/ui/Menu.vue'
+import type { ReviewKind } from '#shared/utils/review'
 
 interface ExpenseRow {
   id: number
@@ -25,6 +26,7 @@ interface ExpenseRow {
   isInvestment: boolean
   paidTotal: number
   reviewed: boolean
+  reviewNotes: string[] | null
   aiConfidence: number | null
   fileId: number | null
   approval: 'approved' | 'pending' | 'rejected'
@@ -126,7 +128,14 @@ const noFile = ref(route.query.justificante === 'no')
 watch(noFile, (v) => {
   if (!v && route.query.justificante) router.replace({ query: { ...route.query, justificante: undefined } })
 })
-const rows = computed(() => (data.value ?? []).filter(e => !noFile.value || (!e.fileId && !NO_DOC_KINDS.includes(e.kind))))
+// «Por revisar»: un motivo concreto (desde el panel de motivos)
+const reviewFilter = ref<ReviewKind | null>(null)
+watch(status, (v) => {
+  if (v !== 'review') reviewFilter.value = null
+})
+const kindsOf = (e: ExpenseRow) => new Set((e.reviewNotes ?? []).map(reviewKind).filter(Boolean))
+const rows = computed(() => (data.value ?? []).filter(e => (!noFile.value || (!e.fileId && !NO_DOC_KINDS.includes(e.kind)))
+  && (!reviewFilter.value || kindsOf(e).has(reviewFilter.value))))
 const firstLoad = computed(() => fetchStatus.value === 'pending' && !data.value)
 const filtersActive = computed(() => status.value !== 'all' || !!q.value.trim() || categoryId.value != null || deductible.value !== 'all' || noFile.value || !!approvalFilter.value)
 
@@ -268,7 +277,7 @@ function clearFilters() {
 
 // ─── Páginas de 25 y selección (de la página a la vista): marcar muchos gastos de una vez (los que llegan del banco o de una importación) ───
 
-const { page, pages, items: shown } = usePaged(rows, [status, period, categoryId, deductible, qDebounced, approvalFilter, noFile])
+const { page, pages, items: shown } = usePaged(rows, [status, period, categoryId, deductible, qDebounced, approvalFilter, noFile, reviewFilter])
 const { selected, selectedSet, selecting, allSelected, toggle, toggleAll, clear: stopSelecting } = useSelection(shown)
 const selectedTotal = computed(() => rows.value.reduce((s, e) => s + (selectedSet.value.has(e.id) ? e.total : 0), 0))
 
@@ -355,6 +364,69 @@ async function deleteBulk(ids: number[]) {
   }
 }
 
+// ─── Revisión sin abrir cada gasto: motivos agrupados, dar por buenos y pasar a euros ───
+
+const REVIEW_HINT: Record<ReviewKind, string> = {
+  currency: 'Se pasan a euros con el cambio oficial del BCE de su fecha, o con el cargo real si están conciliados con el banco.',
+  supplier: 'El documento no dice quién lo emite: elige el proveedor en cada uno.',
+  parties: 'La factura va a nombre de otro NIF. Si es tuya, dala por buena: las demás de ese proveedor se desmarcan solas.',
+  amounts: 'Base, IVA y total no cuadran entre sí: compáralos con el original.',
+  vat: 'No se encontró el IVA: confirma la base y el tipo.',
+  nif: 'El NIF del proveedor no es válido: corrígelo en su ficha.',
+  number: 'Sin nº de factura no se puede deducir el IVA: añádelo si lo tiene.',
+  date: 'La fecha no salió del documento: confírmala.',
+  reading: 'La IA no leyó el documento con claridad: compáralo con el original.',
+  recurring: 'Creados por un gasto fijo en modo revisión: confirma el importe.',
+}
+
+const unreviewed = computed(() => (data.value ?? []).filter(e => !e.reviewed))
+const reviewGroups = computed(() => {
+  const map = new Map<ReviewKind, number[]>()
+  for (const e of unreviewed.value) {
+    for (const k of kindsOf(e)) map.set(k!, [...(map.get(k!) ?? []), e.id])
+  }
+  return [...map].map(([kind, ids]) => ({ kind, ids, label: REVIEW_LABEL[kind], hint: REVIEW_HINT[kind] })).sort((a, b) => b.ids.length - a.ids.length)
+})
+const reviewBusy = ref<string | null>(null)
+
+async function confirmReview(ids: number[], key = 'bulk') {
+  if (!ids.length) return
+  reviewBusy.value = key
+  try {
+    const r = await $fetch<{ confirmed: number, resolved: number }>('/api/expenses/review', { method: 'POST', body: { ids, action: 'confirm' } })
+    toast.success(r.confirmed === 1 ? 'Gasto revisado' : `${plural(r.confirmed)} revisados`, r.resolved ? `Y ${plural(r.resolved)} más del mismo proveedor, que ya no tenían dudas.` : undefined)
+    stopSelecting()
+    await refresh()
+  }
+  catch (err) {
+    toast.error('No se pudo marcar', errorMessage(err))
+  }
+  finally {
+    reviewBusy.value = null
+  }
+}
+
+async function convertToEur(ids: number[], key = 'bulk') {
+  if (!ids.length) return
+  reviewBusy.value = key
+  try {
+    const r = await $fetch<{ converted: number, failed: number, message: string | null }>('/api/expenses/review', { method: 'POST', body: { ids, action: 'convert' } })
+    if (r.converted) toast.success(r.converted === 1 ? 'Gasto pasado a euros' : `${plural(r.converted)} pasados a euros`, 'El importe original y el cambio usado quedan en sus notas.')
+    if (r.failed) toast.error(`${plural(r.failed)} sin convertir`, r.message ?? undefined)
+    stopSelecting()
+    await refresh()
+  }
+  catch (err) {
+    toast.error('No se pudo convertir', errorMessage(err))
+  }
+  finally {
+    reviewBusy.value = null
+  }
+}
+
+const selectedUnreviewed = computed(() => unreviewed.value.filter(e => selectedSet.value.has(e.id)))
+const selectedForeign = computed(() => selectedUnreviewed.value.filter(e => kindsOf(e).has('currency')))
+
 function markDeductible(ids: number[], level: 'full' | 'none') {
   const one = ids.length === 1
   if (level === 'full') return apply(ids, { deductiblePct: 100, vatDeductiblePct: 100 }, one ? 'Gasto deducible' : 'Marcados como deducibles')
@@ -380,6 +452,8 @@ const bulkActions = computed<BulkAction[]>(() => [
         { label: 'Rechazar', icon: 'ph:x-bold', tone: 'danger' as const, onClick: () => decide(selected.value, 'reject') },
       ]
     : []),
+  ...(selectedForeign.value.length ? [{ label: 'A euros', icon: 'ph:currency-eur', onClick: () => convertToEur(selectedForeign.value.map(e => e.id)) }] : []),
+  ...(selectedUnreviewed.value.length ? [{ label: 'Revisados', icon: 'ph:check-bold', onClick: () => confirmReview(selectedUnreviewed.value.map(e => e.id)) }] : []),
   { label: 'Deducibles', icon: 'ph:check-circle-fill', tone: 'success', onClick: () => markDeductible(selected.value, 'full') },
   { label: 'En parte…', icon: 'ph:circle-half-fill', tone: 'warning', onClick: () => openPartial(selected.value) },
   { label: 'No deducibles', icon: 'ph:prohibit', onClick: () => markDeductible(selected.value, 'none') },
@@ -481,6 +555,32 @@ function savePartial() {
       </div>
     </section>
 
+    <section v-if="status === 'review' && reviewGroups.length" class="review-panel rise" aria-label="Por qué están por revisar">
+      <header class="rp-head">
+        <span class="rp-ic" aria-hidden="true"><Icon name="ph:sparkle-fill" /></span>
+        <div>
+          <h2>Por qué están por revisar</h2>
+          <p>Solo se marca lo que necesita tu ojo. Corrígelo y guarda, o dalo por bueno desde aquí.</p>
+        </div>
+      </header>
+      <ul class="rp-list">
+        <li v-for="g in reviewGroups" :key="g.kind" :class="{ on: reviewFilter === g.kind }">
+          <span class="rp-n num">{{ g.ids.length }}</span>
+          <div class="rp-txt">
+            <strong>{{ g.label }}</strong>
+            <span>{{ g.hint }}</span>
+          </div>
+          <div class="rp-acts">
+            <UiButton size="sm" variant="ghost" :aria-pressed="reviewFilter === g.kind" @click="reviewFilter = reviewFilter === g.kind ? null : g.kind">
+              {{ reviewFilter === g.kind ? 'Ver todos' : 'Ver' }}
+            </UiButton>
+            <UiButton v-if="g.kind === 'currency'" size="sm" variant="ai" icon="ph:currency-eur" :loading="reviewBusy === g.kind" @click="convertToEur(g.ids, g.kind)">Pasar a euros</UiButton>
+            <UiButton v-else size="sm" icon="ph:check-bold" :loading="reviewBusy === g.kind" @click="confirmReview(g.ids, g.kind)">Dar por buenos</UiButton>
+          </div>
+        </li>
+      </ul>
+    </section>
+
     <UiCard padding="none" class="rise" style="--i: 1">
       <div class="toolbar">
         <UiSegmented v-model="status" :options="statusOptions" label="Estado" />
@@ -491,6 +591,9 @@ function savePartial() {
           <UiSelect v-model="period" :options="periodOptions" aria-label="Periodo" class="period" />
           <button v-if="approvalFilter" type="button" class="nofile-chip" @click="approvalFilter = null">
             <Icon name="ph:check-square-offset" aria-hidden="true" /> {{ approvalFilter === 'pending' ? 'Por aprobar' : 'Rechazados' }} <Icon name="ph:x-bold" class="x" aria-label="Quitar filtro" />
+          </button>
+          <button v-if="reviewFilter" type="button" class="nofile-chip" @click="reviewFilter = null">
+            <Icon name="ph:sparkle" aria-hidden="true" /> {{ REVIEW_LABEL[reviewFilter] }} <Icon name="ph:x-bold" class="x" aria-label="Quitar filtro" />
           </button>
           <button v-if="noFile" type="button" class="nofile-chip" @click="noFile = false">
             <Icon name="ph:paperclip" aria-hidden="true" /> Sin justificante <Icon name="ph:x-bold" class="x" aria-label="Quitar filtro" />
@@ -579,7 +682,7 @@ function savePartial() {
                       <Icon :name="e.categoryIcon || 'ph:tag'" />
                     </span>
                     <span class="strong truncate">{{ e.supplierName || EXPENSE_KIND[e.kind] || 'Gasto' }}</span>
-                    <UiBadge v-if="!e.reviewed" tone="ai" size="sm" icon="ph:sparkle-fill">Revisar</UiBadge>
+                    <UiBadge v-if="!e.reviewed" tone="ai" size="sm" icon="ph:sparkle-fill" :title="e.reviewNotes?.join('\n')">{{ e.reviewNotes?.length ? REVIEW_LABEL[reviewKind(e.reviewNotes[0]!) ?? 'reading'] : 'Revisar' }}</UiBadge>
                   </div>
                   <span class="sub truncate">{{ [e.description, e.number].filter(Boolean).join(' · ') || '—' }}</span>
                 </td>
@@ -650,6 +753,7 @@ function savePartial() {
               <template #status>
                 <UiBadge v-if="approvalBadge(e)" :tone="approvalBadge(e)!.tone" size="sm" dot>{{ approvalBadge(e)!.label }}</UiBadge>
                 <UiBadge v-else :tone="statusOf(e).tone" size="sm" dot>{{ statusOf(e).label }}</UiBadge>
+                <UiBadge v-if="!e.reviewed" tone="ai" size="sm" icon="ph:sparkle-fill">{{ e.reviewNotes?.length ? REVIEW_LABEL[reviewKind(e.reviewNotes[0]!) ?? 'reading'] : 'Revisar' }}</UiBadge>
                 <span v-if="levelOf(e) !== 'full'" class="ded-mini" :class="levelOf(e)">
                   <Icon :name="levelOf(e) === 'partial' ? 'ph:circle-half-fill' : 'ph:prohibit'" aria-hidden="true" />
                   {{ deductibleLabel(e.deductiblePct, e.vatDeductiblePct, e.vatTotal !== 0) }}
@@ -972,6 +1076,121 @@ input[type='checkbox'] {
   justify-content: flex-end;
   gap: var(--s-2);
   padding: 0 var(--s-4) 12px;
+}
+
+/* ─── Motivos de «Por revisar» ─── */
+.review-panel {
+  container: review / inline-size;
+  margin-bottom: var(--s-5);
+  padding: var(--s-4) var(--s-5);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--ai-soft) 70%, var(--surface)), var(--surface) 60%);
+  border: 1px solid color-mix(in srgb, var(--ai-2) 22%, var(--border));
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-xs);
+}
+
+.rp-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: var(--s-3);
+}
+
+.rp-ic {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  font-size: 16px;
+  color: var(--ai-2);
+  background: var(--ai-soft);
+  border-radius: var(--r-md);
+}
+
+.rp-head h2 {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 650;
+}
+
+.rp-head p {
+  margin: 2px 0 0;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.rp-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rp-list li {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.rp-list li.on .rp-n {
+  color: var(--surface);
+  background: var(--ai-2);
+}
+
+.rp-n {
+  display: grid;
+  flex: none;
+  place-items: center;
+  min-width: 32px;
+  height: 26px;
+  padding: 0 8px;
+  font-size: var(--text-sm);
+  font-weight: 650;
+  color: var(--ai-2);
+  background: var(--ai-soft);
+  border-radius: 999px;
+}
+
+.rp-txt {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rp-txt strong {
+  font-size: var(--text-sm);
+  font-weight: 620;
+}
+
+.rp-txt span {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.rp-acts {
+  display: flex;
+  flex: none;
+  gap: var(--s-2);
+}
+
+@container review (max-width: 620px) {
+  .rp-list li {
+    flex-wrap: wrap;
+  }
+
+  .rp-txt {
+    flex-basis: calc(100% - 44px);
+  }
+
+  .rp-acts {
+    justify-content: flex-end;
+    width: 100%;
+  }
 }
 
 .nofile-chip {

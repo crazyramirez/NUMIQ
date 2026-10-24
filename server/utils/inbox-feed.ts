@@ -8,6 +8,7 @@ type Company = typeof tables.companies.$inferSelect
  */
 export async function inboxCount(company: Company) {
   const db = useDb()
+  await ensureReviewNotes(company.id)
   const [[imports], [expenses]] = await Promise.all([
     db.select({ n: count() }).from(tables.importBatches).where(and(eq(tables.importBatches.companyId, company.id), eq(tables.importBatches.status, 'review'))),
     db.select({ n: count() }).from(tables.expenses).where(and(eq(tables.expenses.companyId, company.id), eq(tables.expenses.reviewed, false))),

@@ -257,7 +257,11 @@ async function generateExpense(rec: Recurring, company: Company, date: string, u
     return { type: 'expense', id: duplicate.id, number: null, warning: 'Este periodo ya estaba registrado: se ha enlazado sin duplicarlo' }
   }
   // Modo revisión: queda marcado en Gastos para confirmarlo
-  await useDb().update(tables.expenses).set({ recurringId: rec.id, reviewed: rec.autoIssue }).where(eq(tables.expenses.id, id))
+  await useDb().update(tables.expenses).set({
+    recurringId: rec.id,
+    reviewed: rec.autoIssue,
+    reviewNotes: rec.autoIssue ? null : [`Creado por el gasto fijo «${rec.name}»: confirma el importe de este periodo`],
+  }).where(eq(tables.expenses.id, id))
   return { type: 'expense', id, number: null, warning: null }
 }
 

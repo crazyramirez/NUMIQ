@@ -9,7 +9,9 @@ import { resolveDocumentDate, sourceDateWarning } from '../../shared/utils/sourc
 import type { SourceFileDate } from '../../shared/utils/source-date'
 import { resolveFileDate } from './file-date'
 import { folderSignals } from './doc-read'
-import { folderMismatch, typeFromFolder } from './extract'
+import { currencyWarning, folderMismatch, typeFromFolder } from './extract'
+import { conversionNote, ecbRate, isTrustedSupplier, scaleTaxLines, supplierByNumber } from './expense-review'
+import { reviewKind, reviewNotesOf } from '../../shared/utils/review'
 
 /**
  * Importación por lotes: archivos sueltos, ZIP con carpetas, Excel/CSV y escaneos. Cada archivo se lee
@@ -646,6 +648,7 @@ export function invoiceWarnings(d: ImportInvoiceData, direction: ImportDirection
   if (!d.number && d.docType === 'invoice') warnings.push('No se encontró el número de factura')
   if (d.party?.nif && d.party.country === 'ES' && !validateNif(d.party.nif).valid) warnings.push(`El NIF ${d.party.nif} no es válido: revísalo`)
   if (!d.party && d.docType === 'invoice') warnings.push(direction === 'issued' ? 'No figura el cliente' : 'No figura el proveedor')
+  if (d.currency && d.currency !== 'EUR') warnings.push(currencyWarning(d.currency, direction))
   return { warnings, blocking: !d.issueDate || !d.taxLines.length }
 }
 
@@ -853,14 +856,35 @@ async function relateQuote(st: CommitState, item: ItemRow, salesId: number) {
 }
 
 async function commitExpense(st: CommitState, item: ItemRow, file: FileRow | null) {
-  const d = item.data as ImportInvoiceData
+  let d = item.data as ImportInvoiceData
   const db = useDb()
-  const supplierId = d.party ? await ensureContact(st, d.party, { client: false, supplier: true }, item.contactId) : null
+  // Sin proveedor en el documento: el de las facturas con la misma numeración (9BF0758D-…)
+  const supplierId = d.party ? await ensureContact(st, d.party, { client: false, supplier: true }, item.contactId) : await supplierByNumber(st.company.id, d.number)
   const [supplier] = supplierId ? await db.select().from(tables.contacts).where(eq(tables.contacts.id, supplierId)) : []
   const categoryId = d.categoryId ?? supplier?.defaultCategoryId ?? null
   const category = categoryId ? st.categories.get(categoryId) : undefined
   const deductible = st.guessDeductible({ supplierId, supplierName: d.party?.name, categoryId })
   const paid = isPaid(st, d)
+
+  // Solo lo que pide una acción queda «por revisar»; las notas de la lectura son informativas
+  let reviewNotes = reviewNotesOf(item.warnings)
+  if (supplierId) reviewNotes = reviewNotes.filter(n => reviewKind(n) !== 'supplier')
+  if (reviewNotes.some(n => reviewKind(n) === 'parties') && await isTrustedSupplier(st.company.id, supplierId)) reviewNotes = reviewNotes.filter(n => reviewKind(n) !== 'parties')
+  // Importes en otra moneda: a euros con el cambio oficial del BCE de su fecha
+  let converted: string | null = null
+  if (d.currency && d.currency !== 'EUR' && d.issueDate && d.total) {
+    try {
+      const fx = await ecbRate(d.currency, d.issueDate)
+      const s = scaleTaxLines(d.taxLines, d.irpfAmount, fx.rate)
+      converted = conversionNote(d.currency, d.total, fx)
+      d = { ...d, taxLines: s.lines, irpfAmount: s.irpfTotal, total: s.total }
+      reviewNotes = reviewNotes.filter(n => reviewKind(n) !== 'currency')
+    }
+    catch (err) {
+      console.warn('[import] cambio de moneda', (err as Error).message)
+      reviewNotes = [...reviewNotes.filter(n => reviewKind(n) !== 'currency'), `Importes en ${d.currency}: conviértelos a euros`]
+    }
+  }
   const taxBase = round2(d.taxLines.reduce((s, t) => s + t.base, 0))
   return db.transaction(async (tx) => {
     const [res] = await tx.insert(tables.expenses).values({
@@ -887,9 +911,9 @@ async function commitExpense(st: CommitState, item: ItemRow, file: FileRow | nul
       paymentMethod: d.paymentMethod,
       fileId: ownFile(file)?.id ?? null,
       aiConfidence: item.confidence,
-      // Lo que tenía avisos queda marcado para revisar en Gastos
-      reviewed: item.status === 'ready',
-      notes: d.bodyText?.slice(0, 5000) || null,
+      reviewed: !reviewNotes.length,
+      reviewNotes: reviewNotes.length ? reviewNotes : null,
+      notes: [converted, d.bodyText].filter(Boolean).join('\n\n').slice(0, 5000) || null,
       paidAt: paid ? new Date() : null,
       createdBy: st.userId,
     }).$returningId()
