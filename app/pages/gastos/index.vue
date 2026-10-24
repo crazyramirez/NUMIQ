@@ -373,8 +373,8 @@ function savePartial() {
         <p class="sub">Facturas recibidas, tickets y cuotas. Todo lo que deduces, en un sitio.</p>
       </div>
       <div class="page-actions">
-        <UiButton icon="ph:scan" @click="openScan('received')">Escanear con IA</UiButton>
-        <UiButton variant="primary" icon="ph:plus-bold" @click="openNew">Añadir gasto</UiButton>
+        <UiButton icon="ph:scan" compact @click="openScan('received')">Escanear con IA</UiButton>
+        <UiButton variant="primary" icon="ph:plus-bold" compact @click="openNew">Añadir gasto</UiButton>
       </div>
     </header>
 

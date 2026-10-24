@@ -206,7 +206,7 @@ const bulkActions = computed<BulkAction[]>(() => [
         <p class="sub">Tu catálogo con precios e IVA: añádelos a una factura en un clic.</p>
       </div>
       <div class="page-actions">
-        <UiButton variant="primary" icon="ph:plus-bold" @click="openNew">Nuevo</UiButton>
+        <UiButton variant="primary" icon="ph:plus-bold" compact @click="openNew">Nuevo</UiButton>
       </div>
     </header>
 

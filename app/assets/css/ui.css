@@ -65,6 +65,22 @@
   .page-head h1 {
     font-size: var(--text-2xl);
   }
+
+  /* Acciones compactas (botón «+»): en la misma fila que el título, arriba a la derecha */
+  .page-head:has(> .page-actions .btn-compact) {
+    flex-wrap: nowrap;
+    align-items: flex-start;
+  }
+
+  .page-head:has(> .page-actions .btn-compact) > :first-child {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .page-head:has(> .page-actions .btn-compact) > .page-actions {
+    flex: none;
+    flex-wrap: nowrap;
+  }
 }
 
 /* ─── Tarjeta ─── */

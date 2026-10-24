@@ -216,7 +216,7 @@ const bulkActions = computed<BulkAction[]>(() => [
         <p class="sub">{{ isQuote ? 'Ofertas a clientes: conviértelas en factura con un clic.' : `Emitidas con numeración correlativa${verifactu ? ' y registro VeriFactu' : ''}.` }}</p>
       </div>
       <div class="page-actions">
-        <UiButton variant="primary" icon="ph:plus-bold" :to="`${base}/${isQuote ? 'nuevo' : 'nueva'}`">{{ isQuote ? 'Nuevo presupuesto' : 'Nueva factura' }}</UiButton>
+        <UiButton variant="primary" icon="ph:plus-bold" compact :to="`${base}/${isQuote ? 'nuevo' : 'nueva'}`">{{ isQuote ? 'Nuevo presupuesto' : 'Nueva factura' }}</UiButton>
       </div>
     </header>
 

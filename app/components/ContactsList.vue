@@ -178,7 +178,7 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
         <p class="sub">{{ t.sub }}</p>
       </div>
       <div class="page-actions">
-        <UiButton variant="primary" icon="ph:plus-bold" @click="creating = true">{{ t.add }}</UiButton>
+        <UiButton variant="primary" icon="ph:plus-bold" compact @click="creating = true">{{ t.add }}</UiButton>
       </div>
     </header>
 
@@ -227,7 +227,7 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
       </div>
 
       <UiEmpty v-else-if="!rows.length && !q" :icon="isClient ? 'ph:users' : 'ph:storefront'" :title="t.emptyTitle" :text="t.emptyText">
-        <UiButton variant="primary" icon="ph:plus-bold" @click="creating = true">{{ t.add }}</UiButton>
+        <UiButton variant="primary" icon="ph:plus-bold" compact @click="creating = true">{{ t.add }}</UiButton>
       </UiEmpty>
 
       <UiEmpty v-else-if="!rows.length" compact icon="ph:magnifying-glass" title="Sin resultados" :text="`Nada coincide con «${q}».`">

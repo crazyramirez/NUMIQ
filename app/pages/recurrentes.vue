@@ -275,6 +275,11 @@ async function remove(r: Row) {
   if (ok) await act(r, () => call(`/api/recurrings/${r.id}`, 'DELETE'), 'Recurrente eliminado')
 }
 
+const newItems: MenuItem[] = [
+  { label: 'Factura recurrente', icon: 'ph:receipt', onClick: () => openNew('invoice') },
+  { label: 'Gasto fijo', icon: 'ph:wallet', onClick: () => openNew('expense') },
+]
+
 function menuOf(r: Row): MenuItem[] {
   const items: MenuItem[] = [
     { label: 'Editar', icon: 'ph:pencil-simple', onClick: () => openEdit(r.id) },
@@ -307,8 +312,14 @@ const IDEAS = Object.freeze([
         <p class="sub">Facturas y gastos que se repiten, generados solos en su fecha.</p>
       </div>
       <div class="page-actions">
-        <UiButton icon="ph:wallet" @click="openNew('expense')">Gasto fijo</UiButton>
-        <UiButton variant="primary" icon="ph:plus-bold" @click="openNew('invoice')">Factura recurrente</UiButton>
+        <UiButton class="desk" icon="ph:wallet" @click="openNew('expense')">Gasto fijo</UiButton>
+        <UiButton class="desk" variant="primary" icon="ph:plus-bold" @click="openNew('invoice')">Factura recurrente</UiButton>
+        <!-- En el móvil, un solo «+» que pregunta qué crear -->
+        <UiMenu class="mob" :items="newItems" :width="220">
+          <template #default="{ toggle }">
+            <UiButton variant="primary" icon="ph:plus-bold" compact @click="toggle">Nueva recurrente</UiButton>
+          </template>
+        </UiMenu>
       </div>
     </header>
 
@@ -457,6 +468,21 @@ const IDEAS = Object.freeze([
 </template>
 
 <style scoped>
+/* Escritorio: los dos botones; móvil: el menú «+» (más específico que .btn y .menu) */
+.page-actions .mob {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .page-actions .desk {
+    display: none;
+  }
+
+  .page-actions .mob {
+    display: block;
+  }
+}
+
 /* ─── Resumen ─── */
 
 .kpis {

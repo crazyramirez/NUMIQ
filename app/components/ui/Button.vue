@@ -13,6 +13,8 @@ const props = withDefaults(defineProps<{
   block?: boolean
   /** Solo icono: requiere aria-label */
   square?: boolean
+  /** En el móvil, solo el icono (el texto sigue ahí para lectores de pantalla) */
+  compact?: boolean
 }>(), { variant: 'secondary', size: 'md', type: 'button' })
 
 const tag = computed(() => (props.to ? NuxtLink : 'button'))
@@ -26,7 +28,7 @@ const tag = computed(() => (props.to ? NuxtLink : 'button'))
     :disabled="to ? undefined : disabled || loading"
     :aria-busy="loading || undefined"
     class="btn"
-    :class="[`btn-${variant}`, `btn-${size}`, { 'btn-block': block, 'btn-square': square, 'is-loading': loading }]"
+    :class="[`btn-${variant}`, `btn-${size}`, { 'btn-block': block, 'btn-square': square, 'btn-compact': compact, 'is-loading': loading }]"
   >
     <span v-if="loading" class="spinner" aria-hidden="true" />
     <Icon v-else-if="icon" :name="icon" class="btn-icon" aria-hidden="true" />
@@ -84,6 +86,28 @@ const tag = computed(() => (props.to ? NuxtLink : 'button'))
 
 .btn-block {
   width: 100%;
+}
+
+@media (max-width: 767px) {
+  .btn-compact {
+    width: 40px;
+    height: 40px;
+    padding: 0;
+  }
+
+  .btn-compact .btn-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .btn-compact .btn-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 .btn-icon {
