@@ -1,14 +1,13 @@
 <script setup lang="ts">
 /**
  * Tras entrar con contraseña en un móvil u ordenador con huella o Face ID: ofrece usarlos la
- * próxima vez. Una sola vez por dispositivo (si dices «Ahora no», no vuelve a salir).
+ * próxima vez. Va por dispositivo, no por cuenta: tener la llave en el ordenador no la pone en el
+ * iPhone. Si dices «Ahora no», no vuelve a salir, salvo que luego pruebes a entrar con la huella.
  */
-const OFFER = 'numiq-passkey-offer'
 const DECLINED = 'numiq-passkey-declined'
 
 const toast = useToast()
-const { user } = useUserSession()
-const { register, isSupported, isPlatformAvailable } = useWebAuthn({ registerEndpoint: '/api/passkeys/register', authenticateEndpoint: '/api/passkeys/authenticate' })
+const { register, isSupported, platformAvailable, ready } = usePasskeyRegistration()
 const show = ref(false)
 const busy = ref(false)
 
@@ -22,27 +21,37 @@ const read = (k: string, store: Storage) => {
 }
 
 onMounted(async () => {
-  if (read(OFFER, sessionStorage) !== '1' || read(DECLINED, localStorage) === '1') return
+  const offer = read(PASSKEY_OFFER, sessionStorage)
+  if (!offer || (offer !== 'force' && read(DECLINED, localStorage) === '1')) return
   try {
-    sessionStorage.removeItem(OFFER)
+    sessionStorage.removeItem(PASSKEY_OFFER)
   }
   catch { /* sin almacenamiento: no pasa nada */ }
-  if (!isSupported.value || !(await isPlatformAvailable())) return
-  const keys = await $fetch<unknown[]>('/api/passkeys').catch(() => [1])
-  if (!keys.length) setTimeout(() => (show.value = true), 900)
+  await nextTick()
+  if (!isSupported.value || passkeyOnDevice() || !(await platformAvailable().catch(() => false))) return
+  // Las opciones ya están pedidas cuando aparece: el toque en «Activar» abre Face ID al instante
+  await ready()
+  setTimeout(() => (show.value = true), 600)
 })
 
 async function enable() {
-  if (!user.value) return
   busy.value = true
   try {
-    await register({ userName: user.value.email, displayName: user.value.name })
+    await register()
     show.value = false
     toast.success('Listo: la próxima vez, sin contraseña', 'Entra con tu huella, tu cara o el PIN de este dispositivo.')
   }
   catch (err) {
-    const name = (err as { name?: string }).name
-    if (name !== 'NotAllowedError' && name !== 'AbortError') toast.error('No se pudo activar', errorMessage(err))
+    if (passkeyAlreadyHere(err)) {
+      show.value = false
+      toast.success('Este dispositivo ya estaba listo', 'Entra con tu huella, tu cara o el PIN la próxima vez.')
+    }
+    else if (passkeyCancelled(err)) {
+      toast.info('No se ha activado', 'Si no te salió la huella o Face ID, vuelve a tocar «Activar».')
+    }
+    else {
+      toast.error('No se pudo activar', errorMessage(err))
+    }
   }
   finally {
     busy.value = false

@@ -17,8 +17,9 @@ async function submit() {
     await $fetch('/api/auth/login', { method: 'POST', body: form })
     await refreshSession()
     // Tras entrar con contraseña, Inicio ofrecerá usar la huella o Face ID la próxima vez
+    // («force»: acaba de intentarlo sin llave en este dispositivo, se ofrece aunque dijera «Ahora no»)
     try {
-      sessionStorage.setItem('numiq-passkey-offer', '1')
+      sessionStorage.setItem(PASSKEY_OFFER, passkeyMissing.value ? 'force' : '1')
     }
     catch { /* sin almacenamiento: no pasa nada */ }
     await navigateTo(target())
@@ -31,20 +32,26 @@ async function submit() {
   }
 }
 
-// Entrar con llave de acceso: huella, cara o PIN (con el email escrito, el navegador va directo a sus llaves)
-const { authenticate, isSupported } = useWebAuthn({ registerEndpoint: '/api/passkeys/register', authenticateEndpoint: '/api/passkeys/authenticate' })
+// Entrar con llave de acceso: huella, cara o PIN. También aparece sugerida en el teclado del email
+const signedIn = async () => {
+  await refreshSession()
+  await navigateTo(target())
+}
+const { isSupported, signIn } = usePasskeyLogin(signedIn, (err) => {
+  error.value = errorMessage(err, 'No se pudo entrar con la llave de acceso. Prueba con tu contraseña.')
+})
 const passkeyBusy = ref(false)
+/** El sistema no encontró llave (o se canceló) en un dispositivo donde nunca se activó */
+const passkeyMissing = ref(false)
 async function withPasskey() {
   passkeyBusy.value = true
   error.value = null
+  passkeyMissing.value = false
   try {
-    await authenticate(form.email.trim() || undefined)
-    await refreshSession()
-    await navigateTo(target())
+    if (!(await signIn()) && !passkeyOnDevice()) passkeyMissing.value = true
   }
   catch (err) {
-    const name = (err as { name?: string }).name
-    if (name !== 'NotAllowedError' && name !== 'AbortError') error.value = errorMessage(err, 'No se pudo entrar con la llave de acceso. Prueba con tu contraseña.')
+    error.value = errorMessage(err, 'No se pudo entrar con la llave de acceso. Prueba con tu contraseña.')
   }
   finally {
     passkeyBusy.value = false
@@ -58,7 +65,7 @@ async function withPasskey() {
     <p class="lead">Entra para ver cómo va tu negocio hoy.</p>
 
     <form class="form" novalidate @submit.prevent="submit">
-      <UiInput v-model="form.email" label="Email" type="email" autocomplete="email" placeholder="tu@empresa.es" icon="ph:envelope-simple" required />
+      <UiInput v-model="form.email" label="Email" type="email" autocomplete="username webauthn" placeholder="tu@empresa.es" icon="ph:envelope-simple" required />
       <UiInput v-model="form.password" label="Contraseña" :type="showPassword ? 'text' : 'password'" autocomplete="current-password" icon="ph:lock-simple" required>
         <template #end>
           <button type="button" class="eye" :aria-label="showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'" @click="showPassword = !showPassword">
@@ -77,6 +84,12 @@ async function withPasskey() {
       <template v-if="isSupported">
         <div class="or" aria-hidden="true"><span>o</span></div>
         <UiButton size="lg" block icon="ph:fingerprint" :loading="passkeyBusy" @click="withPasskey">Entrar con huella o Face ID</UiButton>
+        <Transition name="fade">
+          <p v-if="passkeyMissing" class="pk-help" role="status">
+            <Icon name="ph:info" class="pk-ic" aria-hidden="true" />
+            <span>Este dispositivo aún no tiene la huella o Face ID activados para NUMIQ. Entra con tu contraseña y te lo ofrecemos al momento: es un toque.</span>
+          </p>
+        </Transition>
       </template>
     </form>
 
@@ -126,6 +139,23 @@ async function withPasskey() {
   color: var(--danger);
   background: var(--danger-soft);
   border-radius: var(--r-md);
+}
+
+.pk-help {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  background: var(--brand-soft);
+  border-radius: var(--r-md);
+}
+
+.pk-ic {
+  flex: none;
+  margin-top: 2px;
+  color: var(--brand-text);
 }
 
 .forgot {

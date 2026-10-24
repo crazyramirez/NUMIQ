@@ -4,24 +4,39 @@ interface Passkey { id: string, name: string | null, backedUp: boolean, createdA
 
 const toast = useToast()
 const { confirm } = useConfirm()
-const { user } = useUserSession()
-const { register, isSupported } = useWebAuthn({ registerEndpoint: '/api/passkeys/register', authenticateEndpoint: '/api/passkeys/authenticate' })
+const { register, isSupported } = usePasskeyRegistration()
 const { data, refresh } = useFetch<Passkey[]>('/api/passkeys', { key: 'passkeys', lazy: true, server: false })
 const keys = computed(() => data.value ?? [])
+/** Este navegador ya tiene su llave (creada o usada aquí) y sigue en la cuenta */
+const deviceKey = ref<string | null>(null)
+onMounted(() => (deviceKey.value = passkeyOnDevice()))
+const here = computed(() => !!deviceKey.value && !!data.value && (deviceKey.value === '1' ? data.value.length > 0 : data.value.some(k => k.id === deviceKey.value)))
+// Si la llave de este dispositivo se quitó, se olvida para poder crearla de nuevo
+watch([data, deviceKey], () => {
+  if (deviceKey.value && data.value && !here.value) {
+    markPasskeyOnDevice('')
+    deviceKey.value = null
+  }
+})
 const busy = ref<string | null>(null)
 
 async function add() {
-  if (!user.value) return
   busy.value = 'add'
   try {
-    await register({ userName: user.value.email, displayName: user.value.name })
+    await register()
+    // Primero la lista nueva: si no, la llave recién creada parecería quitada
     await refresh()
+    deviceKey.value = passkeyOnDevice()
     toast.success('Llave de acceso creada', 'La próxima vez entra con tu huella, tu cara o el PIN de este dispositivo.')
   }
   catch (err) {
-    // Cancelar el diálogo del sistema no es un error que haya que contar
-    const name = (err as { name?: string }).name
-    if (name !== 'NotAllowedError' && name !== 'AbortError') toast.error('No se pudo crear la llave', errorMessage(err))
+    if (passkeyAlreadyHere(err)) {
+      deviceKey.value = passkeyOnDevice()
+      toast.success('Este dispositivo ya tiene tu llave', 'Ya puedes entrar con tu huella, tu cara o el PIN.')
+    }
+    // Cancelar el diálogo del sistema no es un error: solo se recuerda cómo seguir
+    else if (passkeyCancelled(err)) toast.info('No se ha creado la llave', 'Si no te salió la huella o Face ID, vuelve a intentarlo.')
+    else toast.error('No se pudo crear la llave', errorMessage(err))
   }
   finally {
     busy.value = null
@@ -63,7 +78,8 @@ const ICONS: Record<string, string> = { iPhone: 'ph:device-mobile', iPad: 'ph:de
     <p v-else class="none">Aún no tienes llaves de acceso.</p>
 
     <div class="foot">
-      <UiButton v-if="isSupported" variant="primary" icon="ph:fingerprint" :loading="busy === 'add'" @click="add">
+      <p v-if="isSupported && here" class="here"><Icon name="ph:check-circle-fill" class="here-ic" aria-hidden="true" /> Activado en este dispositivo</p>
+      <UiButton v-else-if="isSupported" variant="primary" icon="ph:fingerprint" :loading="busy === 'add'" @click="add">
         {{ keys.length ? 'Añadir este dispositivo' : 'Activar en este dispositivo' }}
       </UiButton>
       <p v-else class="none">Este navegador no admite llaves de acceso.</p>
@@ -115,6 +131,19 @@ const ICONS: Record<string, string> = { iPhone: 'ph:device-mobile', iPad: 'ph:de
 .k-sub {
   font-size: var(--text-xs);
   color: var(--text-3);
+}
+
+.here {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  font-weight: 560;
+  color: var(--text-2);
+}
+
+.here-ic {
+  color: var(--success);
 }
 
 .none {
