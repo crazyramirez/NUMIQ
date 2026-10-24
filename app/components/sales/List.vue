@@ -510,6 +510,11 @@ const bulkActions = computed<BulkAction[]>(() => [
 .col-date,
 .col-due,
 .col-total,
+.col-status {
+  white-space: nowrap;
+  width: 1%;
+}
+
 .st-wrap {
   display: inline-flex;
   align-items: center;
@@ -529,11 +534,6 @@ const bulkActions = computed<BulkAction[]>(() => [
   font-size: var(--text-xs);
   font-weight: 560;
   color: var(--info);
-}
-
-.col-status {
-  white-space: nowrap;
-  width: 1%;
 }
 
 .col-client {
