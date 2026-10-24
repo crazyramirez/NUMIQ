@@ -44,10 +44,27 @@ export async function trackPublicView(event: H3Event, doc: SalesDoc) {
     .set({ viewCount: doc.viewCount + 1, viewedAt: doc.viewedAt ?? new Date() })
     .where(eq(tables.salesDocuments.id, doc.id))
     .catch(err => console.warn('[public-doc] visita', err))
+  // Primera vez que lo abre: un aviso (las siguientes visitas solo suman)
+  if (!doc.viewedAt) {
+    const quote = doc.kind === 'quote' || doc.kind === 'proforma'
+    const who = doc.customer?.name ?? 'Tu cliente'
+    void notifyCompany(doc.companyId, {
+      title: `${who} ha abierto tu ${quote ? 'presupuesto' : 'factura'} ${doc.number ?? ''}`.trim(),
+      body: quote ? 'Buen momento para llamarle y resolver dudas.' : 'Ya sabe cuánto te debe y cómo pagarte.',
+      url: quote ? `/presupuestos/${doc.id}` : `/facturas/${doc.id}`,
+      tag: `view-${doc.id}`,
+    }, { alsoUserId: doc.createdBy })
+  }
 }
 
 /** Avisa a los responsables de la empresa de que el cliente ha aceptado o rechazado un presupuesto */
 export async function notifyQuoteResponse(company: Company, doc: SalesDoc, accepted: boolean, name: string, note: string | null, site: string) {
+  void notifyCompany(company.id, {
+    title: `${doc.customer?.name ?? 'Tu cliente'} ha ${accepted ? 'aceptado' : 'rechazado'} el presupuesto ${doc.number ?? ''}`.trim(),
+    body: note ? `«${note.slice(0, 140)}»` : accepted ? 'Conviértelo en factura con un toque.' : 'Puede ser buen momento para llamarle.',
+    url: `/presupuestos/${doc.id}`,
+    tag: `quote-${doc.id}`,
+  }, { alsoUserId: doc.createdBy })
   if (!mailEnabled()) return
   const db = useDb()
   const admins = await db.select({ email: tables.users.email }).from(tables.companyMembers)

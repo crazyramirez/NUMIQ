@@ -418,6 +418,14 @@ async function processBatch(companyId: number, batchId: number) {
   await runLimited(files.map(f => () => processFile(k, companyId, batchId, f)), aiSettings().concurrency)
   await linkRelatedDocuments(batchId)
   await db.update(tables.importBatches).set({ status: 'review' }).where(eq(tables.importBatches.id, batchId))
+  if (batch.source !== 'scan' && batch.createdBy) {
+    void sendPush([batch.createdBy], {
+      title: `La IA ha leído ${batch.totalFiles} ${batch.totalFiles === 1 ? 'documento' : 'documentos'}`,
+      body: `${batch.name ?? 'Importación'}: revisa y confirma lo que ha encontrado.`,
+      url: `/documentos/importacion/${batchId}`,
+      tag: `import-${batchId}`,
+    }).catch(() => {})
+  }
 }
 
 // ─── Pedidos, albaranes y presupuestos que acompañan a una factura emitida ───

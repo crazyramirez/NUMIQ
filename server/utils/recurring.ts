@@ -350,6 +350,15 @@ export async function runDueRecurrings() {
         const r = await runOccurrence(rec, company, { issueDate: rec.kind === 'invoice' ? today : rec.nextDate })
         if (!r) break
         generated++
+        // Facturas: aviso de que ha salido (o de que hay que revisarla); los gastos fijos van en silencio
+        if (r.type === 'sales') {
+          void notifyCompany(company.id, {
+            title: r.number ? `Factura ${r.number} emitida${rec.autoSend && !r.warning ? ' y enviada' : ''}` : 'Borrador de factura listo para revisar',
+            body: r.warning ?? rec.name,
+            url: `/facturas/${r.id}`,
+            tag: `recurring-${rec.id}`,
+          })
+        }
       }
       catch {
         failed++
