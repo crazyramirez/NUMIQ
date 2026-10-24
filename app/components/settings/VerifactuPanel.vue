@@ -94,6 +94,7 @@ const autoModel = computed({
 const pending = computed(() => data.value?.counts.pending ?? 0)
 const filter = ref<'all' | VfRecord['status']>('all')
 const rows = computed(() => (data.value?.records ?? []).filter(r => filter.value === 'all' || r.status === filter.value))
+const { page, pages, items: shown } = usePaged(rows, [filter])
 const filterOptions = computed(() => [
   { value: 'all', label: 'Todos', count: data.value?.records.length ?? null },
   ...(['pending', 'accepted', 'accepted_with_errors', 'rejected'] as const).filter(s => data.value?.counts[s]).map(s => ({ value: s, label: STATUS[s].label, count: data.value?.counts[s] ?? null })),
@@ -146,7 +147,7 @@ const filterModel = computed({ get: () => filter.value as string, set: (v: strin
             <tr><th>Factura</th><th>Cliente</th><th>Fecha</th><th class="r">Importe</th><th>Estado</th><th /></tr>
           </thead>
           <tbody>
-            <tr v-for="r in rows" :key="r.id">
+            <tr v-for="r in shown" :key="r.id">
               <td><NuxtLink :to="`/facturas/${r.salesDocumentId}`" class="link">{{ r.invoiceNumber }}</NuxtLink> <span class="muted small">{{ r.invoiceType }}</span></td>
               <td class="truncate max">{{ r.customer ?? '—' }}</td>
               <td>{{ fdateShort(r.invoiceDate) }}</td>
@@ -161,6 +162,7 @@ const filterModel = computed({ get: () => filter.value as string, set: (v: strin
           </tbody>
         </table>
       </div>
+      <UiPager v-model="page" :pages="pages" />
     </UiCard>
   </div>
 </template>

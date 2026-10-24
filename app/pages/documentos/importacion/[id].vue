@@ -117,6 +117,7 @@ const rows = computed(() => {
   for (const r of filtered.value) if (nested.value.has(r.id)) children.set(r.linkedTo!, [...(children.get(r.linkedTo!) ?? []), r])
   return filtered.value.flatMap(r => (nested.value.has(r.id) ? [] : [r, ...(children.get(r.id) ?? [])]))
 })
+const { page, pages, items: shown } = usePaged(rows, [status, types, q])
 const isQuoteRow = (r: Row) => r.type === 'sales' && (r.docType === 'quote' || r.docType === 'proforma')
 const kindOf = (r: Row) => (isQuoteRow(r) ? 'quote' : r.type)
 const rowType = (r: Row) => (isQuoteRow(r)
@@ -320,7 +321,7 @@ const summary = computed(() => {
         <div class="lrow lhead" aria-hidden="true">
           <span>Documento</span><span>Fecha</span><span class="r">Importe</span><span>Estado</span><span />
         </div>
-        <div v-for="r in rows" :key="r.id" class="lrow item" :class="[r.status, { child: nested.has(r.id) }]" role="button" tabindex="0" :aria-label="`Revisar ${r.title}`" @click="openItem(r)" @keydown.enter.prevent="openItem(r)" @keydown.space.prevent="openItem(r)">
+        <div v-for="r in shown" :key="r.id" class="lrow item" :class="[r.status, { child: nested.has(r.id) }]" role="button" tabindex="0" :aria-label="`Revisar ${r.title}`" @click="openItem(r)" @keydown.enter.prevent="openItem(r)" @keydown.space.prevent="openItem(r)">
           <span class="doc">
             <span class="t-ic" :class="rowType(r).tone" aria-hidden="true"><Icon :name="rowType(r).icon" /></span>
             <span class="min0">
@@ -348,6 +349,7 @@ const summary = computed(() => {
           </span>
         </div>
         <UiEmpty v-if="!rows.length" compact icon="ph:funnel" title="Nada con estos filtros" />
+        <UiPager v-model="page" :pages="pages" />
       </section>
 
       <UiEmpty v-else-if="!running" icon="ph:file-dashed" title="No se encontró nada que importar" text="Prueba con otros archivos o revisa los que no se pudieron leer." />

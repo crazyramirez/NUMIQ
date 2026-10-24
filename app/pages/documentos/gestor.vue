@@ -59,6 +59,7 @@ const { data: preview, pending: loadingPreview } = await useFetch<Preview>('/api
   immediate: true,
 })
 const { data: info, refresh: refreshInfo } = await useFetch<{ advisor: Advisor | null, mail: boolean, packs: Pack[] }>('/api/advisor', { default: () => ({ advisor: null, mail: true, packs: [] }) })
+const { page: packPage, pages: packPages, items: shownPacks } = usePaged(() => info.value.packs)
 
 const granOptions = [
   { value: 'month', label: 'Mes' },
@@ -376,7 +377,7 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
         <UiCard title="Envíos anteriores" icon="ph:clock-counter-clockwise" padding="none" class="rise" style="--i: 3">
           <UiEmpty v-if="!info.packs.length" compact icon="ph:paper-plane-tilt" title="Aún no has enviado nada" />
           <ul v-else class="packs">
-            <li v-for="p in info.packs" :key="p.id" class="pack">
+            <li v-for="p in shownPacks" :key="p.id" class="pack">
               <div class="grow min0">
                 <p class="pk-t">{{ p.label }}</p>
                 <p class="pk-s truncate">
@@ -390,6 +391,7 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
               <button type="button" class="pk-btn" :aria-label="`Borrar ${p.label}`" @click="removePack(p)"><Icon name="ph:trash" /></button>
             </li>
           </ul>
+          <UiPager v-model="packPage" :pages="packPages" />
         </UiCard>
       </aside>
     </div>

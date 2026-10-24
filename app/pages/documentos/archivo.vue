@@ -54,6 +54,7 @@ const folders = computed(() => {
 
 const files = computed(() => (folder.value === 'all' ? data.value.files : data.value.files.filter(f => (f.folder ?? 'otros') === folder.value)))
 const totalBytes = computed(() => files.value.reduce((s, f) => s + f.size, 0))
+const { page, pages, items: shown } = usePaged(files, [year, quarter, folder])
 const periodLabel = computed(() => (quarter.value === 'all' ? `${year.value}` : `${quarter.value}.º trimestre de ${year.value}`))
 
 // ─── Subida ───
@@ -213,7 +214,7 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
       </header>
       <UiEmpty v-if="!files.length" compact icon="ph:archive" title="No hay documentos aquí" text="Sube extractos del banco, contratos o justificantes: tu gestoría los tendrá ordenados por trimestre." />
       <ul v-else class="files">
-        <li v-for="f in files" :key="f.id" class="file">
+        <li v-for="f in shown" :key="f.id" class="file">
           <button type="button" class="f-main" @click="show(f)">
             <span class="f-ic" aria-hidden="true"><Icon :name="fileIcon(f.name, f.mime)" /></span>
             <span class="min0">
@@ -231,6 +232,7 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
           </UiMenu>
         </li>
       </ul>
+      <UiPager v-model="page" :pages="pages" />
     </section>
 
     <UiModal v-model="previewOpen" size="xl" :title="preview?.name">

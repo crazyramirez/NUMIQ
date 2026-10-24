@@ -289,14 +289,22 @@ const shown = computed(() => {
   return f?.test ? entries.value.filter(f.test) : entries.value
 })
 
-// Por años (la lista ya viene de más reciente a más antigua); el total no cuenta borradores ni anulados
+const { page, pages, items: paged } = usePaged(shown, [tab, filter])
+
+// La página a la vista, por años (la lista ya viene de más reciente a más antigua). Cada año resume
+// todo lo suyo, también lo que cae en otras páginas; el total no cuenta borradores ni anulados
 const groups = computed(() => {
-  const out: Array<{ year: string, items: Entry[], total: number }> = []
-  for (const e of shown.value) {
+  const out: Array<{ year: string, items: Entry[], count: number, total: number }> = []
+  for (const e of paged.value) {
     const year = e.date.slice(0, 4)
     let g = out.find(x => x.year === year)
-    if (!g) out.push(g = { year, items: [], total: 0 })
+    if (!g) out.push(g = { year, items: [], count: 0, total: 0 })
     g.items.push(e)
+  }
+  for (const e of shown.value) {
+    const g = out.find(x => x.year === e.date.slice(0, 4))
+    if (!g) continue
+    g.count++
     if (e.state !== 'draft' && e.state !== 'closed') g.total += e.amount
   }
   return out
@@ -446,7 +454,7 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
                 <section v-for="g in groups" :key="g.year" class="grp" :aria-label="g.year">
                   <header class="grp-h">
                     <span class="grp-y">{{ g.year }}</span>
-                    <span class="grp-s num">{{ g.items.length }} · {{ eur(g.total, false) }}</span>
+                    <span class="grp-s num">{{ g.count }} · {{ eur(g.total, false) }}</span>
                   </header>
                   <ul>
                     <li v-for="e in g.items" :key="e.id">
@@ -489,7 +497,7 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
                       <th :colspan="dueLabel ? 5 : 4" scope="rowgroup">
                         <span class="grp-in">
                           <span class="grp-y">{{ g.year }}</span>
-                          <span class="grp-s num">{{ g.items.length }} {{ g.items.length === 1 ? unit[0] : unit[1] }} · {{ eur(g.total) }}</span>
+                          <span class="grp-s num">{{ g.count }} {{ g.count === 1 ? unit[0] : unit[1] }} · {{ eur(g.total) }}</span>
                         </span>
                       </th>
                     </tr>
@@ -519,6 +527,8 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
                   </tbody>
                 </table>
               </div>
+
+              <UiPager v-model="page" :pages="pages" />
             </template>
           </template>
         </UiCard>

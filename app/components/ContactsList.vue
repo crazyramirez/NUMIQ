@@ -118,9 +118,10 @@ function rowMenu(r: ContactRow): MenuItem[] {
   ]
 }
 
-// ─── Selección: eliminar muchos de una vez ───
+// ─── Páginas de 25 y selección (de la página a la vista): eliminar muchos de una vez ───
 
-const { selected, selectedSet, selectedRows, selecting, allSelected, toggle: pick, toggleAll, clear } = useSelection(rows)
+const { page, pages, items: shown } = usePaged(rows, [qDebounced])
+const { selected, selectedSet, selectedRows, selecting, allSelected, toggle: pick, toggleAll, clear } = useSelection(shown)
 const busy = ref(false)
 const noun = (n: number) => (isClient.value ? (n === 1 ? 'cliente' : 'clientes') : (n === 1 ? 'proveedor' : 'proveedores'))
 
@@ -258,7 +259,7 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
             </thead>
             <tbody>
               <tr
-                v-for="r in rows"
+                v-for="r in shown"
                 :key="r.id"
                 class="clickable"
                 :class="{ sel: selectedSet.has(r.id) }"
@@ -307,7 +308,7 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
         </div>
 
         <ul class="cards mobile">
-          <li v-for="r in rows" :key="r.id">
+          <li v-for="r in shown" :key="r.id">
             <UiListRow :to="`${base}/${r.id}`" :selecting="selecting" :selected="selectedSet.has(r.id)" @toggle="pick(r.id)">
               <template #lead>
                 <UiAvatar :name="r.name" :size="38" :square="r.kind === 'company'" :src="r.logoUrl" contain />
@@ -332,12 +333,14 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
             </UiListRow>
           </li>
         </ul>
+
+        <UiPager v-model="page" :pages="pages" />
       </template>
     </UiCard>
 
     <UiBulkBar
       :count="selected.length"
-      :total="rows.length"
+      :total="shown.length"
       :title="`${noun(selected.length)} ${selected.length === 1 ? 'seleccionado' : 'seleccionados'}`"
       :actions="bulkActions"
       :busy="busy"

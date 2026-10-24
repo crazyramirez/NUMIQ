@@ -23,6 +23,7 @@ const { open: openScan } = useScan()
 
 const { data: ai } = await useFetch<{ configured: boolean }>('/api/ai/status', { default: () => ({ configured: true }) })
 const { data: batches, refresh, pending } = await useFetch<Batch[]>('/api/imports', { default: () => [] })
+const { page, pages, items: shownBatches } = usePaged(batches)
 
 // Lotes leyéndose: se refrescan solos
 const anyRunning = computed(() => batches.value.some(b => b.running || b.status === 'processing'))
@@ -208,7 +209,7 @@ const TYPES = ['PDF', 'Fotos', 'Word', 'Excel', 'CSV', 'ZIP', 'Carpetas']
       <div class="card">
         <UiEmpty v-if="!batches.length" compact icon="ph:tray" title="Aún no has importado nada" text="Tus importaciones aparecerán aquí para revisarlas cuando quieras." />
         <ul v-else class="batches">
-          <li v-for="b in batches" :key="b.id" class="batch">
+          <li v-for="b in shownBatches" :key="b.id" class="batch">
             <span class="b-ic" :class="b.source" aria-hidden="true"><Icon :name="SOURCE_ICON[b.source]" /></span>
             <div class="grow min0">
               <!-- El enlace cubre toda la fila; el botón de eliminar queda por encima -->
@@ -234,6 +235,7 @@ const TYPES = ['PDF', 'Fotos', 'Word', 'Excel', 'CSV', 'ZIP', 'Carpetas']
             <Icon name="ph:caret-right" class="chev" aria-hidden="true" />
           </li>
         </ul>
+        <UiPager v-model="page" :pages="pages" />
       </div>
     </section>
 

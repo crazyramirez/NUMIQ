@@ -107,9 +107,10 @@ const rowMenu = (i: Item): MenuItem[] => [
   { label: 'Eliminar', icon: 'ph:trash', danger: true, onClick: () => remove(i) },
 ]
 
-// ─── Selección: eliminar o mover de categoría muchos de una vez ───
+// ─── Páginas de 25 y selección (de la página a la vista): eliminar o mover de categoría muchos de una vez ───
 
-const sel = useSelection(filtered)
+const { page, pages, items: shown } = usePaged(filtered, [q, kind, cat])
+const sel = useSelection(shown)
 const busy = ref(false)
 
 function onMain(i: Item) {
@@ -310,14 +311,14 @@ const bulkActions = computed<BulkAction[]>(() => [
               @change="sel.toggleAll"
             >
           </span>
-          <span>{{ sel.selected.value.length ? `${sel.selected.value.length} de ${filtered.length} seleccionados` : `${filtered.length} ${filtered.length === 1 ? 'elemento' : 'elementos'}` }}</span>
+          <span>{{ sel.selected.value.length ? `${sel.selected.value.length} de ${shown.length} seleccionados` : `${filtered.length} ${filtered.length === 1 ? 'elemento' : 'elementos'}` }}</span>
           <span class="h-usage">Facturado 12 m</span>
           <span class="r">Precio</span>
           <span />
         </div>
 
         <ul class="list">
-          <li v-for="(i, idx) in filtered" :key="i.id" class="row rise" :class="{ sel: sel.selectedSet.value.has(i.id) }" :style="{ '--i': Math.min(idx, 10) }">
+          <li v-for="(i, idx) in shown" :key="i.id" class="row rise" :class="{ sel: sel.selectedSet.value.has(i.id) }" :style="{ '--i': Math.min(idx, 10) }">
             <span class="pick" @click="sel.toggle(i.id, $event)">
               <input
                 type="checkbox"
@@ -370,7 +371,7 @@ const bulkActions = computed<BulkAction[]>(() => [
 
         <!-- Móvil: nombre y descripción enteros; debajo, uso y precio -->
         <ul class="mlist">
-          <li v-for="i in filtered" :key="i.id">
+          <li v-for="i in shown" :key="i.id">
             <UiListRow :selecting="sel.selecting.value" :selected="sel.selectedSet.value.has(i.id)" @toggle="sel.toggle(i.id)" @open="openEdit(i.id)">
               <template #lead>
                 <span class="ic" :class="[i.kind, { pic: i.imageUrl }]" aria-hidden="true">
@@ -400,12 +401,14 @@ const bulkActions = computed<BulkAction[]>(() => [
             </UiListRow>
           </li>
         </ul>
+
+        <UiPager v-model="page" :pages="pages" />
       </template>
     </UiCard>
 
     <UiBulkBar
       :count="sel.selected.value.length"
-      :total="filtered.length"
+      :total="shown.length"
       :sub="describe(sel.selected.value)"
       :actions="bulkActions"
       :busy="busy"

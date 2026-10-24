@@ -266,9 +266,10 @@ function clearFilters() {
   noFile.value = false
 }
 
-// ─── Selección: marcar muchos gastos de una vez (los que llegan del banco o de una importación) ───
+// ─── Páginas de 25 y selección (de la página a la vista): marcar muchos gastos de una vez (los que llegan del banco o de una importación) ───
 
-const { selected, selectedSet, selecting, allSelected, toggle, toggleAll, clear: stopSelecting } = useSelection(rows)
+const { page, pages, items: shown } = usePaged(rows, [status, period, categoryId, deductible, qDebounced, approvalFilter, noFile])
+const { selected, selectedSet, selecting, allSelected, toggle, toggleAll, clear: stopSelecting } = useSelection(shown)
 const selectedTotal = computed(() => rows.value.reduce((s, e) => s + (selectedSet.value.has(e.id) ? e.total : 0), 0))
 
 // ─── Deducible / categoría en bloque, con deshacer ───
@@ -555,7 +556,7 @@ function savePartial() {
             </thead>
             <tbody>
               <tr
-                v-for="e in rows"
+                v-for="e in shown"
                 :key="e.id"
                 class="clickable"
                 :class="{ sel: selectedSet.has(e.id) }"
@@ -622,7 +623,7 @@ function savePartial() {
         </div>
 
         <ul class="cards mobile">
-          <li v-for="e in rows" :key="e.id">
+          <li v-for="e in shown" :key="e.id">
             <UiListRow :selecting="selecting" :selected="selectedSet.has(e.id)" @toggle="toggle(e.id)" @open="openEdit(e.id)">
               <template #lead>
                 <span class="cat-ic lg" :style="{ '--c': e.categoryColor ?? 'var(--text-4)' }" aria-hidden="true">
@@ -655,6 +656,8 @@ function savePartial() {
             </UiListRow>
           </li>
         </ul>
+
+        <UiPager v-model="page" :pages="pages" />
       </template>
     </UiCard>
 

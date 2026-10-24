@@ -426,7 +426,7 @@ const ACCEPT_LABEL: Record<Suggestion['kind'], string> = {
 const confidenceTone = (c: number) => (c >= 85 ? 'high' : c >= 65 ? 'mid' : 'low')
 const ibanTail = (iban: string | null) => (iban ? `${iban.slice(0, 4)} ···· ${iban.slice(-4)}` : 'Sin IBAN')
 const linkTo = (l: NonNullable<Tx['link']>) => (l.kind === 'invoice' ? `/facturas/${l.id}` : `/gastos?ver=${l.id}`)
-const pages = computed(() => Math.max(1, Math.ceil((data.value?.total ?? 0) / (data.value?.pageSize ?? 60))))
+const pages = computed(() => pageCount(data.value?.total ?? 0, data.value?.pageSize))
 </script>
 
 <template>
@@ -614,11 +614,7 @@ const pages = computed(() => Math.max(1, Math.ceil((data.value?.total ?? 0) / (d
           </li>
         </ul>
 
-        <div v-if="pages > 1" class="pager">
-          <UiButton size="sm" variant="ghost" icon="ph:caret-left" :disabled="page <= 1" @click="page--">Anteriores</UiButton>
-          <span class="muted">Página {{ page }} de {{ pages }}</span>
-          <UiButton size="sm" variant="ghost" icon-right="ph:caret-right" :disabled="page >= pages" @click="page++">Siguientes</UiButton>
-        </div>
+        <UiPager v-model="page" :pages="pages" />
       </UiCard>
 
       <UiBulkBar
@@ -1134,15 +1130,6 @@ a.chip.ok:hover {
 .none {
   font-size: var(--text-sm);
   color: var(--text-4);
-}
-
-.pager {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--s-3) var(--s-5);
-  font-size: var(--text-sm);
-  border-top: 1px solid var(--border-subtle);
 }
 
 .intro {

@@ -8,12 +8,9 @@ const props = defineProps<{
 
 const tab = ref('issued')
 const search = ref('')
-const limit = ref(100)
 
 const bookQuery = computed(() => ({ ...props.query, type: tab.value }))
 const { data, status, error, refresh } = await useFetch('/api/reports/book', { query: bookQuery, lazy: true })
-
-watch([bookQuery, search], () => (limit.value = 100))
 
 interface Row {
   id: number
@@ -56,7 +53,7 @@ const filtered = computed(() => {
   if (!q) return rows.value
   return rows.value.filter(r => norm(`${r.number ?? ''} ${r.name} ${r.nif ?? ''} ${r.sub ?? ''}`).includes(q))
 })
-const visible = computed(() => filtered.value.slice(0, limit.value))
+const { page, pages, items: visible } = usePaged(filtered, [bookQuery, search])
 const totals = computed(() => filtered.value.reduce((t, r) => ({
   base: round2(t.base + r.base), vat: round2(t.vat + r.vat), irpf: round2(t.irpf + r.irpf), total: round2(t.total + r.total),
 }), { base: 0, vat: 0, irpf: 0, total: 0 }))
@@ -154,9 +151,7 @@ const counts = computed(() => (data.value?.type === tab.value ? rows.value.lengt
       </table>
     </div>
 
-    <div v-if="filtered.length > limit" class="more">
-      <UiButton size="sm" variant="soft" icon="ph:caret-down" @click="limit += 200">Mostrar más ({{ filtered.length - limit }} restantes)</UiButton>
-    </div>
+    <UiPager v-if="data && filtered.length" v-model="page" :pages="pages" />
   </UiCard>
 </template>
 
@@ -216,13 +211,6 @@ const counts = computed(() => (data.value?.type === tab.value ? rows.value.lengt
 
 .table td .sub {
   white-space: nowrap;
-}
-
-.more {
-  display: flex;
-  justify-content: center;
-  padding: var(--s-4);
-  border-top: 1px solid var(--border-subtle);
 }
 
 @media (max-width: 767px) {

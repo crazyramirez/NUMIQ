@@ -86,6 +86,7 @@ const filterOptions = computed(() => [
 const shown = computed(() => rows.value.filter(r =>
   filter.value === 'all' ? true : filter.value === 'paused' ? r.status !== 'active' : r.status === 'active',
 ))
+const { page, pages, items: paged } = usePaged(shown, [filter])
 
 function statusOf(r: Row) {
   if (r.status === 'finished') return { label: 'Terminado', tone: 'neutral' as const }
@@ -403,7 +404,7 @@ const IDEAS = computed(() => ALL_IDEAS.filter(i => i.kind === props.kind))
 
       <template v-else>
       <ul class="list">
-        <li v-for="(r, i) in shown" :key="r.id" class="item rise" :class="{ off: r.status !== 'active' }" :style="{ '--i': Math.min(i, 8) }">
+        <li v-for="(r, i) in paged" :key="r.id" class="item rise" :class="{ off: r.status !== 'active' }" :style="{ '--i': Math.min(i, 8) }">
           <button type="button" class="it-main" @click="openEdit(r.id)">
             <span class="it-ic" :class="r.kind" aria-hidden="true">
               <Icon :name="r.kind === 'invoice' ? 'ph:receipt' : (r.category?.icon || 'ph:wallet')" />
@@ -457,7 +458,7 @@ const IDEAS = computed(() => ALL_IDEAS.filter(i => i.kind === props.kind))
 
       <!-- Móvil: nombre y concepto enteros; debajo, próxima fecha, estado e importe -->
       <ul class="mlist">
-        <li v-for="r in shown" :key="r.id" :class="{ off: r.status !== 'active' }">
+        <li v-for="r in paged" :key="r.id" :class="{ off: r.status !== 'active' }">
           <UiListRow @open="openEdit(r.id)">
             <template #lead>
               <span class="it-ic" :class="r.kind" aria-hidden="true">
@@ -493,6 +494,8 @@ const IDEAS = computed(() => ALL_IDEAS.filter(i => i.kind === props.kind))
           </UiListRow>
         </li>
       </ul>
+
+      <UiPager v-model="page" :pages="pages" />
       </template>
     </UiCard>
 

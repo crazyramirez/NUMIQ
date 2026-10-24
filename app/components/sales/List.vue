@@ -159,10 +159,11 @@ function rowMenu(r: Row): MenuItem[] {
   return items
 }
 
-// ─── Selección: eliminar muchos de una vez ───
+// ─── Páginas de 25 y selección (de la página a la vista): eliminar muchos de una vez ───
 
 const list = computed(() => rows.value ?? [])
-const { selected, selectedSet, selectedRows, selecting, allSelected, toggle: pick, toggleAll, clear } = useSelection(list)
+const { page, pages, items: shown } = usePaged(list, [status, debouncedQ, period])
+const { selected, selectedSet, selectedRows, selecting, allSelected, toggle: pick, toggleAll, clear } = useSelection(shown)
 const busy = ref(false)
 const selectedTotal = computed(() => selectedRows.value.reduce((s, r) => s + amountOf(r), 0))
 const noun = (n: number) => (isQuote.value ? (n === 1 ? 'presupuesto' : 'presupuestos') : (n === 1 ? 'factura' : 'facturas'))
@@ -310,7 +311,7 @@ const bulkActions = computed<BulkAction[]>(() => [
               </tr>
             </thead>
             <tbody>
-              <tr v-for="r in rows" :key="r.id" class="clickable" :class="{ sel: selectedSet.has(r.id) }" tabindex="0" @click="open(r)" @keydown.enter.self="open(r)">
+              <tr v-for="r in shown" :key="r.id" class="clickable" :class="{ sel: selectedSet.has(r.id) }" tabindex="0" @click="open(r)" @keydown.enter.self="open(r)">
                 <td class="pick" @click.stop="pick(r.id, $event)">
                   <input
                     type="checkbox"
@@ -360,7 +361,7 @@ const bulkActions = computed<BulkAction[]>(() => [
         </div>
 
         <ul class="mobile">
-          <li v-for="r in rows" :key="r.id">
+          <li v-for="r in shown" :key="r.id">
             <UiListRow
               :to="`${base}/${r.id}`"
               :selecting="selecting"
@@ -399,12 +400,14 @@ const bulkActions = computed<BulkAction[]>(() => [
             </UiListRow>
           </li>
         </ul>
+
+        <UiPager v-model="page" :pages="pages" />
       </template>
     </div>
 
     <UiBulkBar
       :count="selected.length"
-      :total="list.length"
+      :total="shown.length"
       :title="`${noun(selected.length)} ${isQuote ? (selected.length === 1 ? 'seleccionado' : 'seleccionados') : (selected.length === 1 ? 'seleccionada' : 'seleccionadas')}`"
       :sub="isQuote ? `${eur(selectedTotal)} de base imponible` : eur(selectedTotal)"
       :actions="bulkActions"
