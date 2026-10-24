@@ -188,6 +188,23 @@ test('los conceptos no conservan los cortes de renglón del ancho de la celda', 
   assert.equal(converted(doc({ lines: [{ ...line(45, 21), description: details }] })).data.lines[0].description, details)
 })
 
+test('sin conceptos con importe, el texto va a la descripción y las líneas solo llevan la base', () => {
+  const text = 'Diseño y Desarrollo Web para LanzarotePrivateTours.com'
+  const taxLines = [{ base: 262.81, vatRate: 21, vatAmount: 55.19, surchargeRate: 0, surchargeAmount: 0 }]
+  const result = converted(doc({ itemized: false, lines: [{ ...line(262.81, 21), description: text }], taxLines, total: 318, bodyText: `## Descripción\n${text}` }))
+  assert.equal(result.data.conceptless, true)
+  assert.equal(result.data.bodyText, `## Descripción\n${text}`)
+  assert.deepEqual(result.data.lines.map(l => [l.description, l.quantity, l.unitPrice, l.vatRate]), [['', 1, 262.81, 21]])
+  // El concepto que el cuerpo no recoge se suma a la descripción, sin repetir lo que ya dice
+  assert.equal(extraction.conceptlessBody('Publicidad marzo 2026', ['Publicidad marzo 2026', 'Web y copias de seguridad']), 'Publicidad marzo 2026\nWeb y copias de seguridad')
+  assert.equal(extraction.conceptlessBody(null, [text]), text)
+  // Al cambiar la base en la revisión, la línea la sigue
+  const edited = extraction.reconcileInvoiceLines({ ...result.data, taxLines: [{ ...taxLines[0], base: 300 }] })
+  assert.equal(edited.lines[0].unitPrice, 300)
+  // Con conceptos detallados (o lecturas antiguas sin el dato) todo sigue igual
+  assert.equal(converted(doc({ itemized: true, lines: [{ ...line(1000, 21), description: 'Hosting anual' }] })).data.conceptless, undefined)
+})
+
 test('emitidas o recibidas elegidas al importar mandan sobre lo detectado', () => {
   const chosen = (d, direction, more = {}) => converted(d, { ...ctx, direction, ...more })
   // La IA cruzó los bloques: emitidas elegidas, el cliente sale del bloque del emisor

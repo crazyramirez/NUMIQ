@@ -130,6 +130,38 @@ const dirOptions = [
 ]
 const dirModel = computed({ get: () => direction.value as string, set: (v: string) => { direction.value = v as 'issued' | 'received' } })
 const showLines = ref(false)
+
+// «Solo descripción»: el original no detalla conceptos con importe; el texto va a la descripción y las bases, sin concepto
+const kept = ref<{ lines: ImportInvoiceData['lines'], bodyText: string | null } | null>(null)
+const plainKey = (s: string) => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
+const modeModel = computed({
+  get: () => (data.value.conceptless ? 'text' : 'lines'),
+  set: (v: string) => {
+    const d = data.value
+    if (v === 'text' && !d.conceptless) {
+      kept.value = { lines: d.lines, bodyText: d.bodyText ?? null }
+      // Lo que se leyó como concepto pasa a la descripción si no lo dice ya
+      const parts = [d.bodyText?.trim() ?? '']
+      for (const l of d.lines) {
+        if (l.description.trim() && !plainKey(parts.join(' ')).includes(plainKey(l.description))) parts.push(l.description.trim())
+      }
+      d.bodyText = parts.filter(Boolean).join('\n') || null
+      d.conceptless = true
+    }
+    else if (v === 'lines' && d.conceptless) {
+      d.conceptless = false
+      if (kept.value) {
+        d.lines = kept.value.lines
+        d.bodyText = kept.value.bodyText
+        kept.value = null
+      }
+    }
+  },
+})
+const modeOptions = [
+  { value: 'lines', label: 'Con conceptos' },
+  { value: 'text', label: 'Solo descripción' },
+]
 </script>
 
 <template>
@@ -187,6 +219,10 @@ const showLines = ref(false)
       <UiSelect v-if="direction === 'received'" v-model="data.categoryId" class="c-6" label="Categoría" :options="categoryOptions" />
       <UiInput v-else v-model="data.customerReference" class="c-6" label="Orden de Pedido" placeholder="Nº de pedido del cliente" />
       <UiInput v-model="data.description" class="c-12" label="Concepto" placeholder="Ej. Fibra y móvil de octubre" />
+      <div v-if="direction === 'issued'" class="c-12 mode">
+        <UiSegmented v-model="modeModel" :options="modeOptions" label="Cómo se detalla el trabajo" />
+        <span class="small muted">{{ data.conceptless ? 'Sin tabla de conceptos: la descripción y la base de cada tipo de IVA' : 'Descripción encima y conceptos con su importe' }}</span>
+      </div>
       <UiTextarea
         v-model="data.bodyText"
         class="c-12"
@@ -236,7 +272,7 @@ const showLines = ref(false)
     </div>
 
     <!-- Conceptos -->
-    <section v-if="data.lines.length" class="block">
+    <section v-if="data.lines.length && !(direction === 'issued' && data.conceptless)" class="block">
       <button type="button" class="lines-toggle" :aria-expanded="showLines" @click="showLines = !showLines">
         <Icon :name="showLines ? 'ph:caret-down' : 'ph:caret-right'" aria-hidden="true" />
         Conceptos ({{ data.lines.length }})
@@ -262,6 +298,13 @@ const showLines = ref(false)
 
 .dir {
   align-self: flex-start;
+}
+
+.mode {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  flex-wrap: wrap;
 }
 
 .block {

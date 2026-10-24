@@ -240,6 +240,39 @@ function setSurcharge(on: boolean) {
 const moreCount = computed(() => [pricesWithVat.value, showReference.value || !!form.customerReference, showOperationDate.value, surcharge.value].filter(Boolean).length)
 const moreOpen = ref(moreCount.value > 0)
 
+// «Solo descripción»: sin conceptos, la descripción explica el trabajo y cada tipo de IVA lleva su base imponible
+const conceptless = ref(!!doc.value && isConceptless(doc.value.lines))
+
+function setConceptless(on: boolean) {
+  if (on === conceptless.value) return
+  if (on) {
+    // Los conceptos escritos pasan a la descripción (si estaba vacía) y sus importes, a una base por tipo de IVA
+    const written = form.lines.filter(l => l.description.trim())
+    if (written.length && !richToPlain(form.description)?.trim()) form.description = plainToRich(written.map(l => l.description.trim()).join('\n'))
+    const bases = new Map<number, Line>()
+    for (const l of form.lines) {
+      const base = lineAmounts({ ...l, quantity: l.quantity ?? 0, unitPrice: l.unitPrice ?? 0 }).base
+      const cur = bases.get(l.vatRate) ?? { ...blankLine(), vatRate: l.vatRate, surchargeRate: l.surchargeRate, unitPrice: 0 }
+      cur.unitPrice = round2((cur.unitPrice ?? 0) + base)
+      bases.set(l.vatRate, cur)
+    }
+    form.lines = bases.size ? [...bases.values()] : [blankLine()]
+  }
+  else {
+    form.lines = form.lines.map(l => ({ ...l, key: ++keySeq, description: '' }))
+  }
+  conceptless.value = on
+}
+
+/** Otra base con un tipo de IVA aún sin usar (facturas «solo descripción») */
+function addBase() {
+  const used = new Set(form.lines.map(l => l.vatRate))
+  const line = blankLine()
+  line.vatRate = VAT_RATES.find(r => !used.has(r)) ?? companyVat
+  if (surcharge.value) line.surchargeRate = SURCHARGE_BY_VAT[line.vatRate] ?? 0
+  form.lines.push(line)
+}
+
 function addLine(after?: number) {
   const line = blankLine()
   if (surcharge.value) line.surchargeRate = SURCHARGE_BY_VAT[line.vatRate] ?? 0
@@ -355,7 +388,7 @@ async function repeatLast() {
 }
 
 // ─── Totales ─────────────────────────────────────────────────────────────────
-const validLines = computed(() => form.lines.filter(l => l.description.trim()))
+const validLines = computed(() => (conceptless.value ? form.lines.filter(l => l.unitPrice != null) : form.lines.filter(l => l.description.trim())))
 const totals = computed(() => computeTotals(validLines.value.map(l => ({ ...l, quantity: l.quantity ?? 0, unitPrice: l.unitPrice ?? 0 })), form.irpfRate))
 const hasDiscount = computed(() => form.lines.some(l => (l.discountPct ?? 0) > 0))
 
@@ -393,19 +426,25 @@ function nextStep() {
     goStep(2)
   }
   else if (step.value === 2) {
-    errors.lines = validLines.value.length ? null : 'Añade al menos un concepto'
+    errors.lines = linesError()
     if (errors.lines) {
-      toast.error('Falta un concepto', 'Escribe qué facturas o búscalo en tu catálogo.')
+      toast.error(conceptless.value ? 'Falta la descripción o el importe' : 'Falta un concepto', conceptless.value ? errors.lines : 'Escribe qué facturas o búscalo en tu catálogo.')
       return
     }
     goStep(3)
   }
 }
 
+function linesError() {
+  if (!conceptless.value) return validLines.value.length ? null : 'Añade al menos un concepto'
+  if (!richToPlain(form.description)?.trim()) return 'Describe el trabajo en la descripción'
+  return validLines.value.length ? null : 'Indica la base imponible'
+}
+
 function validate(issue: boolean) {
   errors.contact = null
   errors.lines = null
-  if (!validLines.value.length) errors.lines = 'Añade al menos un concepto'
+  errors.lines = linesError()
   if (issue && !isQuote.value) {
     if (!form.contactId) errors.contact = 'Elige el cliente de la factura'
     else if (!contact.value?.nif) errors.contact = 'El cliente necesita NIF para emitir una factura completa'
@@ -460,8 +499,8 @@ async function save(issue: boolean) {
       rectificationReason: kind.value === 'rectifying' ? form.rectificationReason || null : null,
       lines: validLines.value.map(l => ({
         itemId: l.itemId,
-        description: l.description.trim(),
-        quantity: l.quantity ?? 0,
+        description: conceptless.value ? '' : l.description.trim(),
+        quantity: conceptless.value ? 1 : l.quantity ?? 0,
         unitPrice: l.unitPrice ?? 0,
         discountPct: l.discountPct ?? 0,
         vatRate: l.vatRate,
@@ -684,16 +723,39 @@ const R_CODES = [
 
           <!-- Descripción con formato -->
           <div class="desc-block">
-            <span class="paper-label">Descripción</span>
+            <div class="desc-head">
+              <span class="paper-label">Descripción</span>
+              <div class="mode no-print" role="group" aria-label="Cómo se detalla el trabajo">
+                <button type="button" :aria-pressed="!conceptless" @click="setConceptless(false)">Con conceptos</button>
+                <button type="button" :aria-pressed="conceptless" @click="setConceptless(true)">Solo descripción</button>
+              </div>
+            </div>
             <UiRichText
               v-model="form.description"
               label="Descripción"
-              placeholder="Describe el proyecto, el alcance o el periodo facturado (opcional)"
+              :placeholder="conceptless ? 'Describe el trabajo facturado: proyecto, alcance, periodo…' : 'Describe el proyecto, el alcance o el periodo facturado (opcional)'"
             />
           </div>
 
+          <!-- Solo descripción: la base imponible de cada tipo de IVA -->
+          <div v-if="conceptless" class="bases">
+            <div v-for="l in form.lines" :key="l.key" class="b-row">
+              <span class="b-label">Base imponible</span>
+              <SalesNumCell v-model="l.unitPrice" label="Base imponible" :decimals="2" placeholder="0,00" suffix="€" class="b-amount" />
+              <select v-model.number="l.vatRate" class="cell r b-vat" aria-label="IVA" @change="onVatChange(l)">
+                <option v-for="r in VAT_RATES" :key="r" :value="r">IVA {{ r }} %</option>
+              </select>
+              <button v-if="form.lines.length > 1" type="button" class="l-btn" aria-label="Quitar esta base" @click="removeLine(form.lines.indexOf(l))"><Icon name="ph:x-bold" /></button>
+            </div>
+            <div class="l-add">
+              <button v-if="form.lines.length < VAT_RATES.length" type="button" class="add-btn" @click="addBase"><Icon name="ph:plus-circle-fill" /> Otro tipo de IVA</button>
+              <span class="add-hint">Sin tabla de conceptos: la factura muestra la descripción y los totales</span>
+            </div>
+            <p v-if="errors.lines" class="party-error" role="alert"><Icon name="ph:warning-circle-fill" /> {{ errors.lines }}</p>
+          </div>
+
           <!-- Conceptos -->
-          <div class="lines" :class="{ 'has-dto': hasDiscount }">
+          <div v-else class="lines" :class="{ 'has-dto': hasDiscount }">
             <div class="l-head" aria-hidden="true">
               <span>Concepto</span>
               <span class="r">Cant.</span>
@@ -1009,6 +1071,88 @@ const R_CODES = [
 
 .desc-block {
   margin-top: 30px;
+}
+
+.desc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* Con conceptos / Solo descripción */
+.mode {
+  display: inline-flex;
+  padding: 2px;
+  margin-bottom: 6px;
+  background: color-mix(in srgb, var(--p-text-3) 9%, transparent);
+  border-radius: 8px;
+}
+
+.mode button {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 560;
+  color: var(--p-text-3);
+  border-radius: 6px;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+.mode button[aria-pressed='true'] {
+  color: var(--p-text);
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+
+.mode button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.bases {
+  margin-top: 22px;
+  padding-top: 10px;
+  border-top: 1px solid var(--p-line);
+}
+
+.b-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px 110px 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+/* La base se ve como un campo: es lo único que se rellena */
+.b-row .b-amount,
+.b-row .b-vat {
+  height: 38px;
+  margin: 0;
+  background: var(--p-soft);
+  border: 1px solid var(--p-line);
+  border-radius: 8px;
+}
+
+.b-row .b-amount:focus-within,
+.b-row .b-vat:focus {
+  border-color: var(--p-accent);
+}
+
+.b-label {
+  font-weight: 560;
+  color: var(--p-text-2);
+}
+
+@media (max-width: 520px) {
+  .b-row {
+    grid-template-columns: minmax(0, 1fr) 96px 32px;
+  }
+
+  .b-label {
+    grid-column: 1 / -1;
+  }
 }
 
 .paper-label.no-title {
@@ -1408,6 +1552,7 @@ const R_CODES = [
   .editor[data-step='1'] .paper-party:not(.client),
   .editor[data-step='1'] .desc-block,
   .editor[data-step='1'] .lines,
+  .editor[data-step='1'] .bases,
   .editor[data-step='1'] .repeat,
   .editor[data-step='1'] .paper-bottom,
   .editor[data-step='1'] .paper-pay,

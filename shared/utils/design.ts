@@ -5,6 +5,13 @@
 
 export type DesignLayout = 'modern' | 'classic' | 'minimal' | 'bold'
 export type DesignFont = 'Inter' | 'Lora' | 'Manrope'
+/**
+ * Tabla de conceptos: `auto` solo enseña lo que aporta (cantidad y precio si alguna cantidad no es 1,
+ * IVA si hay varios tipos), `full` todas las columnas, `amount` concepto e importe y `concept` solo el concepto
+ * (los importes quedan en el cuadro de totales).
+ */
+export type LineColumnsMode = 'auto' | 'full' | 'amount' | 'concept'
+export const LINE_COLUMNS_MODES: LineColumnsMode[] = ['auto', 'full', 'amount', 'concept']
 
 export interface InvoiceDesign {
   layout: DesignLayout
@@ -13,6 +20,8 @@ export interface InvoiceDesign {
   showLogo: boolean
   /** Columna de descuento: solo si alguna línea lo lleva, o siempre */
   discountColumn: 'auto' | 'always'
+  /** Columnas de la tabla de conceptos (ver `lineColumns`) */
+  lineColumns: LineColumnsMode
   /** Referencia (SKU) de los productos del catálogo */
   showItemCodes: boolean
   /** IBAN y forma de pago al pie */
@@ -48,6 +57,7 @@ export function defaultDesign(accentColor?: string | null): InvoiceDesign {
     font: 'Inter',
     showLogo: true,
     discountColumn: 'auto',
+    lineColumns: 'auto',
     showItemCodes: false,
     showPaymentInfo: true,
     paymentText: '',
@@ -79,6 +89,7 @@ export function normalizeDesign(raw: Partial<InvoiceDesign> | null | undefined, 
     font: (['Inter', 'Lora', 'Manrope'] as const).includes(raw.font as DesignFont) ? raw.font as DesignFont : d.font,
     showLogo: raw.showLogo ?? d.showLogo,
     discountColumn: raw.discountColumn === 'always' ? 'always' : 'auto',
+    lineColumns: LINE_COLUMNS_MODES.includes(raw.lineColumns as LineColumnsMode) ? raw.lineColumns as LineColumnsMode : d.lineColumns,
     showItemCodes: raw.showItemCodes ?? d.showItemCodes,
     showPaymentInfo: raw.showPaymentInfo ?? d.showPaymentInfo,
     paymentText: (raw.paymentText ?? '').slice(0, 500),
@@ -131,4 +142,16 @@ export function tint(hex: string, amount: number) {
   const n = Number.parseInt(hex.slice(1), 16)
   const mix = (c: number) => Math.round(c + (255 - c) * amount).toString(16).padStart(2, '0')
   return `#${mix((n >> 16) & 255)}${mix((n >> 8) & 255)}${mix(n & 255)}`
+}
+
+/** Qué columnas lleva la tabla de conceptos de un documento con este diseño */
+export function lineColumns(design: Pick<InvoiceDesign, 'lineColumns' | 'discountColumn'>, lines: ReadonlyArray<{ quantity: number, discountPct: number, vatRate: number }>) {
+  const mode = design.lineColumns ?? 'auto'
+  const anyDiscount = lines.some(l => l.discountPct > 0)
+  if (mode === 'concept') return { quantity: false, price: false, discount: false, vat: false, amount: false }
+  if (mode === 'amount') return { quantity: false, price: false, discount: false, vat: false, amount: true }
+  const discount = design.discountColumn === 'always' || anyDiscount
+  if (mode === 'full') return { quantity: true, price: true, discount, vat: true, amount: true }
+  const quantity = lines.some(l => l.quantity !== 1)
+  return { quantity, price: quantity || discount, discount, vat: new Set(lines.map(l => l.vatRate)).size > 1, amount: true }
 }

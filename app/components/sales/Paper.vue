@@ -52,7 +52,7 @@ const issuer = computed<PaperParty>(() => props.doc.issuer ?? { name: props.comp
 const customer = computed(() => props.doc.customer ?? props.doc.contact)
 const brand = computed(() => props.company.tradeName || props.company.legalName)
 const totals = computed(() => computeTotals(props.doc.lines, props.doc.irpfRate))
-const hasDiscount = computed(() => d.value.discountColumn === 'always' || props.doc.lines.some(l => l.discountPct > 0))
+const show = computed(() => lineColumns(d.value, props.doc.lines))
 const isQuote = computed(() => props.doc.kind === 'quote' || props.doc.kind === 'proforma')
 /** Título de observaciones o condiciones según el diseño (vacío: sin título) */
 const notesTitle = computed(() => (isQuote.value ? d.value.termsLabel : d.value.notesLabel).trim())
@@ -122,16 +122,16 @@ const place = (p: PaperParty) => [[p.postalCode, p.city].filter(Boolean).join(' 
 
     <RichView :doc="doc.description" class="paper-desc" />
 
-    <div class="lines-wrap">
+    <div v-if="!isConceptless(doc.lines)" class="lines-wrap">
     <table class="paper-lines">
       <thead>
         <tr>
           <th>Concepto</th>
-          <th class="r">Cant.</th>
-          <th class="r">Precio</th>
-          <th v-if="hasDiscount" class="r">Dto.</th>
-          <th class="r">IVA</th>
-          <th class="r">Importe</th>
+          <th v-if="show.quantity" class="r">Cant.</th>
+          <th v-if="show.price" class="r">Precio</th>
+          <th v-if="show.discount" class="r">Dto.</th>
+          <th v-if="show.vat" class="r">IVA</th>
+          <th v-if="show.amount" class="r">Importe</th>
         </tr>
       </thead>
       <tbody>
@@ -140,11 +140,11 @@ const place = (p: PaperParty) => [[p.postalCode, p.city].filter(Boolean).join(' 
             <span class="paper-desc">{{ l.description }}</span>
             <span v-if="!l.irpfApplies && doc.irpfRate" class="paper-desc-sub">Sin retención</span>
           </td>
-          <td class="r c-q">{{ num(l.quantity) }}</td>
-          <td class="r c-p">{{ eur(l.unitPrice) }}</td>
-          <td v-if="hasDiscount" class="r c-d">{{ l.discountPct ? `${num(l.discountPct)} %` : '' }}</td>
-          <td class="r c-v">{{ num(l.vatRate) }} %</td>
-          <td class="r c-a">{{ eur(l.base) }}</td>
+          <td v-if="show.quantity" class="r c-q">{{ num(l.quantity) }}</td>
+          <td v-if="show.price" class="r c-p">{{ eur(l.unitPrice) }}</td>
+          <td v-if="show.discount" class="r c-d">{{ l.discountPct ? `${num(l.discountPct)} %` : '' }}</td>
+          <td v-if="show.vat" class="r c-v">{{ num(l.vatRate) }} %</td>
+          <td v-if="show.amount" class="r c-a">{{ eur(l.base) }}</td>
         </tr>
       </tbody>
     </table>

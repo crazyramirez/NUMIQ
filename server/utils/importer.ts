@@ -9,7 +9,7 @@ import { resolveDocumentDate, sourceDateWarning } from '../../shared/utils/sourc
 import type { SourceFileDate } from '../../shared/utils/source-date'
 import { resolveFileDate } from './file-date'
 import { folderSignals } from './doc-read'
-import { currencyWarning, folderMismatch, typeFromFolder, withoutRepeatedBody } from './extract'
+import { cleanBodyText, currencyWarning, folderMismatch, typeFromFolder, withoutRepeatedBody } from './extract'
 import { conversionNote, ecbRate, isTrustedSupplier, scaleTaxLines, supplierByNumber } from './expense-review'
 import { reviewKind, reviewNotesOf } from '../../shared/utils/review'
 
@@ -796,8 +796,9 @@ async function commitSales(st: CommitState, item: ItemRow, file: FileRow | null)
       paidTotal: paid ? d.total : 0,
       paymentMethod: d.paymentMethod ?? 'transfer',
       // Texto del cuerpo del original (asunto, alcance, condiciones…) como descripción antes de los conceptos,
-      // sin repetir lo que ya dicen las líneas (lecturas guardadas antes o conceptos editados en la revisión)
-      description: plainToRich(withoutRepeatedBody(d.bodyText, lines.map(l => l.description))),
+      // sin repetir lo que ya dicen las líneas (lecturas guardadas antes o conceptos editados en la revisión).
+      // Sin conceptos («solo descripción»), el texto entero: es lo único que explica el trabajo
+      description: plainToRich(d.conceptless ? cleanBodyText(d.bodyText) ?? d.description : withoutRepeatedBody(d.bodyText, lines.map(l => l.description))),
       rectifiesId: rectified?.id ?? null,
       rectificationCode: rectifying ? 'R1' : null,
       rectificationReason: rectifying && d.rectifiedNumber ? `Rectifica la factura ${d.rectifiedNumber}` : null,

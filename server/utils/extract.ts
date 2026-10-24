@@ -52,7 +52,7 @@ function documentSchema() {
   return {
     type: 'object',
     additionalProperties: false,
-    required: ['documentType', 'footerName', 'footerParty', 'payeeName', 'roleEvidence', 'issuer', 'recipient', 'number', 'issueDate', 'dueDate', 'currency', 'lines', 'taxLines', 'irpfRate', 'irpfAmount', 'total', 'paymentMethod', 'iban', 'ibanRole', 'vatPresentation', 'paid', 'rectifiedNumber', 'customerReference', 'references', 'category', 'summary', 'bodyText', 'confidence', 'warnings'],
+    required: ['documentType', 'footerName', 'footerParty', 'payeeName', 'roleEvidence', 'issuer', 'recipient', 'number', 'issueDate', 'dueDate', 'currency', 'lines', 'taxLines', 'irpfRate', 'irpfAmount', 'total', 'paymentMethod', 'iban', 'ibanRole', 'vatPresentation', 'paid', 'rectifiedNumber', 'customerReference', 'references', 'category', 'summary', 'bodyText', 'itemized', 'confidence', 'warnings'],
     properties: {
       documentType: { type: 'string', enum: ['invoice', 'simplified_invoice', 'credit_note', 'quote', 'proforma', 'purchase_order', 'delivery_note', 'receipt', 'payroll', 'bank_statement', 'contract', 'tax_form', 'other'] },
       footerName: nullable('string'),
@@ -119,6 +119,7 @@ function documentSchema() {
       category: nullable('string'),
       summary: nullable('string'),
       bodyText: nullable('string'),
+      itemized: { type: 'boolean' },
       confidence: { type: 'integer' },
       warnings: { type: 'array', items: { type: 'string' } },
     },
@@ -176,6 +177,7 @@ Reglas:
 - category: la categoría de gasto más adecuada de la lista dada (texto exacto) o null.
 - summary: de 3 a 8 palabras que describan el documento (p. ej. "Fibra y móvil de octubre").
 - bodyText: el texto descriptivo del cuerpo del documento que está FUERA de la tabla de conceptos: asunto o título del trabajo, alcance, descripción del servicio, condiciones, costes explicados, plazos u observaciones. Transcríbelo completo y literal, en el mismo orden y sin resumir. Formato: cada línea del original en su propia línea; los títulos de apartado y el asunto empiezan por "## "; las viñetas por "- " y las listas numeradas por "1. ". No repitas el texto de los conceptos: si el título o el párrafo encima de la tabla dice lo mismo que una línea, omítelo. No incluyas el encabezado con el número o la fecha, los datos del emisor y del cliente, la tabla de conceptos, el cuadro de bases, IVA y total, los datos bancarios ni los textos legales del pie (protección de datos, registro mercantil). null si no hay texto así (lo normal en tickets).
+- itemized: true si el documento detalla lo facturado en conceptos con su propio importe, cantidad o precio (tabla o lista de líneas con importes). false si solo describe el trabajo con texto (asunto, descripción, periodo) y los importes aparecen únicamente en el cuadro de base, IVA y total. Con itemized false, pon ese texto completo en bodyText y una sola línea por tipo de IVA con su base.
 - confidence: de 0 a 100, tu seguridad en la lectura (baja si está borroso, cortado o manuscrito).
 - warnings: avisos breves en español solo si algo no cuadra, es ilegible o falta un dato importante.`
 
@@ -476,7 +478,9 @@ export function toInvoiceData(d: ExtractedDocument, direction: ImportDirection, 
     references: cleanReferences(d.references, d.number),
     categoryId: direction === 'received' ? category?.id ?? null : null,
     description: d.summary?.trim().slice(0, 255) || null,
-    bodyText: withoutRepeatedBody(d.bodyText, d.lines.map(l => l.description)),
+    ...(d.itemized === false && docType !== 'ticket'
+      ? { conceptless: true, bodyText: conceptlessBody(d.bodyText, d.lines.map(l => l.description)) }
+      : { bodyText: withoutRepeatedBody(d.bodyText, d.lines.map(l => l.description)) }),
   })
   return {
     data,
@@ -530,6 +534,18 @@ export function withoutRepeatedBody(body: string | null | undefined, lineDescrip
 }
 
 /**
+ * Factura «solo descripción»: todo su texto va a la descripción. Lo que la IA puso como concepto se suma
+ * al cuerpo si no lo dice ya (sin repetirlo), en el orden del documento.
+ */
+export function conceptlessBody(body: string | null | undefined, lineDescriptions: string[]) {
+  const parts = [cleanBodyText(body) ?? '']
+  for (const desc of lineDescriptions.map(x => cleanBodyText(x)).filter((x): x is string => !!x)) {
+    if (!comparableText(parts.join(' ')).includes(comparableText(desc))) parts.push(desc)
+  }
+  return cleanBodyText(parts.filter(Boolean).join('\n'))
+}
+
+/**
  * Títulos que no titulan nada: se quita el que se queda sin texto debajo («## Descripción» tras quitar el
  * concepto repetido) y, si todo son varios títulos, eran datos sueltos («## OP: 26 1376») y pasan a texto normal.
  */
@@ -554,6 +570,15 @@ function tidyHeadings(lines: string[]) {
  * a mano), se sustituyen por una línea por tipo con el importe exacto del documento.
  */
 export function reconcileInvoiceLines(d: ImportInvoiceData): ImportInvoiceData {
+  // Sin conceptos: una línea sin texto por tipo de IVA, con la base del documento (editable en la revisión)
+  if (d.conceptless) {
+    return {
+      ...d,
+      linesMatch: false,
+      lines: d.taxLines.map(t => ({ description: '', sku: null, kind: 'service' as const, quantity: 1, unitPrice: t.base, discountPct: 0, vatRate: t.vatRate, surchargeRate: t.surchargeRate })),
+    }
+  }
+  if (d.lines.some(l => !l.description.trim())) d = { ...d, lines: d.lines.filter(l => l.description.trim()) }
   const fromLines = computeTotals(d.lines.map(l => ({ ...l, irpfApplies: true })), d.irpfRate)
   const match = d.lines.length > 0
     && d.taxLines.every(t => fromLines.groups.some(g => g.vatRate === t.vatRate && Math.abs(g.base - t.base) <= 0.02))

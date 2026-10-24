@@ -225,7 +225,7 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
   const title = TITLES[doc.kind] ?? 'Factura'
   const brand = company.tradeName || company.legalName
   const totals = computeTotals(doc.lines, doc.irpfRate)
-  const hasDiscount = design.discountColumn === 'always' || doc.lines.some(l => l.discountPct > 0)
+  const show = lineColumns(design, doc.lines)
   const hasSku = design.showItemCodes && doc.lines.some(l => l.sku)
   const numberText = doc.number ?? 'Borrador'
 
@@ -361,7 +361,7 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
       }
     : null
 
-  // Tabla de conceptos
+  // Tabla de conceptos (no la hay en las facturas «solo descripción»: la descripción explica el trabajo)
   const cols: Array<{ title: string, width: number | string, align: 'left' | 'right', cell: (l: PdfLine) => Node }> = [
     ...(hasSku ? [{ title: 'Ref.', width: 48, align: 'left' as const, cell: (l: PdfLine) => ({ text: l.sku ?? '', color: MUTED, fontSize: 8.5 }) }] : []),
     {
@@ -377,13 +377,13 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
         }
       },
     },
-    { title: 'Cant.', width: 38, align: 'right', cell: l => ({ text: num(l.quantity) }) },
-    { title: 'Precio', width: 66, align: 'right', cell: l => ({ text: eur(l.unitPrice) }) },
-    ...(hasDiscount ? [{ title: 'Dto.', width: 34, align: 'right' as const, cell: (l: PdfLine) => ({ text: l.discountPct ? `${num(l.discountPct)} %` : '' }) }] : []),
-    { title: 'IVA', width: 34, align: 'right', cell: l => ({ text: `${num(l.vatRate)} %` }) },
-    { title: 'Importe', width: 70, align: 'right', cell: l => ({ text: eur(l.base), font: SEMI }) },
+    ...(show.quantity ? [{ title: 'Cant.', width: 38, align: 'right' as const, cell: (l: PdfLine) => ({ text: num(l.quantity) }) }] : []),
+    ...(show.price ? [{ title: 'Precio', width: 66, align: 'right' as const, cell: (l: PdfLine) => ({ text: eur(l.unitPrice) }) }] : []),
+    ...(show.discount ? [{ title: 'Dto.', width: 34, align: 'right' as const, cell: (l: PdfLine) => ({ text: l.discountPct ? `${num(l.discountPct)} %` : '' }) }] : []),
+    ...(show.vat ? [{ title: 'IVA', width: 34, align: 'right' as const, cell: (l: PdfLine) => ({ text: `${num(l.vatRate)} %` }) }] : []),
+    ...(show.amount ? [{ title: 'Importe', width: 70, align: 'right' as const, cell: (l: PdfLine) => ({ text: eur(l.base), font: SEMI }) }] : []),
   ]
-  const lineTable: Node = {
+  const lineTable: Node | null = isConceptless(doc.lines) ? null : {
     table: {
       headerRows: 1,
       dontBreakRows: true,

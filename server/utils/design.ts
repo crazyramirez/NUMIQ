@@ -7,6 +7,7 @@ export const designInputSchema = z.object({
   font: z.enum(['Inter', 'Lora', 'Manrope']),
   showLogo: z.boolean(),
   discountColumn: z.enum(['auto', 'always']),
+  lineColumns: z.enum(['auto', 'full', 'amount', 'concept']).optional().default('auto'),
   showItemCodes: z.boolean(),
   showPaymentInfo: z.boolean(),
   paymentText: z.string().max(500, 'Máximo 500 caracteres'),

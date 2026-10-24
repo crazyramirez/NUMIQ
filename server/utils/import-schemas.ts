@@ -28,7 +28,8 @@ export const importInvoiceSchema = z.object({
   issueDate: isoDate.nullable(),
   dueDate: isoDate.nullish().transform(v => v ?? null),
   lines: z.array(z.object({
-    description: z.string().trim().min(1, 'Describe el concepto').max(2000),
+    // Vacío solo en las «solo descripción» (las líneas salen de las bases al guardar)
+    description: z.string().trim().max(2000),
     sku: text(60),
     kind: z.enum(['service', 'product']).default('service'),
     quantity: z.number().finite().min(-999999).max(999999),
@@ -58,6 +59,7 @@ export const importInvoiceSchema = z.object({
   categoryId: z.number().int().positive().nullish().transform(v => v ?? null),
   description: text(255),
   bodyText: text(8000),
+  conceptless: z.boolean().optional(),
   allowDuplicate: z.boolean().optional(),
 })
 

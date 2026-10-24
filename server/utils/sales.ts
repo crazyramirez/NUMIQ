@@ -8,7 +8,8 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha con formato AAAA-
 
 export const salesLineSchema = z.object({
   itemId: z.number().int().positive().nullish(),
-  description: z.string().trim().min(1, 'Describe el concepto').max(2000),
+  // Vacío solo en las facturas «solo descripción» (todas las líneas sin concepto): se comprueba al guardar
+  description: z.string().trim().max(2000),
   quantity: z.number().finite().min(-999999).max(999999),
   unitPrice: z.number().finite().min(-99999999).max(99999999),
   discountPct: z.number().min(0).max(100).default(0),
@@ -61,6 +62,13 @@ async function defaultSeriesId(companyId: number, kind: SalesInput['kind']) {
 /** Crea o actualiza un documento. Las facturas emitidas sin VeriFactu o importadas se pueden modificar. */
 export async function saveSalesDraft(companyId: number, userId: number, input: SalesInput, id?: number) {
   const db = useDb()
+  if (isConceptless(input.lines)) {
+    if (!richToPlain(input.description)?.trim()) throw createError({ statusCode: 400, statusMessage: 'Sin conceptos, describe el trabajo en la descripción', data: { field: 'description' } })
+  }
+  else {
+    const blank = input.lines.findIndex(l => !l.description.trim())
+    if (blank >= 0) throw createError({ statusCode: 400, statusMessage: 'Describe el concepto', data: { field: `lines.${blank}.description` } })
+  }
   if (input.contactId) {
     const [c] = await db.select({ id: tables.contacts.id }).from(tables.contacts)
       .where(and(eq(tables.contacts.id, input.contactId), eq(tables.contacts.companyId, companyId)))

@@ -28,6 +28,14 @@ const FONTS: Array<{ value: DesignFont, label: string, hint: string }> = [
 ]
 
 // ─── Vista previa: el PDF real, regenerado con cada cambio ───────────────────
+// Columnas de la tabla de conceptos
+const LINE_COLUMN_OPTIONS: Array<{ value: LineColumnsMode, label: string, hint: string }> = [
+  { value: 'auto', label: 'Automática', hint: 'Cantidad y precio solo si alguna cantidad no es 1; IVA solo si hay varios tipos' },
+  { value: 'full', label: 'Completa', hint: 'Concepto, cantidad, precio, IVA e importe en todas las facturas' },
+  { value: 'amount', label: 'Concepto e importe', hint: 'Cada concepto con su importe, sin cantidades ni IVA por línea' },
+  { value: 'concept', label: 'Solo concepto', hint: 'Lista de conceptos; los importes, solo en el cuadro de totales' },
+]
+
 const previewKind = ref<'invoice' | 'quote'>('invoice')
 const previewKindOptions = [
   { value: 'invoice', label: 'Factura' },
@@ -297,7 +305,8 @@ function insertToken(kind: 'invoice' | 'quote', token: string) {
 
       <UiCard title="Contenido" icon="ph:list-checks">
         <div class="stack gap-4">
-          <UiSwitch :model-value="d.discountColumn === 'always'" :disabled="!canEdit" label="Columna de descuento siempre visible" hint="Si no, solo aparece cuando alguna línea lleva descuento" @update:model-value="d.discountColumn = $event ? 'always' : 'auto'" />
+          <UiSelect v-model="d.lineColumns" label="Tabla de conceptos" :options="LINE_COLUMN_OPTIONS" :disabled="!canEdit" :hint="LINE_COLUMN_OPTIONS.find(o => o.value === d.lineColumns)?.hint" />
+          <UiSwitch v-if="d.lineColumns === 'auto' || d.lineColumns === 'full'" :model-value="d.discountColumn === 'always'" :disabled="!canEdit" label="Columna de descuento siempre visible" hint="Si no, solo aparece cuando alguna línea lleva descuento" @update:model-value="d.discountColumn = $event ? 'always' : 'auto'" />
           <UiSwitch v-model="d.showItemCodes" :disabled="!canEdit" label="Referencia de producto (SKU)" hint="Columna «Ref.» con el código de tu catálogo" />
           <UiSwitch v-model="d.showPaymentInfo" :disabled="!canEdit" label="Datos de pago" hint="IBAN y texto de pago al pie de las facturas" />
           <UiTextarea v-model="d.paymentText" label="Texto de pago" placeholder="Pago a 30 días mediante transferencia bancaria.&#10;Indica el número de factura en el concepto." hint="Puedes usar varias líneas" rows="3" maxlength="500" :disabled="!canEdit || !d.showPaymentInfo" />

@@ -74,6 +74,8 @@ export interface ExtractedDocument {
   summary: string | null
   /** Texto descriptivo del cuerpo (asunto, alcance, condiciones…) con marcas sencillas; las lecturas antiguas no lo traen */
   bodyText?: string | null
+  /** El original detalla conceptos con su importe (tabla o lista); false = solo texto y totales. Las lecturas antiguas no lo traen */
+  itemized?: boolean
   confidence: number
   warnings: string[]
 }
@@ -145,6 +147,11 @@ export interface ImportInvoiceData {
   description: string | null
   /** Texto descriptivo del documento ("## título", "- viñeta"): descripción de la factura emitida o notas del gasto */
   bodyText?: string | null
+  /**
+   * «Solo descripción»: el original no detalla conceptos con importe. El texto va entero a la descripción y
+   * cada tipo de IVA a una línea sin concepto con su base (como las facturas sin conceptos de la app)
+   */
+  conceptless?: boolean
   /** El usuario confirmó que no es un duplicado: solo se descartan las coincidencias probables, nunca las seguras */
   allowDuplicate?: boolean
 }
