@@ -3,9 +3,10 @@
  * Ingresos frente a gastos por mes (columnas agrupadas, un solo eje en €).
  * Tooltip por mes con ratón y teclado, leyenda siempre visible y vista de tabla.
  */
-interface Point { month: string, income: number, expenses: number, profit: number }
+interface Point { month: string, income: number, expenses: number, profit?: number }
 
-const props = defineProps<{ data: Point[] }>()
+/** `profit: false` oculta el beneficio (Inicio muestra importes con impuestos; el beneficio va en Informes) */
+const props = withDefaults(defineProps<{ data: Point[], profit?: boolean }>(), { profit: true })
 
 const wrap = ref<HTMLElement>()
 const { width } = useElementSize(wrap)
@@ -87,7 +88,7 @@ const summary = computed(() => {
   const inc = props.data.reduce((s, d) => s + d.income, 0)
   const exp = props.data.reduce((s, d) => s + d.expenses, 0)
   const best = [...props.data].sort((a, b) => b.income - a.income)[0]
-  return `Últimos ${props.data.length} meses: ingresos ${eur(inc)}, gastos ${eur(exp)}, beneficio ${eur(inc - exp)}.${best && best.income > 0 ? ` Mes con más ingresos: ${fmonth(best.month, true)} (${eur(best.income)}).` : ''}`
+  return `Últimos ${props.data.length} meses: ingresos ${eur(inc)}, gastos ${eur(exp)}${props.profit ? `, beneficio ${eur(inc - exp)}` : ''}.${best && best.income > 0 ? ` Mes con más ingresos: ${fmonth(best.month, true)} (${eur(best.income)}).` : ''}`
 })
 
 const tickLabel = (v: number) => (v === 0 ? '0' : eurCompact(v).replace(' €', ''))
@@ -156,7 +157,7 @@ const tickLabel = (v: number) => (v === 0 ? '0' : eurCompact(v).replace(' €', 
           :height="innerH + pad.bottom"
           tabindex="0"
           role="button"
-          :aria-label="`${fmonth(b.month, true)}: ingresos ${eur(b.income)}, gastos ${eur(b.expenses)}, beneficio ${eur(b.profit)}`"
+          :aria-label="`${fmonth(b.month, true)}: ingresos ${eur(b.income)}, gastos ${eur(b.expenses)}${profit ? `, beneficio ${eur(b.profit ?? 0)}` : ''}`"
           @pointerenter="active = b.i"
           @pointermove="active = b.i"
           @focus="active = b.i"
@@ -177,10 +178,10 @@ const tickLabel = (v: number) => (v === 0 ? '0' : eurCompact(v).replace(' €', 
             <span class="tip-l">Gastos</span>
             <strong class="num">{{ eur(tooltip.d.expenses) }}</strong>
           </div>
-          <div class="tip-row total">
+          <div v-if="profit" class="tip-row total">
             <span class="key none" />
             <span class="tip-l">Beneficio</span>
-            <strong class="num">{{ eur(tooltip.d.profit) }}</strong>
+            <strong class="num">{{ eur(tooltip.d.profit ?? 0) }}</strong>
           </div>
         </div>
       </Transition>
@@ -188,13 +189,13 @@ const tickLabel = (v: number) => (v === 0 ? '0' : eurCompact(v).replace(' €', 
 
     <div v-else class="table-wrap tbl">
       <table class="table">
-        <caption class="sr-only">Ingresos, gastos y beneficio por mes</caption>
+        <caption class="sr-only">{{ profit ? 'Ingresos, gastos y beneficio por mes' : 'Ingresos y gastos por mes' }}</caption>
         <thead>
           <tr>
             <th scope="col">Mes</th>
             <th scope="col" class="r">Ingresos</th>
             <th scope="col" class="r">Gastos</th>
-            <th scope="col" class="r">Beneficio</th>
+            <th v-if="profit" scope="col" class="r">Beneficio</th>
           </tr>
         </thead>
         <tbody>
@@ -202,7 +203,7 @@ const tickLabel = (v: number) => (v === 0 ? '0' : eurCompact(v).replace(' €', 
             <td class="strong">{{ fmonth(d.month, true) }}</td>
             <td class="r num">{{ eur(d.income) }}</td>
             <td class="r num">{{ eur(d.expenses) }}</td>
-            <td class="r num strong" :class="{ neg: d.profit < 0 }">{{ eur(d.profit) }}</td>
+            <td v-if="profit" class="r num strong" :class="{ neg: (d.profit ?? 0) < 0 }">{{ eur(d.profit ?? 0) }}</td>
           </tr>
         </tbody>
       </table>

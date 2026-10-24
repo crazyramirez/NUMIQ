@@ -6,19 +6,14 @@ const { data, status, error, refresh } = await useFetch('/api/dashboard', { lazy
 
 const showAllInsights = ref(false)
 
-// Ingresos y gastos con impuestos; beneficio y margen sobre bases (el IVA no es tuyo)
+// Todo con impuestos. Beneficio y margen (sobre bases) viven en Informes
 const sum12 = computed(() => {
   const m = data.value?.monthly ?? []
-  const base = m.reduce((s, x) => s + x.income, 0)
-  const profit = m.reduce((s, x) => s + x.profit, 0)
-  return {
-    income: m.reduce((s, x) => s + x.incomeTotal, 0),
-    expenses: m.reduce((s, x) => s + x.expensesTotal, 0),
-    profit,
-    margin: base ? (profit / base) * 100 : 0,
-  }
+  const income = m.reduce((s, x) => s + x.incomeTotal, 0)
+  const expenses = m.reduce((s, x) => s + x.expensesTotal, 0)
+  return { income, expenses, avg: m.length ? income / m.length : 0 }
 })
-const chart = computed(() => (data.value?.monthly ?? []).map(m => ({ month: m.month, income: m.incomeTotal, expenses: m.expensesTotal, profit: m.profit })))
+const chart = computed(() => (data.value?.monthly ?? []).map(m => ({ month: m.month, income: m.incomeTotal, expenses: m.expensesTotal })))
 
 const firstName = computed(() => me.value?.user.name.split(' ')[0] ?? '')
 const greeting = computed(() => {
@@ -39,7 +34,6 @@ const kpis = computed(() => {
   return [
     { key: 'income', label: 'Facturado este trimestre', icon: 'ph:arrow-circle-up-right', value: k.income.value, delta: delta(k.income.value, k.income.previous), invert: false, note: 'Total de las facturas, con impuestos' },
     { key: 'expenses', label: 'Gastos este trimestre', icon: 'ph:arrow-circle-down-left', value: k.expenses.value, delta: delta(k.expenses.value, k.expenses.previous), invert: true, note: 'Total de los gastos, con impuestos' },
-    { key: 'profit', label: 'Beneficio sin IVA', icon: 'ph:chart-line-up', value: k.profit.value, delta: delta(k.profit.value, k.profit.previous), invert: false, note: 'Ingresos menos gastos, sin IVA' },
   ]
 })
 
@@ -118,7 +112,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
           </div>
         </article>
 
-        <NuxtLink to="/facturas?estado=open" class="card kpi kpi-link rise" :style="{ '--i': 4 }">
+        <NuxtLink to="/facturas?estado=open" class="card kpi kpi-link rise" :style="{ '--i': 3 }">
           <div class="kpi-top">
             <span class="kpi-label">Pendiente de cobro</span>
             <span class="kpi-ic receivable" aria-hidden="true"><Icon name="ph:hourglass-medium" /></span>
@@ -134,20 +128,32 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
             </span>
           </div>
         </NuxtLink>
+
+        <NuxtLink to="/gastos?estado=pending&periodo=all" class="card kpi kpi-link rise" :style="{ '--i': 4 }">
+          <div class="kpi-top">
+            <span class="kpi-label">Pendiente de pago</span>
+            <span class="kpi-ic payable" aria-hidden="true"><Icon name="ph:clock-countdown" /></span>
+          </div>
+          <p class="kpi-value">{{ eur(data.kpis.payables.amount) }}</p>
+          <div class="kpi-foot">
+            <span class="muted">
+              {{ data.kpis.payables.count ? `${data.kpis.payables.count} gasto${data.kpis.payables.count === 1 ? '' : 's'} sin pagar` : 'Todo pagado' }}
+            </span>
+          </div>
+        </NuxtLink>
       </section>
 
       <!-- Gráfico + Asesor IA -->
       <div class="row-main">
-        <UiCard class="rise chart-card" style="--i: 5" title="Ingresos y gastos" subtitle="Últimos 12 meses · con impuestos (beneficio, sin IVA)">
+        <UiCard class="rise chart-card" style="--i: 5" title="Ingresos y gastos" subtitle="Últimos 12 meses · con impuestos">
           <template #actions>
             <UiButton size="sm" variant="ghost" icon-right="ph:arrow-right" to="/informes">Informes</UiButton>
           </template>
-          <ChartsIncomeChart :data="chart" />
+          <ChartsIncomeChart :data="chart" :profit="false" />
           <dl class="chart-sum">
             <div><dt><i class="cs-dot inc" />Ingresos</dt><dd class="num">{{ eur(sum12.income, false) }}</dd></div>
             <div><dt><i class="cs-dot exp" />Gastos</dt><dd class="num">{{ eur(sum12.expenses, false) }}</dd></div>
-            <div><dt>Beneficio sin IVA</dt><dd class="num" :class="{ neg: sum12.profit < 0 }">{{ eur(sum12.profit, false) }}</dd></div>
-            <div><dt>Margen</dt><dd class="num">{{ pct(sum12.margin) }}</dd></div>
+            <div><dt>Media/mes</dt><dd class="num">{{ eur(sum12.avg, false) }}</dd></div>
           </dl>
         </UiCard>
 
@@ -367,9 +373,9 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
   background: var(--warning-soft);
 }
 
-.kpi-ic.profit {
-  color: var(--success);
-  background: var(--success-soft);
+.kpi-ic.payable {
+  color: var(--text-2);
+  background: var(--surface-2);
 }
 
 .kpi-ic.receivable {
@@ -431,7 +437,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 
 .chart-sum {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   margin: auto 0 0;
   padding-top: var(--s-5);
@@ -481,12 +487,12 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 }
 
 @media (max-width: 640px) {
-  .chart-sum {
-    grid-template-columns: 1fr 1fr;
+  .chart-sum div {
+    padding: var(--s-3);
   }
 
-  .chart-sum div {
-    border-radius: var(--r-md) !important;
+  .chart-sum dd {
+    font-size: var(--text-base);
   }
 }
 

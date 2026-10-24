@@ -165,11 +165,12 @@ export async function expensesByCategory(companyId: number, from: string, to: st
     icon: cat.icon,
     color: cat.color,
     amount: sql<number>`SUM(${col})`.mapWith(Number),
+    total: sql<number>`SUM(${e().total})`.mapWith(Number),
   }).from(e()).leftJoin(cat, eq(cat.id, e().categoryId))
     .where(expensesWhere(companyId, from, to))
     .groupBy(e().categoryId, cat.name, cat.icon, cat.color)
     .orderBy(desc(sql`SUM(${col})`))
-  return rows.map(r => ({ ...r, amount: round2(r.amount) }))
+  return rows.map(r => ({ ...r, amount: round2(r.amount), total: round2(r.total) }))
 }
 
 export async function receivables(companyId: number) {

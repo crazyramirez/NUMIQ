@@ -17,6 +17,8 @@ interface Row {
   subtitle: string | null
   date: string | null
   amount: number | null
+  /** Presupuestos y proformas: el importe es la base imponible */
+  amountBase?: boolean
   docType?: string
   newContact?: boolean
   role?: string
@@ -335,7 +337,7 @@ const summary = computed(() => {
             </span>
           </span>
           <span class="date">{{ r.date ? fdateShort(r.date) : '—' }}</span>
-          <span class="amount num r">{{ r.amount != null ? eur(r.amount) : '' }}</span>
+          <span class="amount num r">{{ r.amount != null ? eur(r.amount) : '' }}<small v-if="r.amount != null && r.amountBase" class="amount-base">base imponible</small></span>
           <span class="st">
             <UiBadge :tone="IMPORT_STATUS[r.status]!.tone" :icon="IMPORT_STATUS[r.status]!.icon" size="sm">{{ r.status === 'warning' && r.warnings.length ? `${r.warnings.length} aviso${r.warnings.length > 1 ? 's' : ''}` : IMPORT_STATUS[r.status]!.label }}</UiBadge>
             <span v-if="r.status !== 'imported' && (r.duplicate || r.warnings[0])" class="why truncate" :title="r.duplicate ?? r.warnings.join('\n')">{{ r.duplicate ?? r.warnings[0] }}</span>
@@ -773,6 +775,13 @@ const summary = computed(() => {
   color: var(--text-2);
 }
 
+.amount-base {
+  display: block;
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  color: var(--text-3);
+}
+
 .amount {
   font-weight: 600;
 }
@@ -868,7 +877,14 @@ const summary = computed(() => {
   }
 
   .doc { grid-area: doc; }
-  .amount { grid-area: amount; align-self: start; }
+  .amount-base {
+  display: block;
+  font-size: var(--text-2xs, 11px);
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.amount { grid-area: amount; align-self: start; }
   .st { grid-area: st; padding-left: 46px; }
   .item.child .st { padding-left: 76px; }
   .date { grid-area: date; text-align: right; align-self: start; }

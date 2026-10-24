@@ -52,10 +52,9 @@ export default defineEventHandler(async (event) => {
   return {
     period: { year, quarter, from: q.from, to: q.to },
     kpis: {
-      // Facturado y gastado, con impuestos; el beneficio, sobre bases (el IVA no es ingreso ni gasto)
+      // Importes con impuestos, como en el resto de pantallas (el beneficio, sobre bases, está en Informes)
       income: { value: current.incomeTotal, previous: previous.incomeTotal },
       expenses: { value: current.expensesTotal, previous: previous.expensesTotal },
-      profit: { value: current.profit, previous: previous.profit },
       receivables: recv,
       payables: pay,
       vat303,

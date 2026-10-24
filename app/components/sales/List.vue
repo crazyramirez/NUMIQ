@@ -98,6 +98,9 @@ const PERIODS = [
   { value: 'prev-year', label: 'Año anterior' },
 ]
 
+// Presupuestos y proformas: base imponible (rotulada como tal); facturas: total con impuestos
+const amountOf = (x: { taxBase: number, total: number }) => (isQuote.value ? x.taxBase : x.total)
+
 const summary = computed(() => {
   const r = (all.value ?? []).filter(x => x.status !== 'draft' && x.status !== 'cancelled')
   return {
@@ -105,7 +108,7 @@ const summary = computed(() => {
     total: r.reduce((s, x) => s + x.total, 0),
     pending: r.filter(x => ['issued', 'sent', 'partial'].includes(x.status)).reduce((s, x) => s + x.total - x.paidTotal, 0),
     overdue: r.filter(x => x.overdue).reduce((s, x) => s + x.total - x.paidTotal, 0),
-    accepted: r.filter(x => ['accepted', 'invoiced'].includes(x.status)).reduce((s, x) => s + (isQuote.value ? x.taxBase : x.total), 0),
+    accepted: r.filter(x => ['accepted', 'invoiced'].includes(x.status)).reduce((s, x) => s + amountOf(x), 0),
     count: r.length,
   }
 })
@@ -159,7 +162,7 @@ const NuxtLink = resolveComponent('NuxtLink')
 const list = computed(() => rows.value ?? [])
 const { selected, selectedSet, selectedRows, selecting, allSelected, toggle: pick, toggleAll, clear } = useSelection(list)
 const busy = ref(false)
-const selectedTotal = computed(() => selectedRows.value.reduce((s, r) => s + r.total, 0))
+const selectedTotal = computed(() => selectedRows.value.reduce((s, r) => s + amountOf(r), 0))
 const noun = (n: number) => (isQuote.value ? (n === 1 ? 'presupuesto' : 'presupuestos') : (n === 1 ? 'factura' : 'facturas'))
 
 async function deleteBulk() {
@@ -219,9 +222,9 @@ const bulkActions = computed<BulkAction[]>(() => [
 
     <div class="stats">
       <div class="stat card rise" style="--i: 0">
-        <span class="s-label">{{ isQuote ? 'Presupuestado' : 'Total facturado' }} <small v-if="isQuote">(base)</small></span>
+        <span class="s-label">{{ isQuote ? 'Presupuestado' : 'Total facturado' }}</span>
         <strong class="num">{{ eur(isQuote ? summary.base : summary.total) }}</strong>
-        <span class="s-sub">{{ summary.count }} {{ isQuote ? 'presupuestos' : 'documentos' }}</span>
+        <span class="s-sub">{{ summary.count }} {{ isQuote ? 'presupuestos · base imponible' : 'documentos · con impuestos' }}</span>
       </div>
       <div v-if="!isQuote" class="stat card rise" style="--i: 1">
         <span class="s-label">Pendiente de cobro</span>
@@ -236,7 +239,7 @@ const bulkActions = computed<BulkAction[]>(() => [
       <div v-if="isQuote" class="stat card rise" style="--i: 1">
         <span class="s-label">Aceptado</span>
         <strong class="num">{{ eur(summary.accepted) }}</strong>
-        <span class="s-sub">{{ counts.accepted }} aceptados</span>
+        <span class="s-sub">{{ counts.accepted }} {{ counts.accepted === 1 ? 'aceptado' : 'aceptados' }} · base imponible</span>
       </div>
       <div v-if="isQuote" class="stat card rise" style="--i: 2">
         <span class="s-label">Tasa de aceptación</span>
@@ -299,7 +302,7 @@ const bulkActions = computed<BulkAction[]>(() => [
                 <th class="col-client">Cliente</th>
                 <th class="col-date">Fecha</th>
                 <th class="col-due">{{ isQuote ? 'Válido hasta' : 'Vencimiento' }}</th>
-                <th class="r col-total">Total</th>
+                <th class="r col-total">{{ isQuote ? 'Base imponible' : 'Total' }}</th>
                 <th class="col-status">Estado</th>
                 <th class="act-col"><span class="sr-only">Acciones</span></th>
               </tr>
@@ -331,7 +334,7 @@ const bulkActions = computed<BulkAction[]>(() => [
                   <template v-if="r.dueDate && ['issued', 'sent', 'partial'].includes(r.status)">{{ relDays(r.dueDate) }}</template>
                   <template v-else>{{ fdate(r.dueDate) }}</template>
                 </td>
-                <td class="r col-total num strong">{{ eur(r.total) }}<span v-if="r.status === 'partial'" class="sub">pend. {{ eur(r.total - r.paidTotal) }}</span></td>
+                <td class="r col-total num strong">{{ eur(amountOf(r)) }}<span v-if="r.status === 'partial'" class="sub">pend. {{ eur(r.total - r.paidTotal) }}</span></td>
                 <td class="col-status"><UiBadge v-bind="{ tone: salesStatus(r.kind, r.status, r.overdue).tone }" dot>{{ salesStatus(r.kind, r.status, r.overdue).label }}</UiBadge></td>
                 <td class="act-col" @click.stop @keydown.stop>
                   <div class="row-acts">
@@ -373,7 +376,8 @@ const bulkActions = computed<BulkAction[]>(() => [
                   <p class="muted small"><span class="num">{{ r.number ?? 'Borrador' }}</span> · {{ fdate(r.issueDate) }}</p>
                 </div>
                 <div class="m-right">
-                  <p class="num strong">{{ eur(r.total) }}</p>
+                  <p class="num strong">{{ eur(amountOf(r)) }}</p>
+                  <p v-if="isQuote" class="muted small">base imponible</p>
                   <UiBadge :tone="salesStatus(r.kind, r.status, r.overdue).tone" size="sm">{{ salesStatus(r.kind, r.status, r.overdue).label }}</UiBadge>
                 </div>
               </component>
@@ -397,7 +401,7 @@ const bulkActions = computed<BulkAction[]>(() => [
       :count="selected.length"
       :total="list.length"
       :title="`${noun(selected.length)} ${isQuote ? (selected.length === 1 ? 'seleccionado' : 'seleccionados') : (selected.length === 1 ? 'seleccionada' : 'seleccionadas')}`"
-      :sub="eur(selectedTotal)"
+      :sub="isQuote ? `${eur(selectedTotal)} de base imponible` : eur(selectedTotal)"
       :actions="bulkActions"
       :busy="busy"
       :label="`Acciones con ${isQuote ? 'los presupuestos seleccionados' : 'las facturas seleccionadas'}`"

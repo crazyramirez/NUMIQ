@@ -1,6 +1,6 @@
 <script setup lang="ts">
-/** Ranking de clientes o proveedores del periodo: importe, peso sobre el total y nº de facturas */
-interface Row { id: number | null, name: string, amount: number, count: number }
+/** Ranking de clientes o proveedores del periodo: base imponible, peso sobre el total y, debajo, total con impuestos */
+interface Row { id: number | null, name: string, amount: number, count: number, total?: number }
 
 const props = withDefaults(defineProps<{
   rows: Row[]
@@ -27,6 +27,7 @@ const link = (r: Row) => (r.id ? `/${props.kind === 'client' ? 'clientes' : 'pro
           <div class="track" :title="`${pct(share(r), 1)} del total · ${r.count} ${kind === 'client' ? 'factura' : 'gasto'}${r.count === 1 ? '' : 's'}`">
             <span class="fill" :style="{ width: `${Math.max(3, (Math.abs(r.amount) / top) * 100)}%` }" />
           </div>
+          <p v-if="r.total != null" class="meta num">{{ eur(r.total, false) }} con impuestos · {{ r.count }} {{ kind === 'client' ? 'factura' : 'gasto' }}{{ r.count === 1 ? '' : 's' }}</p>
         </div>
         <span class="share num">{{ pct(share(r)) }}</span>
       </NuxtLink>
@@ -94,6 +95,12 @@ const link = (r: Row) => (r.id ? `/${props.kind === 'client' ? 'clientes' : 'pro
 
 .supplier .fill {
   background: var(--chart-expense);
+}
+
+.meta {
+  margin-top: 4px;
+  font-size: var(--text-xs);
+  color: var(--text-3);
 }
 
 .share {

@@ -355,8 +355,9 @@ const bulkActions = computed<BulkAction[]>(() => [
             </div>
 
             <div class="price">
-              <span class="p num">{{ eur(i.unitPrice) }}<span v-if="i.unit" class="unit"> / {{ i.unit }}</span></span>
-              <span class="pv num">{{ eur(withVat(i)) }} con IVA {{ pct(i.vatRate) }}</span>
+              <!-- Precio con impuestos, como el resto de importes; debajo, la base -->
+              <span class="p num">{{ eur(withVat(i)) }}<span v-if="i.unit" class="unit"> / {{ i.unit }}</span></span>
+              <span class="pv num">{{ i.vatRate ? `${eur(i.unitPrice)} + IVA ${pct(i.vatRate)}` : `${eur(i.unitPrice)} sin IVA` }}</span>
             </div>
 
             <UiMenu :items="rowMenu(i)" :width="190">

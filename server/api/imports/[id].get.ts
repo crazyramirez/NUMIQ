@@ -30,8 +30,13 @@ export default defineEventHandler(async (event) => {
     }
     counts[it.status]++
   }
+  const isQuoteDoc = (docType: string | null | undefined) => docType === 'quote' || docType === 'proforma'
+  const isQuote = (d: ImportInvoiceData) => isQuoteDoc(d.docType)
+  // Facturas y gastos, con impuestos; presupuestos y proformas, por su base imponible (rotulada)
+  const docAmount = (d: ImportInvoiceData) => (isQuote(d)
+    ? { amount: round2(d.taxLines.reduce((s, t) => s + t.base, 0)), amountBase: true }
+    : { amount: d.total, amountBase: false })
   // Pedidos, albaranes y presupuestos que van con una factura emitida del lote
-  const isQuote = (d: ImportInvoiceData) => d.docType === 'quote' || d.docType === 'proforma'
   const invoiceById = new Map(items.filter(it => it.type === 'sales' && it.data && !isQuote(it.data as ImportInvoiceData)).map(it => [it.id, it]))
   const linkedCount = new Map<number, number>()
   for (const it of items) {
@@ -64,7 +69,7 @@ export default defineEventHandler(async (event) => {
         const to = it.type === 'sales' && isQuote(d) && d.link?.itemId ? invoiceById.get(d.link.itemId) : undefined
         const toNumber = to ? (to.data as ImportInvoiceData).number ?? 'sin número' : null
         const subtitle = to ? `${d.number ? `${d.number} · ` : ''}Facturado en ${toNumber} · ${d.link?.reason ?? 'Vinculado a mano'}` : [d.number, d.party?.nif].filter(Boolean).join(' · ') || null
-        return { ...base, title: d.party?.name ?? (it.type === 'sales' ? 'Sin cliente' : 'Sin proveedor'), subtitle, date: d.issueDate, amount: d.total, docType: d.docType, newContact: !it.contactId && !!d.party, linked: linkedCount.get(it.id) ?? 0, linkedTo: to?.id ?? null }
+        return { ...base, title: d.party?.name ?? (it.type === 'sales' ? 'Sin cliente' : 'Sin proveedor'), subtitle, date: d.issueDate, ...docAmount(d), docType: d.docType, newContact: !it.contactId && !!d.party, linked: linkedCount.get(it.id) ?? 0, linkedTo: to?.id ?? null }
       }
       if (it.type === 'contact') {
         const d = it.data as ImportContactData
@@ -72,7 +77,8 @@ export default defineEventHandler(async (event) => {
       }
       if (it.type === 'item') {
         const d = it.data as ImportCatalogData
-        return { ...base, title: d.name, subtitle: d.sku, date: null, amount: d.unitPrice }
+        // Precio con IVA, como en el catálogo
+        return { ...base, title: d.name, subtitle: d.sku, date: null, amount: round2(d.unitPrice * (1 + d.vatRate / 100)) }
       }
       const d = it.data as ImportVaultData
       const to = d.link?.itemId ? invoiceById.get(d.link.itemId) : undefined
@@ -81,11 +87,11 @@ export default defineEventHandler(async (event) => {
         const subtitle = to.status === 'excluded'
           ? `La factura ${inv.number ?? 'sin número'} está excluida: irá al archivo`
           : `Con la factura ${inv.number ?? 'sin número'} · ${d.link?.reason ?? 'Vinculado a mano'}`
-        return { ...base, title: [docTypeLabel(d.docType), d.ref?.number].filter(Boolean).join(' '), subtitle, date: d.ref?.issueDate ?? null, amount: d.ref?.total ?? null, folder: d.folder, docType: d.docType, linkedTo: to.id }
+        return { ...base, title: [docTypeLabel(d.docType), d.ref?.number].filter(Boolean).join(' '), subtitle, date: d.ref?.issueDate ?? null, amount: d.ref?.total ?? null, amountBase: isQuoteDoc(d.docType), folder: d.folder, docType: d.docType, linkedTo: to.id }
       }
       // Nóminas, extractos y modelos se reconocen mejor por su resumen que por un número de justificante
       const named = d.ref && !['other', 'payroll', 'bank_statement', 'tax_form'].includes(d.docType) && d.ref.number
-      return { ...base, title: named ? `${docTypeLabel(d.docType)} ${d.ref!.number}` : d.summary ?? 'Documento', subtitle: [d.ref?.parties[0]?.name, `${d.quarter}T ${d.year} · ${d.folder}`].filter(Boolean).join(' · '), date: d.ref?.issueDate ?? null, amount: d.ref?.total ?? null, folder: d.folder, docType: d.docType, linkedTo: null }
+      return { ...base, title: named ? `${docTypeLabel(d.docType)} ${d.ref!.number}` : d.summary ?? 'Documento', subtitle: [d.ref?.parties[0]?.name, `${d.quarter}T ${d.year} · ${d.folder}`].filter(Boolean).join(' · '), date: d.ref?.issueDate ?? null, amount: d.ref?.total ?? null, amountBase: isQuoteDoc(d.docType), folder: d.folder, docType: d.docType, linkedTo: null }
     }),
   }
 })

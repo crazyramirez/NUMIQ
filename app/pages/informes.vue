@@ -87,8 +87,8 @@ const kpis = computed(() => {
   const prev = d.compare.previous
   const last = d.compare.lastYear
   return [
-    { key: 'income', label: 'Ingresos', icon: 'ph:arrow-circle-up-right', value: d.pnl.income, delta: delta(d.pnl.income, prev.income), yoy: last ? delta(d.pnl.income, last.income) : null, invert: false },
-    { key: 'expenses', label: 'Gastos', icon: 'ph:arrow-circle-down-left', value: d.pnl.expenses, delta: delta(d.pnl.expenses, prev.expenses), yoy: last ? delta(d.pnl.expenses, last.expenses) : null, invert: true },
+    { key: 'income', label: 'Ingresos (base imponible)', icon: 'ph:arrow-circle-up-right', value: d.pnl.income, delta: delta(d.pnl.income, prev.income), yoy: last ? delta(d.pnl.income, last.income) : null, invert: false },
+    { key: 'expenses', label: 'Gastos (base imponible)', icon: 'ph:arrow-circle-down-left', value: d.pnl.expenses, delta: delta(d.pnl.expenses, prev.expenses), yoy: last ? delta(d.pnl.expenses, last.expenses) : null, invert: true },
     { key: 'profit', label: 'Beneficio', icon: 'ph:chart-line-up', value: d.pnl.profit, delta: delta(d.pnl.profit, prev.profit), yoy: last ? delta(d.pnl.profit, last.profit) : null, invert: false },
   ]
 })
@@ -98,7 +98,7 @@ const indicators = computed(() => {
   if (!d) return []
   return [
     { label: 'Facturas emitidas', value: String(d.counters.invoices), hint: d.counters.rectifying ? `+ ${d.counters.rectifying} rectificativa${d.counters.rectifying === 1 ? '' : 's'}` : null, icon: 'ph:receipt' },
-    { label: 'Ticket medio', value: d.pnl.avgTicket != null ? eur(d.pnl.avgTicket) : '—', hint: 'Base por factura', icon: 'ph:tag' },
+    { label: 'Ticket medio', value: d.pnl.avgTicket != null ? eur(d.pnl.avgTicket) : '—', hint: 'Base imponible por factura', icon: 'ph:tag' },
     { label: 'Clientes facturados', value: String(d.counters.clients), hint: null, icon: 'ph:users' },
     { label: 'Días medios de cobro', value: d.counters.avgCollectionDays != null ? `${d.counters.avgCollectionDays} días` : '—', hint: 'Desde la fecha de la factura', icon: 'ph:timer' },
     { label: 'Margen', value: d.pnl.margin != null ? pct(d.pnl.margin, 1) : '—', hint: 'Beneficio sobre ingresos', icon: 'ph:percent' },
@@ -402,16 +402,16 @@ const hasActivity = computed(() => !!data.value && (data.value.pnl.income !== 0 
 
       <!-- Rankings -->
       <div class="row-3">
-        <UiCard class="rise" style="--i: 11" icon="ph:crown-simple" title="Principales clientes" subtitle="Base facturada en el periodo">
+        <UiCard class="rise" style="--i: 11" icon="ph:crown-simple" title="Principales clientes" subtitle="Base imponible del periodo y total con impuestos">
           <ReportsRankList v-if="data.topClients.length" :rows="data.topClients" :total="data.pnl.income" kind="client" />
           <UiEmpty v-else compact icon="ph:users" title="Sin facturación" text="No hay facturas emitidas en este periodo." />
         </UiCard>
-        <UiCard class="rise" style="--i: 12" icon="ph:storefront" title="Principales proveedores" subtitle="Base de gastos en el periodo">
+        <UiCard class="rise" style="--i: 12" icon="ph:storefront" title="Principales proveedores" subtitle="Base imponible del periodo y total con impuestos">
           <ReportsRankList v-if="data.topSuppliers.length" :rows="data.topSuppliers" :total="data.pnl.expenses" kind="supplier" />
           <UiEmpty v-else compact icon="ph:storefront" title="Sin gastos" text="No hay gastos registrados en este periodo." />
         </UiCard>
-        <UiCard class="rise" style="--i: 13" icon="ph:chart-pie-slice" title="Gastos por categoría" subtitle="Dónde se va el dinero">
-          <ChartsCategoryBars v-if="data.expensesByCategory.length" :rows="data.expensesByCategory" :max="7" />
+        <UiCard class="rise" style="--i: 13" icon="ph:chart-pie-slice" title="Gastos por categoría" subtitle="Base imponible y total con impuestos">
+          <ChartsCategoryBars v-if="data.expensesByCategory.length" :rows="data.expensesByCategory" :max="7" show-total />
           <UiEmpty v-else compact icon="ph:wallet" title="Sin gastos" text="Registra tus gastos para verlos por categoría." />
         </UiCard>
       </div>

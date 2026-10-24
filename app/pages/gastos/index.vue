@@ -42,8 +42,9 @@ const { open: openScan } = useScan()
 
 // ─── Filtros ───
 
-const status = ref('all')
-const period = ref('y')
+// ?estado= y ?periodo= abren la lista ya filtrada (p. ej. «Pendiente de pago» desde Inicio)
+const status = ref(['pending', 'paid', 'review'].includes(String(route.query.estado)) ? String(route.query.estado) : 'all')
+const period = ref(['q', 'pq', 'y', 'py', 'all'].includes(String(route.query.periodo)) ? String(route.query.periodo) : 'y')
 const categoryId = ref<number | null>(null)
 const deductible = ref<'all' | 'full' | 'partial' | 'none'>('all')
 const q = ref('')
@@ -384,7 +385,8 @@ function savePartial() {
         <p class="s">{{ summary.count }} {{ summary.count === 1 ? 'gasto' : 'gastos' }} · con impuestos</p>
       </div>
       <div class="sum">
-        <p class="eyebrow">Deducible</p>
+        <!-- Cifra fiscal: va sobre la base imponible y lo dice -->
+        <p class="eyebrow">Base deducible</p>
         <p class="v num">{{ eur(summary.deductible) }}</p>
         <p class="s">
           + {{ eur(summary.vatDeductible) }} de IVA en el 303<template v-if="summary.notDeductible">

@@ -307,9 +307,9 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
                   <tr>
                     <th>Número</th>
                     <th>Fecha</th>
-                    <th class="hide-sm">Vencimiento</th>
+                    <th class="hide-sm">{{ tab === 'facturas' ? 'Vencimiento' : 'Válido hasta' }}</th>
                     <th>Estado</th>
-                    <th class="r">Total</th>
+                    <th class="r">{{ tab === 'facturas' ? 'Total' : 'Base imponible' }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -325,7 +325,7 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
                     <td class="muted">{{ fdate(d.issueDate) }}</td>
                     <td class="muted hide-sm">{{ d.dueDate ? fdate(d.dueDate) : '—' }}</td>
                     <td><UiBadge :tone="docStatus(d).tone" dot>{{ docStatus(d).label }}</UiBadge></td>
-                    <td class="r num strong">{{ eur(d.total) }}</td>
+                    <td class="r num strong">{{ eur(tab === 'facturas' ? d.total : d.taxBase) }}</td>
                   </tr>
                 </tbody>
               </table>

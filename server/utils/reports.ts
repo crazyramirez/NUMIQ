@@ -254,13 +254,14 @@ async function topClientsReport(companyId: number, from: string, to: string, lim
     id: S().contactId,
     name,
     amount: sql<number>`SUM(${S().taxBase})`.mapWith(Number),
+    total: sql<number>`SUM(${S().total})`.mapWith(Number),
     count: sql<number>`COUNT(*)`.mapWith(Number),
   }).from(S()).leftJoin(c, eq(c.id, S().contactId))
     .where(salesIn(companyId, from, to))
     .groupBy(S().contactId, name)
     .orderBy(desc(sql`SUM(${S().taxBase})`))
     .limit(limit)
-  return rows.map(r => ({ ...r, amount: round2(r.amount) }))
+  return rows.map(r => ({ ...r, amount: round2(r.amount), total: round2(r.total) }))
 }
 
 async function topSuppliersReport(companyId: number, from: string, to: string, limit = 8) {
@@ -270,13 +271,14 @@ async function topSuppliersReport(companyId: number, from: string, to: string, l
     id: E().supplierId,
     name,
     amount: sql<number>`SUM(${E().taxBase})`.mapWith(Number),
+    total: sql<number>`SUM(${E().total})`.mapWith(Number),
     count: sql<number>`COUNT(*)`.mapWith(Number),
   }).from(E()).leftJoin(c, eq(c.id, E().supplierId))
     .where(expensesIn(companyId, from, to))
     .groupBy(E().supplierId, name)
     .orderBy(desc(sql`SUM(${E().taxBase})`))
     .limit(limit)
-  return rows.map(r => ({ ...r, amount: round2(r.amount) }))
+  return rows.map(r => ({ ...r, amount: round2(r.amount), total: round2(r.total) }))
 }
 
 /** Clientes distintos, perceptores de retenciones y días medios de cobro del periodo */
@@ -677,14 +679,14 @@ function summaryRows(r: Report): XCell[][] {
     ['Días medios de cobro', r.counters.avgCollectionDays],
     ['Gastos registrados', r.counters.expenses],
     [],
-    ['Principales clientes', 'Base imponible', '% de los ingresos', 'Facturas'],
-    ...r.topClients.map(c => [c.name, xMoney(c.amount), xPct(r.pnl.income ? c.amount / r.pnl.income * 100 : null), c.count]),
+    ['Principales clientes', 'Base imponible', '% de los ingresos', 'Facturas', 'Total con impuestos'],
+    ...r.topClients.map(c => [c.name, xMoney(c.amount), xPct(r.pnl.income ? c.amount / r.pnl.income * 100 : null), c.count, xMoney(c.total)]),
     [],
-    ['Principales proveedores', 'Base imponible', '% de los gastos', 'Facturas'],
-    ...r.topSuppliers.map(c => [c.name, xMoney(c.amount), xPct(r.pnl.expenses ? c.amount / r.pnl.expenses * 100 : null), c.count]),
+    ['Principales proveedores', 'Base imponible', '% de los gastos', 'Facturas', 'Total con impuestos'],
+    ...r.topSuppliers.map(c => [c.name, xMoney(c.amount), xPct(r.pnl.expenses ? c.amount / r.pnl.expenses * 100 : null), c.count, xMoney(c.total)]),
     [],
-    ['Gastos por categoría', 'Base imponible', '% de los gastos'],
-    ...r.expensesByCategory.map(c => [c.name, xMoney(c.amount), xPct(r.pnl.expenses ? c.amount / r.pnl.expenses * 100 : null)]),
+    ['Gastos por categoría', 'Base imponible', '% de los gastos', '', 'Total con impuestos'],
+    ...r.expensesByCategory.map(c => [c.name, xMoney(c.amount), xPct(r.pnl.expenses ? c.amount / r.pnl.expenses * 100 : null), '', xMoney(c.total)]),
     [],
     [`Pendiente de cobro a ${isoToEs(r.period.today)}`, 'Importe', 'Facturas'],
     ...r.receivables.buckets.map(b => [b.label, xMoney(b.amount), b.count]),
@@ -938,10 +940,10 @@ function pIrpf(r: Report, accent: string): PdfNode[] {
 
 function pRankings(r: Report, accent: string): PdfNode[] {
   const clients = r.topClients.length
-    ? pTable(['Cliente', 'Base', '%'], r.topClients.map(c => [c.name, pEur(c.amount), pPct(r.pnl.income ? round2(c.amount / r.pnl.income * 100) : null)]), ['*', 64, 34], { right: [1, 2], fontSize: 7.5 })
+    ? pTable(['Cliente', 'Base', '%', 'Total'], r.topClients.map(c => [c.name, pEur(c.amount), pPct(r.pnl.income ? round2(c.amount / r.pnl.income * 100) : null), pEur(c.total)]), ['*', 58, 30, 58], { right: [1, 2, 3], fontSize: 7.5 })
     : { text: 'Sin facturas en el periodo', fontSize: 8, color: P_MUTED }
   const cats = r.expensesByCategory.length
-    ? pTable(['Categoría', 'Base', '%'], r.expensesByCategory.slice(0, 10).map(c => [c.name, pEur(c.amount), pPct(r.pnl.expenses ? round2(c.amount / r.pnl.expenses * 100) : null)]), ['*', 64, 34], { right: [1, 2], fontSize: 7.5 })
+    ? pTable(['Categoría', 'Base', '%', 'Total'], r.expensesByCategory.slice(0, 10).map(c => [c.name, pEur(c.amount), pPct(r.pnl.expenses ? round2(c.amount / r.pnl.expenses * 100) : null), pEur(c.total)]), ['*', 58, 30, 58], { right: [1, 2, 3], fontSize: 7.5 })
     : { text: 'Sin gastos en el periodo', fontSize: 8, color: P_MUTED }
   return [{
     unbreakable: true,

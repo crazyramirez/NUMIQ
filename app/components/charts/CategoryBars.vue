@@ -1,16 +1,19 @@
 <script setup lang="ts">
 /** Gasto por categoría: barras horizontales ordenadas, con icono y color de la categoría */
-interface Row { id: number | null, name: string, icon: string | null, color: string | null, amount: number }
+interface Row { id: number | null, name: string, icon: string | null, color: string | null, amount: number, total?: number }
 
-const props = withDefaults(defineProps<{ rows: Row[], max?: number }>(), { max: 6 })
+/** `showTotal`: en Informes las barras van sobre la base y, debajo, el total con impuestos */
+const props = withDefaults(defineProps<{ rows: Row[], max?: number, showTotal?: boolean }>(), { max: 6, showTotal: false })
 
 const list = computed(() => {
   const sorted = [...props.rows].filter(r => r.amount > 0).sort((a, b) => b.amount - a.amount)
   if (sorted.length <= props.max) return sorted
   // El resto se agrupa en "Otros": nunca un color inventado para la categoría 7ª
   const head = sorted.slice(0, props.max - 1)
-  const rest = sorted.slice(props.max - 1).reduce((s, r) => s + r.amount, 0)
-  return [...head, { id: null, name: 'Otras categorías', icon: 'ph:dots-three-circle', color: null, amount: rest }]
+  const others = sorted.slice(props.max - 1)
+  const rest = others.reduce((s, r) => s + r.amount, 0)
+  const restTotal = others.reduce((s, r) => s + (r.total ?? 0), 0)
+  return [...head, { id: null, name: 'Otras categorías', icon: 'ph:dots-three-circle', color: null, amount: rest, total: restTotal }]
 })
 
 const total = computed(() => list.value.reduce((s, r) => s + r.amount, 0))
@@ -29,6 +32,7 @@ const top = computed(() => list.value[0]?.amount || 1)
         <div class="track" :title="`${r.name}: ${eur(r.amount)} (${pct(r.amount / total * 100)})`">
           <span class="fill" :style="{ width: `${Math.max(2, (r.amount / top) * 100)}%` }" />
         </div>
+        <p v-if="showTotal && r.total != null" class="meta num">{{ eur(r.total, false) }} con impuestos</p>
       </div>
       <span class="share num">{{ pct((r.amount / total) * 100) }}</span>
     </li>
@@ -109,6 +113,12 @@ const top = computed(() => list.value[0]?.amount || 1)
 @keyframes grow-x {
   from { transform: scaleX(0); }
   to { transform: scaleX(1); }
+}
+
+.meta {
+  margin-top: 4px;
+  font-size: var(--text-xs);
+  color: var(--text-3);
 }
 
 .share {
