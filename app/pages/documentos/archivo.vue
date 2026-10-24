@@ -161,7 +161,7 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
   <div class="page">
     <header class="page-head">
       <div>
-        <h1>Documentos</h1>
+        <h1>Archivo</h1>
         <p class="sub">Extractos, contratos, nóminas y justificantes de cada trimestre, listos para tu gestoría.</p>
       </div>
       <div class="page-actions">
@@ -169,7 +169,6 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
       </div>
     </header>
 
-    <DocsTabs />
 
     <div class="toolbar">
       <div class="year" role="group" aria-label="Año">

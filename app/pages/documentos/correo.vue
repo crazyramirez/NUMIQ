@@ -1,3 +1,4 @@
 <script setup lang="ts">
-await navigateTo('/documentos', { replace: true })
+// El correo con facturas vive ahora en la Bandeja
+await navigateTo('/bandeja', { replace: true })
 </script>

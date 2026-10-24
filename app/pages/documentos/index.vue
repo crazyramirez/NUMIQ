@@ -2,7 +2,7 @@
 import type { DroppedFile } from '~/components/docs/Dropzone.vue'
 import type { Tone } from '~/utils/labels'
 
-useHead({ title: 'Documentos · NUMIQ' })
+useHead({ title: 'Importar · NUMIQ' })
 
 interface Batch {
   id: number
@@ -128,15 +128,14 @@ const TYPES = ['PDF', 'Fotos', 'Word', 'Excel', 'CSV', 'ZIP', 'Carpetas']
   <div class="page">
     <header class="page-head">
       <div>
-        <h1>Documentos</h1>
-        <p class="sub">Importa años de facturas, escanea tickets y guarda la documentación de cada trimestre.</p>
+        <h1>Importar</h1>
+        <p class="sub">Trae años de facturas de otro programa, de carpetas o de un ZIP: la IA las lee y tú confirmas.</p>
       </div>
       <div class="page-actions">
         <UiButton variant="ai" icon="ph:scan" @click="openScan()">Escanear factura o ticket</UiButton>
       </div>
     </header>
 
-    <DocsTabs />
 
     <div class="grid">
       <section class="card main rise" style="--i: 1" aria-label="Importación por lotes">

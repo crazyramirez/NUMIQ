@@ -2,7 +2,7 @@
 import type { DroppedFile } from '~/components/docs/Dropzone.vue'
 import type { Advisor } from '~/components/settings/AdvisorForm.vue'
 
-useHead({ title: 'Envío al gestor · NUMIQ' })
+useHead({ title: 'Gestoría · NUMIQ' })
 
 interface Preview {
   period: { from: string, to: string, label: string, slug: string }
@@ -234,12 +234,11 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
   <div class="page">
     <header class="page-head">
       <div>
-        <h1>Documentos</h1>
+        <h1>Gestoría</h1>
         <p class="sub">Todo lo que tu gestoría necesita de un periodo, en un ZIP y con un correo preparado.</p>
       </div>
     </header>
 
-    <DocsTabs />
 
     <div class="grid">
       <div class="main">

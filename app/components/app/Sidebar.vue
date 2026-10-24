@@ -12,6 +12,9 @@ watch(() => route.fullPath, () => (navOpen.value = false))
 const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path === to || route.path.startsWith(`${to}/`))
 // Área de la pantalla actual: Ventas sigue marcada en Presupuestos, Impuestos en Gestoría…
 const activeArea = computed(() => areaOf(route.path).area?.key ?? null)
+// Contador de la Bandeja: lo que espera una decisión
+const inbox = useInboxCount()
+watch(() => route.path, () => inbox.refresh(), { immediate: true })
 
 const companyItems = computed<MenuItem[]>(() => [
   { heading: 'Tus empresas' },
@@ -89,6 +92,7 @@ const userItems = computed<MenuItem[]>(() => [
           >
             <Icon :name="activeArea === item.key ? `${item.icon}-fill` : item.icon" class="ic" aria-hidden="true" />
             <span v-if="!mini" class="grow truncate">{{ item.label }}</span>
+            <span v-if="item.key === 'bandeja' && inbox.count.value" class="badge-n num" :aria-label="`${inbox.count.value} por revisar`">{{ inbox.count.value > 99 ? '99+' : inbox.count.value }}</span>
             <span v-if="!mini && item.soon" class="soon">Pronto</span>
           </NuxtLink>
         </div>
@@ -277,6 +281,29 @@ const userItems = computed<MenuItem[]>(() => [
   flex-shrink: 0;
   color: var(--text-3);
   transition: color var(--t-fast);
+}
+
+.badge-n {
+  display: grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--on-brand);
+  background: var(--brand);
+  border-radius: var(--r-full);
+}
+
+.collapsed .badge-n {
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
 }
 
 .soon {

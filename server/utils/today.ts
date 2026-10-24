@@ -22,7 +22,7 @@ const daysTo = (iso: string, today: string) => Math.round((Date.parse(`${iso}T12
  * Lo que hay que hacer hoy, de lo más urgente a lo menos, cada cosa con su botón.
  * Solo tareas con algo pendiente de verdad: si no hay nada, la lista viene vacía («todo al día»).
  */
-export async function todayTasks(company: Company, now = new Date()): Promise<TodayTask[]> {
+export async function todayTasks(company: Company, now = new Date(), viewer?: { user: { email: string }, role: string }): Promise<TodayTask[]> {
   const db = useDb()
   const today = toISODate(now)
   const s = tables.salesDocuments
@@ -104,6 +104,25 @@ export async function todayTasks(company: Company, now = new Date()): Promise<To
       detail: `${eurText0(unpaid!.amount)} pendientes`,
       action: { label: 'Ver', to: '/gastos?estado=pending&periodo=all' },
     })
+  }
+
+  // Lo que ha llegado y espera una decisión (correo, importaciones, gastos leídos por la IA)
+  if (viewer) {
+    const inbox = await inboxCount(company, viewer.user, viewer.role)
+    if (inbox.total > 0) {
+      rest.push({
+        key: 'inbox',
+        icon: 'ph:tray',
+        tone: 'brand',
+        title: `${plural(inbox.total, 'cosa', 'cosas')} en la bandeja`,
+        detail: [
+          inbox.mail ? plural(inbox.mail, 'correo con factura', 'correos con facturas') : null,
+          inbox.imports ? plural(inbox.imports, 'importación por confirmar', 'importaciones por confirmar') : null,
+          inbox.expenses ? `${plural(inbox.expenses, 'gasto', 'gastos')} por revisar` : null,
+        ].filter(Boolean).join(' · '),
+        action: { label: 'Revisar', to: '/bandeja' },
+      })
+    }
   }
 
   if (bank!.n > 0) {

@@ -12,6 +12,8 @@ const { open: openScan } = useScan()
 const readOnly = computed(() => me.value?.company?.role === 'advisor')
 const area = computed(() => areaOf(route.path).area?.key ?? null)
 const isMore = computed(() => !!area.value && !['inicio', 'ventas', 'gastos'].includes(area.value))
+// Punto en «Más» si hay algo en la Bandeja
+const inbox = useInboxCount()
 
 const sheet = ref(false)
 watch(() => route.fullPath, () => (sheet.value = false))
@@ -57,7 +59,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <span>Gastos</span>
     </NuxtLink>
     <button type="button" class="bi" :class="{ on: isMore }" aria-label="Más: banco, impuestos, contactos, ajustes…" @click="navOpen = true">
-      <Icon :name="isMore ? 'ph:dots-three-circle-fill' : 'ph:dots-three-circle'" class="bi-ic" aria-hidden="true" />
+      <span class="bi-wrap">
+        <Icon :name="isMore ? 'ph:dots-three-circle-fill' : 'ph:dots-three-circle'" class="bi-ic" aria-hidden="true" />
+        <span v-if="inbox.count.value" class="bi-dot" aria-hidden="true" />
+      </span>
       <span>Más</span>
     </button>
   </nav>
@@ -131,6 +136,22 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 .bi-ic {
   width: 23px;
   height: 23px;
+}
+
+.bi-wrap {
+  position: relative;
+  display: inline-grid;
+}
+
+.bi-dot {
+  position: absolute;
+  top: -1px;
+  right: -2px;
+  width: 9px;
+  height: 9px;
+  background: var(--danger-solid);
+  border: 2px solid var(--surface);
+  border-radius: 50%;
 }
 
 .bi.on {
