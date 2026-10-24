@@ -10,7 +10,7 @@ App web instalable (PWA), responsive y en español. Varias empresas por cuenta y
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/inicio-dark.webp">
-  <img src=".github/assets/screenshots/inicio-light.webp" alt="Panel de inicio de NUMIQ: facturado, gastos, beneficio y pendiente de cobro del trimestre, gráfico de los últimos 12 meses y recomendaciones del asesor IA" width="100%">
+  <img src=".github/assets/screenshots/inicio-light.webp" alt="Panel de inicio de NUMIQ: tareas de hoy, dinero libre, facturado, gastos y pendientes del trimestre" width="100%">
 </picture>
 
 ---
@@ -19,16 +19,21 @@ App web instalable (PWA), responsive y en español. Varias empresas por cuenta y
 
 | Área | Funciones |
 |---|---|
-| **Ingresos** | Facturas, presupuestos y rectificativas con numeración por series. Diseño de factura a medida (logo, colores, tipografías, textos por defecto) y PDF generado en el servidor. Envío por correo con PDF y adjuntos. Página pública para el cliente (`/p/:token`): ver, descargar, aceptar o rechazar presupuestos y datos de pago, con aviso de lectura. Cobros parciales y recordatorios de pago automáticos. |
-| **Catálogo y contactos** | Productos y servicios con imagen, precio, IVA y unidad, que se sugieren al escribir el concepto de una línea. Clientes y proveedores con validación de NIF/CIF/NIE y NIF-IVA, retención IRPF, recargo de equivalencia y categoría de gasto por defecto. Relleno con IA a partir de una firma, una foto o un PDF. Sin fichas repetidas: el mismo NIF no se da de alta dos veces y un nombre parecido («Endesa» y «Endesa Energía, S.A.U.») reutiliza la ficha existente y la completa. |
-| **Gastos** | Registro manual o leído con IA desde foto, PDF, Word o Excel. Importación por lotes (PDF, imágenes, Word, Excel, CSV, XML o un ZIP con todo). Nada se registra dos veces: antes de guardar se compara con lo que ya hay por número (aunque cambien ceros o separadores), proveedor, importe, fecha y concepto. Lo seguro se bloquea y lo probable se pregunta; un ticket escaneado se adjunta al gasto que ya se creó desde el banco. Gastos deducibles según la normativa. |
-| **Banco** | Importación de extractos (Norma 43, CSV, Excel; si el formato es desconocido, la IA identifica las columnas). Un extracto solapado o del mismo periodo en otro formato no repite movimientos, y sin IBAN se reconoce la cuenta por los movimientos que ya tiene. Conciliación de movimientos con facturas y gastos: si el gasto o el cobro ya estaba anotado se enlaza en vez de crear otro. Saldo por cuenta. |
-| **Impuestos** | Borradores de los modelos 303, 130, 111 y 115 (trimestrales) y 390, 190, 180 y 347 (anuales) con sus casillas, listos para copiar en la Sede de la AEAT. Guía de presentación y lectura con IA del justificante. |
-| **Gestoría** | Archivo documental por trimestre (banco, contratos, nóminas…). «Envío al gestor»: ZIP con emitidas, recibidas con sus originales, archivo y resumen en Excel y PDF, enviado con enlace seguro. Rol *asesor* con acceso de solo lectura. |
-| **Recurrentes** | Cuotas, igualas, alquileres y suscripciones que se generan solos en su fecha, como borrador o emitidos y enviados. |
-| **Informes** | Panel de inicio, informes por periodo, libros registro y exportación a Excel y PDF. |
+| **Ingresos** | Facturas, rectificativas, proformas y presupuestos con numeración por series. Importación de facturas emitidas en otro programa conservando su número. Diseño de factura a medida (logo, colores, tipografías, textos por defecto) y PDF generado en el servidor. Envío por correo con PDF y adjuntos. Cobros parciales y recordatorios de pago automáticos. |
+| **Presupuestos** | Cuatro estados: pendiente, enviado, aceptado y rechazado. Se cambian a mano desde la lista (también varios a la vez), la ficha o el editor; no hay borradores ni caducidad, y un presupuesto con la validez pasada no se marca como vencido. Se envían por email con su PDF y se convierten en factura con un clic. |
+| **Página para el cliente** | Cada factura tiene un enlace privado (`/p/:token`) para verla, descargarla y pagarla: IBAN con datos para copiar, enlace de pago propio (Stripe, PayPal, SumUp…) o Bizum. Aviso cuando el cliente la abre. Se comparte por email, copiando el enlace o por WhatsApp. |
+| **Catálogo y contactos** | Productos y servicios con imagen, precio, IVA y unidad, que se sugieren al escribir el concepto de una línea. Clientes y proveedores con validación de NIF/CIF/NIE y NIF-IVA, retención IRPF, recargo de equivalencia, categoría de gasto por defecto y mapa de la dirección. Relleno con IA a partir de una firma, una foto o un PDF, e importación masiva (Excel, CSV, PDF, Word, foto o vCard) con revisión antes de guardar y opción de deshacer. Sin fichas repetidas: el mismo NIF no se da de alta dos veces, un nombre parecido («Endesa» y «Endesa Energía, S.A.U.») reutiliza la ficha existente y los duplicados que ya haya se fusionan. |
+| **Gastos** | Registro manual o leído con IA desde foto, PDF, Word o Excel, con un escáner siempre a mano. Importación por lotes (PDF, imágenes, Word, Excel, CSV, XML o un ZIP con todo). Nada se registra dos veces: antes de guardar se compara con lo que ya hay por número (aunque cambien ceros o separadores), proveedor, importe, fecha y concepto. Lo seguro se bloquea y lo probable se pregunta; un ticket escaneado se adjunta al gasto que ya se creó desde el banco. Gastos deducibles según la normativa. Aprobación opcional de los gastos que registra el equipo. |
+| **Banco** | Importación de extractos (Norma 43, CSV, Excel; si el formato es desconocido, la IA identifica las columnas). Un extracto solapado o del mismo periodo en otro formato no repite movimientos, y sin IBAN se reconoce la cuenta por los movimientos que ya tiene. Conciliación con facturas y gastos, en bloque para las coincidencias seguras: si el gasto o el cobro ya estaba anotado se enlaza en vez de crear otro. Saldo por cuenta. |
+| **Impuestos** | Borradores de los modelos 303, 130, 111 y 115 (trimestrales), 390, 190, 180 y 347 (anuales) y, para sociedades, 200 y 202, con sus casillas listas para copiar en la Sede de la AEAT. Calendario fiscal y «Cerrar trimestre» paso a paso: datos al día, presentar y pagar cada modelo y enviarlo a la gestoría. Cada modelo se marca como presentado con su justificante, que lee la IA. La presentación se hace en la Sede (Cl@ve, DNIe o certificado del propio usuario): NUMIQ no presenta en nombre del usuario. |
+| **Gestoría** | Archivo documental por trimestre (banco, contratos, nóminas…). «Envío al gestor» de un mes, trimestre, año o rango libre: ZIP con emitidas, recibidas con sus originales, archivo y resumen en Excel y PDF, enviado con un enlace seguro que caduca a los 30 días. Rol *asesor* con acceso de solo lectura. |
+| **Recurrentes** | Facturas periódicas (cuotas, igualas, mantenimientos) que se generan solas en su fecha, como borrador o emitidas y enviadas. Gastos fijos (alquiler, suscripciones, cuota de autónomos) que se anotan solos sin duplicar el que ya exista en ese periodo. |
+| **Inicio e informes** | Inicio con las tareas de «Hoy», el dinero libre (saldo menos impuestos y pagos pendientes) y recomendaciones del Asesor NUMIQ. Informes por periodo con comparativa, cuenta de resultados, IVA por tipo, retenciones, mejores clientes y proveedores y antigüedad de los cobros; exportación a PDF, Excel y libros registro en CSV. Las listas abren en el año en curso, con un selector de año, trimestre o mes que se recuerda entre pantallas. |
 | **Asistente IA** | Chat que consulta los datos de la empresa (ventas, gastos, impuestos, banco…) y opera sobre ellos: reasignar clientes, aplicar retenciones, clasificar o ignorar movimientos del banco, cambiar categorías, marcar cobros y pagos, emitir, eliminar o dar de alta registros. Cada cambio llega como una propuesta con los registros exactos que el usuario confirma (botón o «sí»), queda auditado y, si se puede, se deshace con un clic. |
-| **Cuenta y equipo** | Registro con verificación de email, recuperación de contraseña e invitaciones con roles (`owner`, `admin`, `member`, `advisor`). Copia de seguridad completa en ZIP desde Ajustes. Modo claro y oscuro. |
+| **Cuenta y equipo** | Registro con verificación de email, recuperación de contraseña y acceso con passkey (huella, cara o PIN del dispositivo). Invitaciones con roles (`owner`, `admin`, `member`, `advisor`). Copia de seguridad desde Ajustes: archivo de la empresa en formatos abiertos (Excel, JSON y PDF) o clonación de la instalación completa. Modo claro y oscuro. |
+| **App y avisos** | PWA instalable con accesos directos (escanear, nueva factura, añadir gasto, asistente) y aviso de nueva versión. Notificaciones push por dispositivo: el cliente abre una factura, se emite una recurrente, la IA termina de leer documentos, se acerca un plazo de impuestos o hay gastos del equipo por aprobar. |
+
+**Desactivado por ahora:** VeriFactu y el certificado digital de la empresa. El código sigue en el proyecto, pero la app no genera registros VeriFactu ni admite subir certificados.
 
 ---
 
@@ -112,8 +117,11 @@ Cuenta de demostración con datos ficticios. Las imágenes siguen el tema claro 
 - **MariaDB / MySQL** con **Drizzle ORM** (`mysql2`) y migraciones SQL versionadas.
 - **Zod 4** para validar las entradas de la API y **nuxt-auth-utils** para sesiones en cookie cifrada.
 - **pdfmake** para los PDF, **SheetJS** para los Excel y **fflate** para los ZIP.
-- **nodemailer** (SMTP) para enviar e **imapflow** con **mailparser** para recibir.
-- **OpenAI** para leer documentos y para el asistente, y **node-forge** para los certificados .p12/.pfx.
+- **nodemailer** (SMTP) para el correo y **web-push** para las notificaciones.
+- **OpenAI** para leer documentos y para el asistente.
+- **Passkeys** con **@simplewebauthn**, a través de nuxt-auth-utils.
+- **pdf.js**, **pdf-lib** y **docx-preview** para las vistas previas de documentos, y **exifr** para sus fechas.
+- **MapLibre GL** con mapas de OpenFreeMap y direcciones de CartoCiudad (IGN).
 
 Requisitos: **Node.js ≥ 22.22**. En local no hace falta instalar MySQL (ver más abajo).
 
@@ -157,12 +165,11 @@ Plantilla completa y comentada en [`.env.example`](.env.example). Las claves rea
 | `NUXT_SITE_URL` | URL pública para los enlaces de los correos y la imagen al compartir un enlace (`og:image`, se fija al compilar), sin barra final. |
 | `NUXT_OPENAI_API_KEY` | IA: lectura de documentos, importación, relleno de contactos y asistente. |
 | `NUXT_OPENAI_MODEL` · `NUXT_OPENAI_PRO_MODEL` · `NUXT_OPENAI_CHAT_MODEL` · `NUXT_OPENAI_CONCURRENCY` | Opcionales: modelo de lectura rápida, modelo de segunda lectura cuando los importes no cuadran, modelo del asistente y documentos leídos en paralelo. |
-| `GOOGLE_APP_EMAIL` · `GOOGLE_APP_PASSWORD` | Correo con Gmail o Workspace (contraseña de aplicación): envío por SMTP y recepción por IMAP. |
-| `NUXT_MAIL_SMTP_HOST` `…_PORT` `NUXT_MAIL_IMAP_HOST` `NUXT_MAIL_USER` `NUXT_MAIL_PASSWORD` `NUXT_MAIL_FROM` | Otro proveedor de correo en lugar de Gmail. |
-| `NUXT_MAIL_INBOX_OWNERS` | Usuarios que pueden buscar facturas en todo el buzón, no solo en su alias. |
+| `GOOGLE_APP_EMAIL` · `GOOGLE_APP_PASSWORD` | Correo con Gmail o Workspace (contraseña de aplicación) para enviar por SMTP. |
+| `NUXT_MAIL_SMTP_HOST` `…_PORT` `NUXT_MAIL_USER` `NUXT_MAIL_PASSWORD` `NUXT_MAIL_FROM` | Otro proveedor de correo en lugar de Gmail. |
 | `NUXT_MAIL_ONLY_TO` | **Modo pruebas:** solo salen correos a estas direcciones o `@dominios`; el resto se omite y queda registrado como no enviado. |
-| `NUXT_CERT_SECRET` | Clave para cifrar los certificados digitales. Si falta, se usa la de sesión, y cambiar esa obliga a volver a subir el certificado. |
-| `NUXT_RECURRING_DISABLED` · `NUXT_REMINDERS_DISABLED` | `true` apaga la tarea programada correspondiente. |
+| `NUXT_VAPID_PUBLIC_KEY` · `NUXT_VAPID_PRIVATE_KEY` | Opcionales: claves de las notificaciones push. Si faltan, se generan una vez y se guardan junto a la carpeta de subidas. |
+| `NUXT_RECURRING_DISABLED` · `NUXT_REMINDERS_DISABLED` · `NUXT_PUSH_DEADLINES_DISABLED` | `true` apaga la tarea programada correspondiente. |
 
 Sin `NUXT_OPENAI_API_KEY` la app funciona, pero sin las funciones de IA. Sin el correo configurado no sale ningún email: la verificación de cuenta se omite y los envíos quedan registrados como no enviados («Sin configurar»).
 
@@ -179,7 +186,7 @@ Sin `NUXT_OPENAI_API_KEY` la app funciona, pero sin las funciones de IA. Sin el 
 | `npm run db:generate` | Crea una migración a partir de `server/db/schema.ts`. |
 | `npm run db:migrate` · `npm run db:studio` | Aplica migraciones a mano o abre Drizzle Studio. |
 | `npm run clone:export` / `npm run clone:import <zip>` | Clona una instalación completa (todas las tablas y archivos) a otro servidor. |
-| `npm run test:*` | Pruebas de la importación: duplicados, fechas de archivo, lectura y vista previa. |
+| `npm run test:*` | Pruebas de la importación (duplicados, fechas de archivo, lectura y vista previa) y de los contactos (limpieza y coincidencias). `test:imports:integration` compila antes de probar. |
 
 ---
 
@@ -228,8 +235,10 @@ Se ejecutan dentro del propio servidor Nitro (`server/plugins`):
 | Tarea | Frecuencia |
 |---|---|
 | Recurrentes: genera las facturas y gastos que tocan | Cada 15 min. Usa un bloqueo por fila, así que es seguro con varias instancias. |
-| Recordatorios de cobro a clientes con facturas vencidas | Cada 20 min, de lunes a viernes de 9 a 19 h (hora de Madrid). |
+| Recordatorios de cobro a clientes con facturas vencidas | Cada 20 min, de lunes a viernes de 9 a 19 h (hora de Madrid), si el correo está configurado. |
+| Avisos push de plazos de impuestos con modelos sin presentar (5 días antes y el último día) | Cada hora, en horario laboral. |
 | Limpieza de escaneos no guardados y ZIP de gestoría caducados | Cada hora. |
+| Presupuestos al día: los borradores que queden se emiten y los caducados pasan a rechazados | Una vez, al arrancar. |
 
 ---
 

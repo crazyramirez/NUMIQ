@@ -5,8 +5,7 @@ const push = usePush()
 const busy = ref<'toggle' | 'test' | null>(null)
 
 const WHAT = [
-  { icon: 'ph:eye', text: 'Un cliente abre tu factura o tu presupuesto' },
-  { icon: 'ph:thumbs-up', text: 'Acepta o rechaza un presupuesto' },
+  { icon: 'ph:eye', text: 'Un cliente abre tu factura' },
   { icon: 'ph:arrows-clockwise', text: 'Se emite sola una factura recurrente' },
   { icon: 'ph:sparkle', text: 'La IA termina de leer tus documentos' },
   { icon: 'ph:bank', text: 'Quedan pocos días para presentar impuestos' },
