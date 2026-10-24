@@ -831,6 +831,11 @@ input[type='checkbox'] {
     padding: var(--s-3) var(--s-4);
   }
 
+  /* El más vendido baja solo a la segunda fila: a todo el ancho, para que el nombre no se corte */
+  .star {
+    grid-column: 1 / -1;
+  }
+
   .stat .v {
     font-size: var(--text-xl);
   }
