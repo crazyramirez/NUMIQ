@@ -542,6 +542,7 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
           <template #actions>
             <UiButton size="sm" variant="ghost" icon="ph:pencil-simple" @click="editing = true">Editar</UiButton>
           </template>
+          <ContactMap v-if="address" :contact-id="c.id" :address="address" />
           <dl class="dl">
             <div v-if="c.contactPerson">
               <dt>Persona de contacto</dt>

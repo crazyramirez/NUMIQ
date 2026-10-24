@@ -213,6 +213,12 @@ export const contacts = mysqlTable('contacts', {
   tags: jsonText<string[]>('tags'),
   /** Logotipo del cliente o proveedor (PNG/JPG reducido en el navegador) */
   logoPath: varchar('logo_path', { length: 500 }),
+  /** Ubicación de la dirección para el mapa de la ficha (se calcula una vez por dirección: geo_key) */
+  geoLat: decimal('geo_lat', { precision: 9, scale: 6, mode: 'number' }),
+  geoLng: decimal('geo_lng', { precision: 9, scale: 6, mode: 'number' }),
+  /** exact = portal, street = calle, area = código postal o población, none = no se encontró */
+  geoPrecision: mysqlEnum('geo_precision', ['exact', 'street', 'area', 'none']),
+  geoKey: varchar('geo_key', { length: 40 }),
   archivedAt: datetime('archived_at'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

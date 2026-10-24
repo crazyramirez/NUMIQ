@@ -88,6 +88,7 @@ export function contactLogoUrl(id: number | null | undefined, logoPath: string |
 
 /** Contacto para la app: la ruta interna del logotipo se cambia por su URL */
 export function contactView<T extends { id: number, logoPath: string | null }>(contact: T) {
-  const { logoPath, ...rest } = contact
+  // La ubicación del mapa va por su propia ruta (/location), que la calcula si hace falta
+  const { logoPath, geoLat: _lat, geoLng: _lng, geoPrecision: _precision, geoKey: _key, ...rest } = contact as T & Partial<Record<'geoLat' | 'geoLng' | 'geoPrecision' | 'geoKey', unknown>>
   return { ...rest, logoUrl: contactLogoUrl(contact.id, logoPath) }
 }

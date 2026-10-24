@@ -152,7 +152,7 @@ function provinceName(s: string | null | undefined) {
 }
 
 /** "Marbella" = "MARBELLA"; "Alicante" está en "Alacant/Alicante"; "Palma de Mallorca" contiene "Palma" */
-function sameName(a: string | null | undefined, b: string | null | undefined) {
+export function sameName(a: string | null | undefined, b: string | null | undefined) {
   const x = plain(a)
   const y = plain(b)
   return !!x && !!y && (x === y || (Math.min(x.length, y.length) >= 4 && (x.includes(y) || y.includes(x))))
