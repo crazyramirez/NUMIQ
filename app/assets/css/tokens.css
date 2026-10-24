@@ -129,6 +129,15 @@
   --chart-expense: #d97706;
   --chart-profit: #059669;
   --chart-grid: #eceef2;
+  /* Series por categoría (orden fijo, validado para daltonismo; el color va con la categoría, nunca con su puesto) */
+  --chart-c1: #2a78d6;
+  --chart-c2: #eb6834;
+  --chart-c3: #1baf7a;
+  --chart-c4: #eda100;
+  --chart-c5: #e87ba4;
+  --chart-c6: #008300;
+  --chart-c7: #6250d6;
+  --chart-c8: #e34948;
 
   /* Sombras: capas suaves con tinte frío */
   --shadow-xs: 0 1px 2px rgb(16 24 40 / 0.05);
@@ -190,6 +199,14 @@
   --chart-expense: #c98210;
   --chart-profit: #34d399;
   --chart-grid: #1f242e;
+  --chart-c1: #3987e5;
+  --chart-c2: #d95926;
+  --chart-c3: #199e70;
+  --chart-c4: #c98500;
+  --chart-c5: #d55181;
+  --chart-c6: #008300;
+  --chart-c7: #9085e9;
+  --chart-c8: #e66767;
 
   --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.3);
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px rgb(0 0 0 / 0.25);

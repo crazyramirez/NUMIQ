@@ -951,6 +951,42 @@ export const insights = mysqlTable('insights', {
   createdAt: createdAt(),
 }, t => [uniqueIndex('insights_key_uq').on(t.companyId, t.key)])
 
+// ─── IA: consumo y coste de cada llamada a OpenAI ────────────────────────────
+
+/**
+ * Una fila por petición facturada (también las que fallan después de consumir tokens). El coste se
+ * calcula con la tarifa oficial del modelo y el tipo de servicio; `estimated` marca las lecturas
+ * anteriores a este registro, reconstruidas a partir de lo que se guardaba entonces.
+ */
+export const aiUsage = mysqlTable('ai_usage', {
+  id: int('id').autoincrement().primaryKey(),
+  companyId: int('company_id'),
+  userId: int('user_id'),
+  /** Día en hora de Madrid (agrupar por días, semanas y meses sin depender de la zona de la base de datos) */
+  day: day('day').notNull(),
+  /** escaneo, importacion, correo, asistente, banco, contactos, impuestos, otros */
+  category: varchar('category', { length: 30 }).notNull(),
+  /** Tarea concreta: documentos, hojas, bank_categories, asistente… */
+  task: varchar('task', { length: 60 }).notNull(),
+  model: varchar('model', { length: 80 }).notNull(),
+  serviceTier: varchar('service_tier', { length: 20 }),
+  inputTokens: int('input_tokens').notNull().default(0),
+  cachedTokens: int('cached_tokens').notNull().default(0),
+  cacheWriteTokens: int('cache_write_tokens').notNull().default(0),
+  outputTokens: int('output_tokens').notNull().default(0),
+  reasoningTokens: int('reasoning_tokens').notNull().default(0),
+  costUsd: decimal('cost_usd', { precision: 14, scale: 8, mode: 'number' }).notNull().default(0),
+  /** Dólares por euro del BCE de ese día (null: sin cambio disponible al registrar) */
+  usdPerEur: decimal('usd_per_eur', { precision: 10, scale: 6, mode: 'number' }),
+  ms: int('ms').notNull().default(0),
+  ok: boolean('ok').notNull().default(true),
+  estimated: boolean('estimated').notNull().default(false),
+  createdAt: createdAt(),
+}, t => [
+  index('ai_usage_company_day_idx').on(t.companyId, t.day),
+  index('ai_usage_company_created_idx').on(t.companyId, t.createdAt),
+])
+
 // ─── Auditoría (registro de eventos: trazabilidad exigida a los SIF) ─────────
 
 export const auditLog = mysqlTable('audit_log', {

@@ -546,7 +546,8 @@ function onDesignSaved(accent: string) {
                 </ol>
               </div>
             </UiCard>
-            <div class="features rise" style="--i: 3">
+            <SettingsAiCostPanel v-if="section === 'ia' && canEdit" class="rise" style="--i: 3" />
+            <div class="features rise" style="--i: 4">
               <div class="feature card">
                 <Icon name="ph:scan" class="f-ic" aria-hidden="true" />
                 <h3>Escaneo instantáneo</h3>

@@ -224,9 +224,20 @@ function readingScore(docs: ExtractedDocument[]) {
   return (invoices.length ? ok / invoices.length : 1) * 1000 + conf
 }
 
+/**
+ * Factura sin IVA desglosado (extranjera, exenta) cuyas líneas suman el total: no hay cuadro de impuestos
+ * que releer. La segunda lectura devolvía lo mismo con el modelo caro (22 de 25 relecturas en las
+ * importaciones de prueba). Si dice que el IVA va incluido, sí se relee para buscarlo.
+ */
+function consistentWithoutTax(d: ExtractedDocument) {
+  if (d.taxLines.length || d.total == null || !d.lines.length || d.irpfAmount) return false
+  if (d.vatPresentation?.mode === 'included' || d.vatPresentation?.mode === 'excluded') return false
+  return Math.abs(round2(d.lines.reduce((s, l) => s + l.amount, 0)) - d.total) <= 0.05
+}
+
 function needsSecondLook(docs: ExtractedDocument[]) {
   if (!docs.length) return true
-  return docs.some(d => (isInvoiceDoc(d) && !amountsAddUp(d)) || d.confidence < 70)
+  return docs.some(d => (isInvoiceDoc(d) && !amountsAddUp(d) && !consistentWithoutTax(d)) || d.confidence < 70)
 }
 
 export interface Extraction {

@@ -42,6 +42,8 @@ export async function requireCompany(event: H3Event, minRole: MemberRole = 'memb
     .where(and(eq(tables.companyMembers.companyId, user.currentCompanyId), eq(tables.companyMembers.userId, user.id)))
   if (!row) throw createError({ statusCode: 403, statusMessage: 'No tienes acceso a esta empresa', data: { needsOnboarding: true } })
   if (ROLE_RANK[row.role] < ROLE_RANK[minRole]) throw createError({ statusCode: 403, statusMessage: 'Tu rol no permite esta acción' })
+  // El consumo de IA de esta petición (y de lo que siga en segundo plano) se apunta a esta empresa y usuario
+  setAiScope(event, row.company.id, user.id)
   return { user, company: row.company, role: row.role }
 }
 

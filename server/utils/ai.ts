@@ -85,6 +85,9 @@ export async function aiJson<T>(req: AiJsonRequest): Promise<AiJsonResult<T>> {
     text: { format: { type: 'json_schema', name: req.name, strict: true, schema: req.schema } },
     max_output_tokens: req.maxOutputTokens ?? 32000,
     store: false,
+    // Mismas instrucciones y esquema en cada tarea: la misma clave lleva las peticiones a la misma caché
+    // de OpenAI y la parte repetida se cobra al 10 %
+    prompt_cache_key: `numiq-${req.name}`,
   })
 
   const t0 = Date.now()
@@ -110,8 +113,10 @@ export async function aiJson<T>(req: AiJsonRequest): Promise<AiJsonResult<T>> {
     const json = await res.json().catch(() => null) as {
       status?: string
       incomplete_details?: { reason?: string }
+      model?: string
+      service_tier?: string
       output?: Array<{ type: string, content?: Array<{ type: string, text?: string, refusal?: string }> }>
-      usage?: { input_tokens?: number, output_tokens?: number }
+      usage?: OpenAiUsage
       error?: { message?: string, code?: string, type?: string }
     } | null
 
@@ -125,10 +130,12 @@ export async function aiJson<T>(req: AiJsonRequest): Promise<AiJsonResult<T>> {
     }
 
     const content = json?.output?.find(o => o.type === 'message')?.content ?? []
+    const text = content.find(c => c.type === 'output_text')?.text
+    // Se cobra aunque la respuesta no sirva (rechazo, incompleta o JSON roto): también cuenta
+    recordAiUsage({ task: req.name, model: json?.model || model, usage: json?.usage, tier: json?.service_tier, ms: Date.now() - t0, ok: !!text && json?.status !== 'incomplete' })
     const refusal = content.find(c => c.type === 'refusal')?.refusal
     if (refusal) throw new AiError('La IA no ha querido procesar este documento', 422)
     if (json?.status === 'incomplete') throw new AiError(json.incomplete_details?.reason === 'max_output_tokens' ? 'El documento es demasiado largo para leerlo de una vez' : 'La lectura con IA quedó incompleta', 422)
-    const text = content.find(c => c.type === 'output_text')?.text
     if (!text) throw new AiError('La IA devolvió una respuesta vacía', 502)
     try {
       return {

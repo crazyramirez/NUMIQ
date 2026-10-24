@@ -34,7 +34,7 @@ const FILTER = obj({
   numeros: { type: ['array', 'null'], items: { type: 'string' }, description: 'Números exactos de factura o gasto' },
 })
 
-function toolDefs() {
+export function assistantToolDefs() {
   const fn = (name: string, description: string, properties: Record<string, unknown> = {}) => ({
     type: 'function',
     name,
@@ -609,9 +609,10 @@ async function runTool(company: Company, actor: Actor, name: string, args: Recor
 const REGIMES: Record<string, string> = { directa_simplificada: 'estimación directa simplificada', directa_normal: 'estimación directa normal', modulos: 'módulos', sociedades: 'Impuesto sobre Sociedades' }
 const VAT: Record<string, string> = { general: 'régimen general', recargo_equivalencia: 'recargo de equivalencia', criterio_caja: 'criterio de caja', exento: 'exento' }
 
-function systemPrompt(company: Company, userName: string) {
+export function assistantSystemPrompt(company: Company, userName: string) {
   const today = new Date().toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-  return `Eres el asistente financiero y fiscal de NUMIQ, la app de gestión de ${company.tradeName || company.legalName} (${company.kind === 'autonomo' ? 'autónomo' : 'sociedad'}, NIF ${company.nif}, ${REGIMES[company.taxRegime] ?? company.taxRegime}, IVA en ${VAT[company.vatRegime] ?? company.vatRegime}${company.activityDescription ? `, actividad: ${company.activityDescription}` : ''}${company.activityStartDate ? `, alta el ${company.activityStartDate}` : ''}, retención habitual en sus facturas ${company.defaultIrpfRate} %). Hablas con ${userName}. Hoy es ${today}.
+  // Lo que cambia por empresa, usuario o día va al final: el principio, igual para todos, se lee de la caché de OpenAI
+  return `Eres el asistente financiero y fiscal de NUMIQ, la app de gestión de la empresa que se describe al final (Contexto).
 
 Cómo respondes:
 - En español de España, claro, cercano y directo. Primero la respuesta; después, si ayuda, el detalle.
@@ -632,7 +633,9 @@ Cambios en los datos (tienes control completo, siempre con la confirmación del 
 - Una propuesta por cada operación distinta; si piden varias cosas, prepara varias.
 - Eliminar es definitivo: dilo al proponerlo. Cambiar clientes o importes de facturas ya emitidas tiene implicaciones legales: menciona el aviso que devuelva la herramienta.
 - crear_contacto, crear_producto y crear_gasto se ejecutan al momento (el usuario puede deshacerlo desde la tarjeta): úsalos solo cuando lo pidan y con los datos necesarios.
-- Las anotaciones entre corchetes [Operación #N …] del historial las añade NUMIQ con el estado real de cada propuesta: tenlas en cuenta y no las escribas tú.`
+- Las anotaciones entre corchetes [Operación #N …] del historial las añade NUMIQ con el estado real de cada propuesta: tenlas en cuenta y no las escribas tú.
+
+Contexto: la empresa es ${company.tradeName || company.legalName} (${company.kind === 'autonomo' ? 'autónomo' : 'sociedad'}, NIF ${company.nif}, ${REGIMES[company.taxRegime] ?? company.taxRegime}, IVA en ${VAT[company.vatRegime] ?? company.vatRegime}${company.activityDescription ? `, actividad: ${company.activityDescription}` : ''}${company.activityStartDate ? `, alta el ${company.activityStartDate}` : ''}, retención habitual en sus facturas ${company.defaultIrpfRate} %). Hablas con ${userName}. Hoy es ${today}.`
 }
 
 // ─── Conversación con streaming ──────────────────────────────────────────────
@@ -657,9 +660,10 @@ function chatModel() {
   return String(useRuntimeConfig().openaiChatModel || 'gpt-5.5')
 }
 
-async function streamOnce(input: unknown[], tools: unknown[], onDelta: (t: string) => void, signal: AbortSignal): Promise<StreamResult> {
+async function streamOnce(input: unknown[], tools: unknown[], onDelta: (t: string) => void, signal: AbortSignal, cacheKey: string): Promise<StreamResult> {
   const s = aiSettings()
   const model = chatModel()
+  const t0 = Date.now()
   const reasoning = /^(gpt-5|gpt-6|o\d)/.test(model)
   const res = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
@@ -671,6 +675,8 @@ async function streamOnce(input: unknown[], tools: unknown[], onDelta: (t: strin
       stream: true,
       store: false,
       max_output_tokens: 6000,
+      // Herramientas e instrucciones iguales en cada ronda y pregunta: se leen de la caché (10 % del precio)
+      prompt_cache_key: cacheKey,
       ...(reasoning ? { reasoning: { effort: 'low' }, include: ['reasoning.encrypted_content'] } : {}),
     }),
     signal,
@@ -696,7 +702,7 @@ async function streamOnce(input: unknown[], tools: unknown[], onDelta: (t: strin
       buffer = buffer.slice(idx + 2)
       const data = chunk.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trim()).join('')
       if (!data || data === '[DONE]') continue
-      let ev: { type?: string, delta?: string, response?: { output?: Array<Record<string, unknown>>, error?: { message?: string } }, error?: { message?: string } }
+      let ev: { type?: string, delta?: string, response?: { model?: string, service_tier?: string, usage?: OpenAiUsage, output?: Array<Record<string, unknown>>, error?: { message?: string } }, error?: { message?: string } }
       try {
         ev = JSON.parse(data)
       }
@@ -709,8 +715,10 @@ async function streamOnce(input: unknown[], tools: unknown[], onDelta: (t: strin
       }
       else if (ev.type === 'response.completed' || ev.type === 'response.incomplete') {
         output = ev.response?.output ?? []
+        recordAiUsage({ task: 'asistente', model: ev.response?.model || model, usage: ev.response?.usage, tier: ev.response?.service_tier, ms: Date.now() - t0, ok: ev.type === 'response.completed' })
       }
       else if (ev.type === 'response.failed' || ev.type === 'error') {
+        recordAiUsage({ task: 'asistente', model: ev.response?.model || model, usage: ev.response?.usage, tier: ev.response?.service_tier, ms: Date.now() - t0, ok: false })
         throw new AiError(ev.response?.error?.message ?? ev.error?.message ?? 'La IA no pudo responder', 502)
       }
     }
@@ -732,9 +740,9 @@ export interface Actor {
  */
 export async function answer(company: Company, actor: Actor, history: ChatTurn[], emit: (e: ChatEvent) => void, signal: AbortSignal, conversationId: number | null = null) {
   const userName = actor.name
-  const tools = toolDefs()
+  const tools = assistantToolDefs()
   let input: unknown[] = [
-    { role: 'developer', content: systemPrompt(company, userName) },
+    { role: 'developer', content: assistantSystemPrompt(company, userName) },
     ...history.map(h => ({ role: h.role, content: h.content })),
   ]
   const used: string[] = []
@@ -743,7 +751,7 @@ export async function answer(company: Company, actor: Actor, history: ChatTurn[]
     const r = await streamOnce(input, tools, (t) => {
       text += t
       emit({ type: 'delta', text: t })
-    }, signal)
+    }, signal, `numiq-asistente-${company.id}`)
     if (!r.calls.length) return { text, tools: used, model: chatModel() }
     const outputs = []
     for (const call of r.calls) {

@@ -114,6 +114,8 @@ export default defineNuxtConfig({
     openaiConcurrency: 4,
     // Asistente conversacional (con herramientas sobre los datos de la empresa)
     openaiChatModel: 'gpt-5.5',
+    // Tarifas propias en USD por millón de tokens si OpenAI cambia un precio: {"gpt-5.5":[5,0.5,30]}
+    openaiPrices: '',
     // Clave para custodiar cifrados los certificados digitales (si falta, se deriva de la de sesión)
     certSecret: '',
     // VeriFactu: datos del productor del software (por defecto, la propia empresa usuaria)
@@ -185,7 +187,11 @@ export default defineNuxtConfig({
   },
 
   // Carpeta de salida configurable: scripts/plesk-deploy.sh compila en .output-next y solo la cambia si sale bien
-  nitro: process.env.NITRO_OUTPUT_DIR ? { output: { dir: process.env.NITRO_OUTPUT_DIR } } : {},
+  // asyncContext: useEvent() en cualquier punto de una petición (el consumo de IA sabe de qué empresa es)
+  nitro: {
+    experimental: { asyncContext: true },
+    ...(process.env.NITRO_OUTPUT_DIR ? { output: { dir: process.env.NITRO_OUTPUT_DIR } } : {}),
+  },
 
   experimental: {
     // Las versiones nuevas las vigila el plugin app-update (al volver a la pestaña y cada pocos minutos), no cada hora
