@@ -70,6 +70,7 @@ function onBlur() {
         @focus="focused = true"
         @blur="onBlur"
       >
+      <UiClear />
       <span v-if="suffix" class="suffix">{{ suffix }}</span>
       <slot name="end" />
     </div>

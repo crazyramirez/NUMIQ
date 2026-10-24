@@ -137,14 +137,17 @@ function blurOnEnter(e: KeyboardEvent) {
             :aria-expanded="palette === c.id"
             @click="palette = palette === c.id ? null : c.id"
           />
-          <input
-            :value="c.name"
-            class="control name"
-            maxlength="80"
-            :aria-label="`Nombre de la categoría ${c.name}`"
-            @blur="rename(c, $event)"
-            @keydown.enter.prevent="blurOnEnter"
-          >
+          <span class="clearable name">
+            <input
+              :value="c.name"
+              class="control"
+              maxlength="80"
+              :aria-label="`Nombre de la categoría ${c.name}`"
+              @blur="rename(c, $event)"
+              @keydown.enter.prevent="blurOnEnter"
+            >
+            <UiClear />
+          </span>
           <span class="count num">{{ c.items }}</span>
           <UiButton variant="ghost" size="sm" square icon="ph:trash" class="del" :aria-label="`Borrar ${c.name}`" @click="remove(c)" />
         </div>

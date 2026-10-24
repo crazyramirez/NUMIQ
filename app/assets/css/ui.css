@@ -164,6 +164,62 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger-solid) 22%, transparent);
 }
 
+/* X para vaciar (UiClear): solo con el campo enfocado y con texto */
+.clear-x {
+  display: none;
+  place-items: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin-right: -6px;
+  padding: 0;
+  color: var(--text-3);
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+
+:focus-within > .clear-x.on {
+  display: grid;
+}
+
+.clear-x:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+
+.clear-x svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Campo suelto (sin .control en flex): la X va encima, a la derecha */
+.clearable {
+  position: relative;
+  display: block;
+}
+
+.clearable > .clear-x {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  margin: 0;
+  transform: translateY(-50%);
+}
+
+.clearable:focus-within > input:not(:placeholder-shown),
+.clearable:focus-within > input:not([placeholder]) {
+  padding-right: 30px;
+}
+
+/* La X nativa de type="search" sobra: ya está la nuestra */
+input[type="search"]::-webkit-search-cancel-button {
+  display: none;
+  -webkit-appearance: none;
+}
+
 textarea.control {
   padding: 10px 12px;
   min-height: 84px;

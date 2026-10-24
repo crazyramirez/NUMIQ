@@ -145,6 +145,7 @@ useEventListener('keydown', (e: KeyboardEvent) => {
           <div class="bar">
             <Icon :name="loading ? 'ph:circle-notch' : 'ph:magnifying-glass'" class="ic" :class="{ spin: loading }" aria-hidden="true" />
             <input ref="input" v-model="query" placeholder="Busca clientes, facturas, gastos… o escribe una acción" aria-label="Buscar" autocomplete="off" @keydown="onKey">
+            <UiClear />
             <kbd class="kbd">Esc</kbd>
           </div>
           <div ref="list" class="list" role="listbox">

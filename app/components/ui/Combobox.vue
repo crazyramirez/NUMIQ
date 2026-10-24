@@ -110,6 +110,7 @@ const { style: listStyle } = useFloating(control, list, open, { gap: 4 })
     <div v-else ref="control" class="control search">
       <Icon name="ph:magnifying-glass" class="caret" aria-hidden="true" />
       <input :id="id" ref="input" v-model="query" :placeholder="placeholder" role="combobox" aria-expanded="true" :aria-controls="`${id}-l`" autocomplete="off" @keydown="onKey">
+      <UiClear />
     </div>
     <Teleport to="body">
       <Transition name="pop">

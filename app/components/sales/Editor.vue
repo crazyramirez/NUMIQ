@@ -636,7 +636,10 @@ const R_CODES = [
             <div class="paper-title">
               <h2>{{ paperTitle }}</h2>
               <div v-if="isAlreadyIssued" class="paper-number-edit">
-                <input v-model="form.number" class="cell" placeholder="Nº de factura" aria-label="Número de factura">
+                <span class="clearable">
+                  <input v-model="form.number" class="cell" placeholder="Nº de factura" aria-label="Número de factura">
+                  <UiClear />
+                </span>
               </div>
               <p v-else class="paper-number" :class="{ pending: !doc?.number }">{{ doc?.number ?? (nextNumber ? `${nextNumber} (al emitir)` : 'Borrador') }}</p>
             </div>
@@ -659,7 +662,10 @@ const R_CODES = [
             </div>
             <div v-if="showReference || form.customerReference">
               <span class="paper-label">{{ design?.design?.customerReferenceLabel || 'Orden de Pedido' }}</span>
-              <input v-model="form.customerReference" class="cell" placeholder="Nº de pedido (opcional)" :aria-label="design?.design?.customerReferenceLabel || 'Orden de Pedido'" maxlength="80">
+              <span class="clearable">
+                <input v-model="form.customerReference" class="cell" placeholder="Nº de pedido (opcional)" :aria-label="design?.design?.customerReferenceLabel || 'Orden de Pedido'" maxlength="80">
+                <UiClear />
+              </span>
             </div>
           </div>
 
@@ -706,7 +712,10 @@ const R_CODES = [
               <select v-model="form.rectificationCode" class="cell" aria-label="Motivo legal">
                 <option v-for="r in R_CODES" :key="r.value" :value="r.value">{{ r.label }}</option>
               </select>
-              <input v-model="form.rectificationReason" class="cell" placeholder="Explica brevemente el motivo (importe erróneo, devolución…)" aria-label="Motivo de la rectificación">
+              <span class="clearable">
+                <input v-model="form.rectificationReason" class="cell" placeholder="Explica brevemente el motivo (importe erróneo, devolución…)" aria-label="Motivo de la rectificación">
+                <UiClear />
+              </span>
             </div>
           </div>
 
@@ -974,6 +983,16 @@ const R_CODES = [
   background: #fff;
   border-color: var(--p-accent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--p-accent) 18%, transparent);
+}
+
+/* La hoja es siempre clara, también en modo oscuro */
+.paper :deep(.clear-x) {
+  color: #8a91a0;
+}
+
+.paper :deep(.clear-x:hover) {
+  color: var(--p-text);
+  background: var(--p-soft);
 }
 
 .paper-meta :deep(.cell) {

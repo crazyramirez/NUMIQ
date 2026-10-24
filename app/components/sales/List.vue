@@ -354,6 +354,7 @@ const bulkActions = computed<BulkAction[]>(() => [
         <div class="control search">
           <Icon name="ph:magnifying-glass" />
           <input v-model="q" type="search" placeholder="Número, cliente, NIF…" aria-label="Buscar">
+          <UiClear />
         </div>
         <select v-model="period" class="control period" aria-label="Periodo">
           <option v-for="p in PERIODS" :key="p.value" :value="p.value">{{ p.label }}</option>
