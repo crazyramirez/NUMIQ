@@ -49,7 +49,7 @@ const { data: all, refresh: refreshCounts } = useFetch<Row[]>('/api/sales', {
   key: `sales-counts-${props.kind}`,
 })
 
-// Lo pendiente de otros periodos no se pierde de vista: aviso con enlace a todos los años
+// Lo pendiente de años anteriores no se pierde de vista: aviso con enlace a todos los años
 const { data: openAll, refresh: refreshOpen } = useFetch<Row[]>('/api/sales', {
   query: computed(() => ({ kind: props.kind, status: 'open' })),
   lazy: true,
@@ -57,15 +57,14 @@ const { data: openAll, refresh: refreshOpen } = useFetch<Row[]>('/api/sales', {
   key: `sales-open-${props.kind}`,
 })
 const elsewhere = computed(() => {
-  const { from, to } = range.value
-  if (!from || !to || !['all', 'open', 'overdue'].includes(status.value)) return null
-  const r = (openAll.value ?? []).filter(x => x.issueDate < from || x.issueDate > to)
+  if (!['all', 'open', 'overdue'].includes(status.value)) return null
+  const { rows: r, from } = earlierYears(openAll.value ?? [], period.value)
   if (!r.length) return null
   const n = r.length
   return {
     text: isQuote.value
-      ? `${n} ${n === 1 ? 'presupuesto de otro periodo sigue' : 'presupuestos de otros periodos siguen'} pendiente${n === 1 ? '' : 's'} de respuesta`
-      : `${n} ${n === 1 ? 'factura de otro periodo sigue' : 'facturas de otros periodos siguen'} pendiente${n === 1 ? '' : 's'} de cobro`,
+      ? `${n} ${n === 1 ? `presupuesto ${from} sigue pendiente` : `presupuestos ${from} siguen pendientes`} de respuesta`
+      : `${n} ${n === 1 ? `factura ${from} sigue pendiente` : `facturas ${from} siguen pendientes`} de cobro`,
     amount: r.reduce((s, x) => s + (isQuote.value ? x.taxBase : x.total - x.paidTotal), 0),
   }
 })

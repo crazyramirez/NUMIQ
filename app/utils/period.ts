@@ -51,5 +51,14 @@ export function shiftPeriod(p: Period, dir: 1 | -1): Period {
 /** Empieza después de hoy: no hay nada que ver todavía */
 export const periodIsFuture = (p: Period) => !!p.year && (periodRange(p).from ?? '') > toISODate(new Date())
 
+/** Pendientes de años anteriores al periodo a la vista (los posteriores no se avisan) y cómo nombrarlos: «de 2025» o «de años anteriores» */
+export function earlierYears<T extends { issueDate: string }>(rows: T[], p: Period) {
+  if (!p.year) return { rows: [] as T[], from: '' }
+  const start = `${p.year}-01-01`
+  const out = rows.filter(r => r.issueDate < start)
+  const years = new Set(out.map(r => r.issueDate.slice(0, 4)))
+  return { rows: out, from: years.size === 1 ? `de ${[...years][0]}` : 'de años anteriores' }
+}
+
 /** El año en curso entero: lo que se ve por defecto */
 export const currentPeriod = (): Period => ({ year: new Date().getFullYear(), quarter: null, month: null })

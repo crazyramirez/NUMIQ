@@ -111,7 +111,7 @@ const rows = computed(() => (data.value ?? []).filter(e => (!noFile.value || (!e
 const firstLoad = computed(() => fetchStatus.value === 'pending' && !data.value)
 const filtersActive = computed(() => status.value !== 'all' || !!q.value.trim() || categoryId.value != null || deductible.value !== 'all' || noFile.value || !!approvalFilter.value)
 
-// Lo pendiente de pago (o por revisar) de otros periodos no se pierde de vista: aviso con enlace a todos los años
+// Lo pendiente de pago (o por revisar) de años anteriores no se pierde de vista: aviso con enlace a todos los años
 const outstanding = computed(() => (status.value === 'review' ? 'review' : 'pending'))
 const { data: outstandingAll, refresh: refreshOutstanding } = useFetch<ExpenseRow[]>('/api/expenses', {
   key: 'expenses-outstanding',
@@ -120,15 +120,14 @@ const { data: outstandingAll, refresh: refreshOutstanding } = useFetch<ExpenseRo
   server: false,
 })
 const elsewhere = computed(() => {
-  const { from, to } = range.value
-  if (!from || !to || !['all', 'pending', 'review'].includes(status.value) || approvalFilter.value) return null
-  const r = (outstandingAll.value ?? []).filter(e => e.issueDate < from || e.issueDate > to)
+  if (!['all', 'pending', 'review'].includes(status.value) || approvalFilter.value) return null
+  const { rows: r, from } = earlierYears(outstandingAll.value ?? [], period.value)
   if (!r.length) return null
   const n = r.length
   const one = n === 1
   return outstanding.value === 'review'
-    ? { text: `${n} ${one ? 'gasto de otro periodo está' : 'gastos de otros periodos están'} por revisar`, amount: null }
-    : { text: `${n} ${one ? 'gasto de otro periodo sigue' : 'gastos de otros periodos siguen'} pendiente${one ? '' : 's'} de pago`, amount: r.reduce((s, e) => s + e.total - (e.paidTotal ?? 0), 0) }
+    ? { text: `${n} ${one ? `gasto ${from} está` : `gastos ${from} están`} por revisar`, amount: null }
+    : { text: `${n} ${one ? `gasto ${from} sigue pendiente` : `gastos ${from} siguen pendientes`} de pago`, amount: r.reduce((s, e) => s + e.total - (e.paidTotal ?? 0), 0) }
 })
 function showElsewhere() {
   period.value = { year: null, quarter: null, month: null }
