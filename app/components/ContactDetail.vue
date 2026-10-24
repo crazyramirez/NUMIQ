@@ -71,6 +71,10 @@ const { data: c, status, refresh, error } = useFetch<ContactFull>(() => `/api/co
 
 useHead({ title: () => `${c.value?.name ?? (isClient.value ? 'Cliente' : 'Proveedor')} · NUMIQ` })
 
+// Sin plazo propio, al cliente se le aplica el de la empresa al facturar
+const { data: company } = useFetch<{ paymentTermsDays: number | null }>('/api/companies/current', { lazy: true })
+const paymentTerms = computed(() => c.value?.paymentTermsDays ?? (c.value?.isClient ? (company.value?.paymentTermsDays ?? 30) : null))
+
 const today = todayISO()
 const isOpen = (s: string) => ['issued', 'sent', 'partial'].includes(s)
 const invoices = computed(() => (c.value?.documents ?? []).filter(d => d.kind === 'invoice' || d.kind === 'rectifying'))
@@ -563,9 +567,9 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
               <dt>IBAN</dt>
               <dd class="mono">{{ c.iban.replace(/(.{4})/g, '$1 ').trim() }}</dd>
             </div>
-            <div>
+            <div v-if="paymentTerms != null">
               <dt>Plazo de pago</dt>
-              <dd>{{ c.paymentTermsDays != null ? `${c.paymentTermsDays} días` : 'El de la empresa' }}</dd>
+              <dd>{{ paymentTerms }} días</dd>
             </div>
             <div v-if="c.irpfRate != null">
               <dt>Retención IRPF</dt>
