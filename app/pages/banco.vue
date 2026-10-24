@@ -978,17 +978,21 @@ const BANK_CODES: Record<string, string> = {
   text-decoration: underline;
 }
 
+/* En línea (no flex): el «·» va pegado al dato que separa y nunca abre una línea */
 .t-sub {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 8px;
   font-size: var(--text-xs);
+  line-height: 1.5;
   color: var(--text-3);
 }
 
 .t-sub span + span::before {
   content: '·';
-  margin-right: 8px;
+  margin: 0 6px;
+}
+
+.t-sub .t-info-link {
+  margin-left: 8px;
+  vertical-align: baseline;
 }
 
 .d-full {
@@ -1248,22 +1252,35 @@ a.chip.ok:hover {
     padding-inline: var(--s-4);
   }
 
+  /* Arriba la descripción a todo el ancho; debajo la propuesta; abajo acciones e importe */
   .tx {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
-      'main amt'
+      'main main'
       'match match'
-      'act act';
-    padding-inline: var(--s-4);
+      'act amt';
+    row-gap: 10px;
+    padding: 14px var(--s-4);
   }
 
   .picking .tx {
     grid-template-columns: 18px minmax(0, 1fr) auto;
     grid-template-areas:
-      'pick main amt'
+      'pick main main'
       'pick match match'
-      'pick act act';
+      'pick act amt';
     column-gap: var(--s-3);
+  }
+
+  .t-desc {
+    font-size: var(--text-md);
+    font-weight: 600;
+    -webkit-line-clamp: 4;
+  }
+
+  .t-amt {
+    align-self: center;
+    font-size: 1rem;
   }
 
   .t-date {
@@ -1275,11 +1292,7 @@ a.chip.ok:hover {
   }
 
   .t-act {
-    justify-content: flex-end;
-  }
-
-  .t-act > :first-child {
-    flex: 1;
+    justify-content: flex-start;
   }
 
   .hide-sm {
