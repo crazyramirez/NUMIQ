@@ -2,7 +2,7 @@
 /**
  * Tras entrar con contraseña en un móvil u ordenador con huella o Face ID: ofrece usarlos la
  * próxima vez. Va por dispositivo, no por cuenta: tener la llave en el ordenador no la pone en el
- * iPhone. Si dices «Ahora no», no vuelve a salir, salvo que luego pruebes a entrar con la huella.
+ * iPhone. Si dices «Ahora no», no vuelve a salir.
  */
 const DECLINED = 'numiq-passkey-declined'
 
@@ -21,8 +21,7 @@ const read = (k: string, store: Storage) => {
 }
 
 onMounted(async () => {
-  const offer = read(PASSKEY_OFFER, sessionStorage)
-  if (!offer || (offer !== 'force' && read(DECLINED, localStorage) === '1')) return
+  if (!read(PASSKEY_OFFER, sessionStorage) || read(DECLINED, localStorage) === '1') return
   try {
     sessionStorage.removeItem(PASSKEY_OFFER)
   }

@@ -29,10 +29,13 @@ const handler = defineWebAuthnAuthenticateEventHandler({
 })
 
 export default defineEventHandler(async (event) => {
-  // Mismo freno que el acceso con contraseña: 30 intentos por IP cada 15 minutos
-  const byIp = `passkey-ip:${getRequestIP(event, { xForwardedFor: true }) ?? 'ip'}`
-  if (isRateLimited(byIp, 30, 15 * 60_000)) throw createError({ statusCode: 429, statusMessage: 'Demasiados intentos: espera unos minutos' })
-  recordAttempt(byIp)
+  // Mismo freno que el acceso con contraseña: 30 comprobaciones por IP cada 15 minutos. Pedir el reto
+  // (cada vez que se abre la pantalla de entrada, y cada 4 minutos para la sugerencia del teclado) tiene un margen mayor
+  const verify = (await readBody<{ verify?: boolean }>(event).catch(() => null))?.verify === true
+  const ip = getRequestIP(event, { xForwardedFor: true }) ?? 'ip'
+  const [key, max] = verify ? [`passkey-ip:${ip}`, 30] : [`passkey-opts-ip:${ip}`, 300]
+  if (isRateLimited(key, max, 15 * 60_000)) throw createError({ statusCode: 429, statusMessage: 'Demasiados intentos: espera unos minutos' })
+  recordAttempt(key)
   alignPasskeyOrigin(event)
   return handler(event)
 })

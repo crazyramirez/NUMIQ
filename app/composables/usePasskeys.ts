@@ -18,7 +18,7 @@ const AUTHENTICATE = '/api/passkeys/authenticate'
 const FRESH_MS = 4 * 60_000
 /** Llave de NUMIQ de este dispositivo (creada aquí o con la que se entró aquí): su id, o «1» si no se sabe */
 const DEVICE_KEY = 'numiq-passkey'
-/** Tras fallar la llave en el acceso, al entrar con contraseña se ofrece activarla aunque se dijera «Ahora no» */
+/** Al entrar con contraseña, Inicio ofrece activar la llave en este dispositivo */
 export const PASSKEY_OFFER = 'numiq-passkey-offer'
 
 function store(kind: 'local' | 'session') {

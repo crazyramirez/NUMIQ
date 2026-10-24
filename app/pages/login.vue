@@ -17,9 +17,8 @@ async function submit() {
     await $fetch('/api/auth/login', { method: 'POST', body: form })
     await refreshSession()
     // Tras entrar con contraseña, Inicio ofrecerá usar la huella o Face ID la próxima vez
-    // («force»: acaba de intentarlo sin llave en este dispositivo, se ofrece aunque dijera «Ahora no»)
     try {
-      sessionStorage.setItem(PASSKEY_OFFER, passkeyMissing.value ? 'force' : '1')
+      sessionStorage.setItem(PASSKEY_OFFER, '1')
     }
     catch { /* sin almacenamiento: no pasa nada */ }
     await navigateTo(target())
@@ -41,17 +40,23 @@ const { isSupported, signIn } = usePasskeyLogin(signedIn, (err) => {
   error.value = errorMessage(err, 'No se pudo entrar con la llave de acceso. Prueba con tu contraseña.')
 })
 const passkeyBusy = ref(false)
-/** El sistema no encontró llave (o se canceló) en un dispositivo donde nunca se activó */
-const passkeyMissing = ref(false)
+// El botón solo sale donde la huella o Face ID ya se activó (o ya se usó). En los demás dispositivos,
+// una llave sincronizada (iCloud, Google) sigue apareciendo sugerida al tocar el email
+const hasDeviceKey = ref(false)
+onMounted(() => (hasDeviceKey.value = !!passkeyOnDevice()))
 async function withPasskey() {
   passkeyBusy.value = true
   error.value = null
-  passkeyMissing.value = false
   try {
-    if (!(await signIn()) && !passkeyOnDevice()) passkeyMissing.value = true
+    await signIn()
   }
   catch (err) {
     error.value = errorMessage(err, 'No se pudo entrar con la llave de acceso. Prueba con tu contraseña.')
+    // La llave de este dispositivo se quitó de la cuenta: el botón deja de salir
+    if (/ya no está en tu cuenta/.test(error.value)) {
+      markPasskeyOnDevice('')
+      hasDeviceKey.value = false
+    }
   }
   finally {
     passkeyBusy.value = false
@@ -81,15 +86,9 @@ async function withPasskey() {
       </Transition>
 
       <UiButton type="submit" variant="primary" size="lg" block :loading="loading">Entrar</UiButton>
-      <template v-if="isSupported">
+      <template v-if="isSupported && hasDeviceKey">
         <div class="or" aria-hidden="true"><span>o</span></div>
         <UiButton size="lg" block icon="ph:fingerprint" :loading="passkeyBusy" @click="withPasskey">Entrar con huella o Face ID</UiButton>
-        <Transition name="fade">
-          <p v-if="passkeyMissing" class="pk-help" role="status">
-            <Icon name="ph:info" class="pk-ic" aria-hidden="true" />
-            <span>Este dispositivo aún no tiene la huella o Face ID activados para NUMIQ. Entra con tu contraseña y te lo ofrecemos al momento: es un toque.</span>
-          </p>
-        </Transition>
       </template>
     </form>
 
@@ -139,23 +138,6 @@ async function withPasskey() {
   color: var(--danger);
   background: var(--danger-soft);
   border-radius: var(--r-md);
-}
-
-.pk-help {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 12px;
-  font-size: var(--text-sm);
-  color: var(--text-2);
-  background: var(--brand-soft);
-  border-radius: var(--r-md);
-}
-
-.pk-ic {
-  flex: none;
-  margin-top: 2px;
-  color: var(--brand-text);
 }
 
 .forgot {
