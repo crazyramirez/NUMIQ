@@ -4,7 +4,7 @@
  * mandarlo a la gestoría. Cada paso dice por qué importa y lleva su botón.
  */
 interface Step { key: string, title: string, why: string, state: 'done' | 'todo' | 'warn', detail: string, action?: { label: string, to: string } }
-interface Model { model: string, name: string, result: number, nothing: boolean, filing: { id: number, status: 'draft' | 'ready' | 'filed' | 'paid', csv: string | null, filedAt: string | null } | null }
+interface Model { model: string, name: string, result: number, nothing: boolean, filing: { id: number, status: 'draft' | 'ready' | 'filed' | 'paid', csv: string | null, filedAt: string | null } | null, fileQuarter?: number }
 interface Close {
   year: number
   quarter: number
@@ -64,8 +64,10 @@ const dueText = computed(() => {
 // ─── Modelos ───
 const fileOpen = ref(false)
 const fileModel = ref<string | null>(null)
+const fileQuarter = ref<number | null>(null)
 function present(m: Model) {
   fileModel.value = m.model
+  fileQuarter.value = m.fileQuarter ?? data.value?.quarter ?? null
   fileOpen.value = true
 }
 
@@ -203,7 +205,7 @@ const outcome = (m: Model) => (m.result > 0 ? 'a ingresar' : m.result < 0 ? (m.m
         </div>
       </section>
 
-      <TaxesFileModal v-model="fileOpen" :model="fileModel" :year="data.year" :quarter="data.quarter" @filed="refresh()" />
+      <TaxesFileModal v-model="fileOpen" :model="fileModel" :year="data.year" :quarter="fileQuarter" @filed="refresh()" />
     </template>
   </div>
 </template>

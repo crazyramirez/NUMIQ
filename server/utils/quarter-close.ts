@@ -19,6 +19,8 @@ export interface CloseModel {
   /** Sin nada que declarar (sin retenciones en el trimestre): no hace falta presentarlo */
   nothing: boolean
   filing: { id: number, status: 'draft' | 'ready' | 'filed' | 'paid', csv: string | null, filedAt: string | null } | null
+  /** Para el 202: número de pago (1 abril, 2 octubre), que es lo que pide la presentación guiada */
+  fileQuarter?: number
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
@@ -100,6 +102,25 @@ export async function quarterClose(company: Company, year: number, q: Quarter) {
     { model: '111', name: 'Retenciones a profesionales', result: wh.m111.result, nothing: wh.m111.result === 0 && wh.m111.recipients === 0, filing: filingOf('111') },
     { model: '115', name: 'Retención del alquiler', result: wh.m115.result, nothing: wh.m115.result === 0 && wh.m115.recipients === 0, filing: filingOf('115') },
   ]
+
+  // Sociedades: el pago fraccionado del 202 vence con el 1T (1P, abril) y con el 3T (2P, octubre)
+  if (kind === 'sociedad' && (q === 1 || q === 3)) {
+    const n = q === 1 ? 1 : 2
+    const [est, [f202]] = await Promise.all([
+      corporateEstimate(company, year),
+      db.select().from(tables.taxFilings).where(and(eq(tables.taxFilings.companyId, company.id), eq(tables.taxFilings.year, year), eq(tables.taxFilings.model, '202'), eq(tables.taxFilings.period, `${n}P`))),
+    ])
+    const pay = est.payments[n - 1]
+    models.push({
+      model: '202',
+      name: `Pago a cuenta de Sociedades (${n}P)`,
+      result: pay?.amount ?? 0,
+      // Con resultado cero el 202 no se presenta (salvo grandes empresas, que no son el público de NUMIQ)
+      nothing: (pay?.amount ?? 0) <= 0 && !f202,
+      filing: f202 ? { id: f202.id, status: f202.status, csv: f202.csv, filedAt: f202.filedAt ? toISODate(f202.filedAt) : null } : null,
+      fileQuarter: n,
+    })
+  }
 
   const due = deadlinesForYear(q === 4 ? year + 1 : year, kind).find(d => d.period === `${q}T ${year}`)?.end ?? null
   const toFile = models.filter(m => !m.nothing)
