@@ -27,6 +27,10 @@ interface ExpenseRow {
   reviewed: boolean
   aiConfidence: number | null
   fileId: number | null
+  approval: 'approved' | 'pending' | 'rejected'
+  rejectReason: string | null
+  createdBy: number | null
+  createdByName: string | null
 }
 
 type Changes = { deductiblePct?: number, vatDeductiblePct?: number, categoryId?: number | null }
@@ -94,6 +98,14 @@ const categoryOptions = computed(() => [
   ...(cats.value ?? []).filter(c => c.kind === 'expense').sort((a, b) => a.name.localeCompare(b.name, 'es')).map(c => ({ value: c.id, label: c.name })),
 ])
 
+// Aprobación del equipo: ?aprobacion=pending|rejected abre la lista filtrada (desde «Hoy» o un aviso)
+const approvalFilter = ref<'pending' | 'rejected' | null>(['pending', 'rejected'].includes(String(route.query.aprobacion)) ? String(route.query.aprobacion) as 'pending' | 'rejected' : null)
+watch(approvalFilter, (v) => {
+  if (!v && route.query.aprobacion) router.replace({ query: { ...route.query, aprobacion: undefined } })
+})
+const { me } = useMe()
+const canApprove = computed(() => ['owner', 'admin'].includes(me.value?.company?.role ?? ''))
+
 const { data, status: fetchStatus, refresh } = useFetch<ExpenseRow[]>('/api/expenses', {
   key: 'expenses',
   query: computed(() => ({
@@ -103,6 +115,7 @@ const { data, status: fetchStatus, refresh } = useFetch<ExpenseRow[]>('/api/expe
     to: range.value.to,
     categoryId: categoryId.value ?? undefined,
     deductible: deductible.value === 'all' ? undefined : deductible.value,
+    approval: approvalFilter.value ?? undefined,
   })),
   lazy: true,
 })
@@ -115,20 +128,57 @@ watch(noFile, (v) => {
 })
 const rows = computed(() => (data.value ?? []).filter(e => !noFile.value || (!e.fileId && !NO_DOC_KINDS.includes(e.kind))))
 const firstLoad = computed(() => fetchStatus.value === 'pending' && !data.value)
-const filtersActive = computed(() => status.value !== 'all' || !!q.value.trim() || categoryId.value != null || deductible.value !== 'all' || noFile.value)
+const filtersActive = computed(() => status.value !== 'all' || !!q.value.trim() || categoryId.value != null || deductible.value !== 'all' || noFile.value || !!approvalFilter.value)
+
+// Cuántos esperan aprobación (aviso arriba para quien puede aprobar)
+const { data: pendingApproval, refresh: refreshPending } = useFetch<ExpenseRow[]>('/api/expenses', {
+  key: 'expenses-to-approve',
+  query: { approval: 'pending', limit: 300 },
+  lazy: true,
+  server: false,
+  immediate: false,
+})
+watch(canApprove, v => v && refreshPending(), { immediate: true })
+const toApprove = computed(() => (canApprove.value ? pendingApproval.value?.length ?? 0 : 0))
+
+const approvalBusy = ref<string | null>(null)
+async function decide(ids: number[], decision: 'approve' | 'reject') {
+  let reason: string | null = null
+  if (decision === 'reject') {
+    reason = window.prompt('¿Por qué lo rechazas? (lo verá quien lo registró)', '') ?? null
+    if (reason === null) return
+  }
+  approvalBusy.value = `${decision}-${ids.length === 1 ? ids[0] : 'bulk'}`
+  try {
+    const r = await $fetch<{ done: number }>('/api/expenses/approvals', { method: 'POST', body: { ids, decision, reason } })
+    toast.success(decision === 'approve' ? `${r.done === 1 ? 'Gasto aprobado' : `${r.done} gastos aprobados`}` : `${r.done === 1 ? 'Gasto rechazado' : `${r.done} gastos rechazados`}`, decision === 'approve' ? 'Ya cuentan en impuestos e informes.' : 'Avisamos a quien lo registró.')
+    stopSelecting()
+    await Promise.all([refresh(), refreshPending()])
+  }
+  catch (err) {
+    toast.error('No se pudo completar', errorMessage(err))
+  }
+  finally {
+    approvalBusy.value = null
+  }
+}
+const approvalBadge = (e: ExpenseRow) => (e.approval === 'pending' ? { label: 'Por aprobar', tone: 'warning' as const } : e.approval === 'rejected' ? { label: 'Rechazado', tone: 'danger' as const } : null)
 
 const levelOf = (e: ExpenseRow) => deductibleLevel(e.deductiblePct, e.vatDeductiblePct, e.vatTotal !== 0)
 
 const summary = computed(() => {
   const r = rows.value
+  // Lo que espera aprobación (o se rechazó) no cuenta en impuestos ni en pagos, como en Impuestos
+  const ok = r.filter(e => e.approval === 'approved')
   return {
     count: r.length,
     total: r.reduce((s, e) => s + e.total, 0),
-    deductible: r.reduce((s, e) => s + e.taxBase * e.deductiblePct / 100, 0),
-    vatDeductible: r.reduce((s, e) => s + e.vatTotal * e.vatDeductiblePct / 100, 0),
-    notDeductible: r.filter(e => levelOf(e) === 'none').length,
-    pending: r.filter(e => e.status !== 'paid').reduce((s, e) => s + e.total - (e.paidTotal ?? 0), 0),
-    pendingCount: r.filter(e => e.status !== 'paid').length,
+    deductible: ok.reduce((s, e) => s + e.taxBase * e.deductiblePct / 100, 0),
+    vatDeductible: ok.reduce((s, e) => s + e.vatTotal * e.vatDeductiblePct / 100, 0),
+    notDeductible: ok.filter(e => levelOf(e) === 'none').length,
+    unapproved: r.length - ok.length,
+    pending: ok.filter(e => e.status !== 'paid').reduce((s, e) => s + e.total - (e.paidTotal ?? 0), 0),
+    pendingCount: ok.filter(e => e.status !== 'paid').length,
   }
 })
 
@@ -323,6 +373,12 @@ const categoryMenu = computed<MenuItem[]>(() => [
 ])
 
 const bulkActions = computed<BulkAction[]>(() => [
+  ...(canApprove.value && approvalFilter.value === 'pending'
+    ? [
+        { label: 'Aprobar', icon: 'ph:check-bold', tone: 'success' as const, onClick: () => decide(selected.value, 'approve') },
+        { label: 'Rechazar', icon: 'ph:x-bold', tone: 'danger' as const, onClick: () => decide(selected.value, 'reject') },
+      ]
+    : []),
   { label: 'Deducibles', icon: 'ph:check-circle-fill', tone: 'success', onClick: () => markDeductible(selected.value, 'full') },
   { label: 'En parte…', icon: 'ph:circle-half-fill', tone: 'warning', onClick: () => openPartial(selected.value) },
   { label: 'No deducibles', icon: 'ph:prohibit', onClick: () => markDeductible(selected.value, 'none') },
@@ -380,6 +436,12 @@ function savePartial() {
       </div>
     </header>
 
+    <button v-if="toApprove && approvalFilter !== 'pending'" type="button" class="approve-banner rise" @click="approvalFilter = 'pending'; period = 'all'">
+      <Icon name="ph:check-square-offset" class="ab-ic" aria-hidden="true" />
+      <span class="grow"><strong>{{ toApprove }} {{ toApprove === 1 ? 'gasto del equipo espera' : 'gastos del equipo esperan' }} tu aprobación</strong><span class="ab-s">No cuentan en impuestos hasta que los apruebes</span></span>
+      <span class="ab-go">Revisar <Icon name="ph:arrow-right" aria-hidden="true" /></span>
+    </button>
+
     <section class="summary rise" aria-label="Resumen de gastos filtrados">
       <div class="sum main">
         <p class="eyebrow">Total gastado</p>
@@ -393,6 +455,8 @@ function savePartial() {
         <p class="s">
           + {{ eur(summary.vatDeductible) }} de IVA en el 303<template v-if="summary.notDeductible">
             · <button type="button" class="link s-link" @click="deductible = 'none'">{{ summary.notDeductible }} no {{ summary.notDeductible === 1 ? 'deducible' : 'deducibles' }}</button>
+          </template><template v-if="summary.unapproved">
+            · {{ summary.unapproved }} sin aprobar no {{ summary.unapproved === 1 ? 'cuenta' : 'cuentan' }}
           </template>
         </p>
       </div>
@@ -424,6 +488,9 @@ function savePartial() {
           <UiSelect v-model="categoryId" :options="categoryOptions" aria-label="Categoría" class="cat" />
           <UiSelect v-model="deductible" :options="deductibleOptions" aria-label="Deducibilidad" class="ded-filter" />
           <UiSelect v-model="period" :options="periodOptions" aria-label="Periodo" class="period" />
+          <button v-if="approvalFilter" type="button" class="nofile-chip" @click="approvalFilter = null">
+            <Icon name="ph:check-square-offset" aria-hidden="true" /> {{ approvalFilter === 'pending' ? 'Por aprobar' : 'Rechazados' }} <Icon name="ph:x-bold" class="x" aria-label="Quitar filtro" />
+          </button>
           <button v-if="noFile" type="button" class="nofile-chip" @click="noFile = false">
             <Icon name="ph:paperclip" aria-hidden="true" /> Sin justificante <Icon name="ph:x-bold" class="x" aria-label="Quitar filtro" />
           </button>
@@ -539,7 +606,16 @@ function savePartial() {
                   </UiMenu>
                 </td>
                 <td class="r num strong">{{ eur(e.total) }}</td>
-                <td><UiBadge :tone="statusOf(e).tone" dot>{{ statusOf(e).label }}</UiBadge></td>
+                <td @click.stop>
+                  <div class="st-cell">
+                    <UiBadge v-if="approvalBadge(e)" :tone="approvalBadge(e)!.tone" dot :title="e.rejectReason ?? (e.createdByName ? `Registrado por ${e.createdByName}` : undefined)">{{ approvalBadge(e)!.label }}</UiBadge>
+                    <UiBadge v-else :tone="statusOf(e).tone" dot>{{ statusOf(e).label }}</UiBadge>
+                    <template v-if="canApprove && e.approval === 'pending'">
+                      <UiButton size="sm" variant="ghost" square icon="ph:check-bold" :aria-label="`Aprobar ${e.supplierName ?? 'gasto'}`" title="Aprobar" :loading="approvalBusy === `approve-${e.id}`" @click="decide([e.id], 'approve')" />
+                      <UiButton size="sm" variant="ghost" square icon="ph:x-bold" :aria-label="`Rechazar ${e.supplierName ?? 'gasto'}`" title="Rechazar" :loading="approvalBusy === `reject-${e.id}`" @click="decide([e.id], 'reject')" />
+                    </template>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -556,8 +632,20 @@ function savePartial() {
               <template #title>{{ e.supplierName || e.description || 'Gasto' }}</template>
               <template v-if="e.supplierName && e.description" #sub>{{ e.description }}</template>
               <template #info>{{ fdate(e.issueDate) }}{{ e.categoryName ? ` · ${e.categoryName}` : '' }}</template>
+              <template v-if="e.approval === 'pending' ? e.createdByName : e.approval === 'rejected' && e.rejectReason" #note>
+                <span class="appr-note" :class="e.approval">
+                  {{ e.approval === 'pending' ? `Registrado por ${e.createdByName!.split(' ')[0]}` : `Motivo: ${e.rejectReason}` }}
+                </span>
+              </template>
+              <template v-if="canApprove && e.approval === 'pending'" #after>
+                <div class="appr-acts">
+                  <UiButton size="sm" variant="ghost" icon="ph:x-bold" :loading="approvalBusy === `reject-${e.id}`" @click="decide([e.id], 'reject')">Rechazar</UiButton>
+                  <UiButton size="sm" variant="primary" icon="ph:check-bold" :loading="approvalBusy === `approve-${e.id}`" @click="decide([e.id], 'approve')">Aprobar</UiButton>
+                </div>
+              </template>
               <template #status>
-                <UiBadge :tone="statusOf(e).tone" size="sm" dot>{{ statusOf(e).label }}</UiBadge>
+                <UiBadge v-if="approvalBadge(e)" :tone="approvalBadge(e)!.tone" size="sm" dot>{{ approvalBadge(e)!.label }}</UiBadge>
+                <UiBadge v-else :tone="statusOf(e).tone" size="sm" dot>{{ statusOf(e).label }}</UiBadge>
                 <span v-if="levelOf(e) !== 'full'" class="ded-mini" :class="levelOf(e)">
                   <Icon :name="levelOf(e) === 'partial' ? 'ph:circle-half-fill' : 'ph:prohibit'" aria-hidden="true" />
                   {{ deductibleLabel(e.deductiblePct, e.vatDeductiblePct, e.vatTotal !== 0) }}
@@ -816,6 +904,69 @@ input[type='checkbox'] {
 .ded-pill:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
+}
+
+.approve-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: var(--s-4);
+  padding: 12px var(--s-4);
+  text-align: left;
+  color: var(--text);
+  background: var(--warning-soft);
+  border: 1px solid color-mix(in srgb, var(--warning) 25%, transparent);
+  border-radius: var(--r-xl);
+}
+
+.ab-ic {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  color: var(--warning);
+}
+
+.approve-banner strong {
+  display: block;
+  font-weight: 650;
+}
+
+.ab-s {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.ab-go {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--warning);
+}
+
+.st-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.appr-note {
+  font-size: var(--text-xs);
+  font-weight: 560;
+  color: var(--text-3);
+}
+
+.appr-note.rejected {
+  color: var(--danger);
+}
+
+.appr-acts {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s-2);
+  padding: 0 var(--s-4) 12px;
 }
 
 .nofile-chip {

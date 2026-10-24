@@ -59,7 +59,7 @@ async function deductibleSplit(companyId: number, from: string, to: string) {
     vatCurrent: n(sql`SUM(CASE WHEN ${e.isInvestment} THEN 0 ELSE ${e.vatTotal} * ${e.vatDeductiblePct} / 100 END)`),
     baseInvest: n(sql`SUM(CASE WHEN ${e.isInvestment} AND ${e.vatTotal} <> 0 THEN ${e.taxBase} * ${e.vatDeductiblePct} / 100 ELSE 0 END)`),
     vatInvest: n(sql`SUM(CASE WHEN ${e.isInvestment} THEN ${e.vatTotal} * ${e.vatDeductiblePct} / 100 ELSE 0 END)`),
-  }).from(e).where(and(eq(e.companyId, companyId), gte(e.issueDate, from), lte(e.issueDate, to)))
+  }).from(e).where(and(eq(e.companyId, companyId), approvedExpense(), gte(e.issueDate, from), lte(e.issueDate, to)))
   return { baseCurrent: round2(r!.baseCurrent), vatCurrent: round2(r!.vatCurrent), baseInvest: round2(r!.baseInvest), vatInvest: round2(r!.vatInvest) }
 }
 
@@ -222,7 +222,7 @@ async function model347(companyId: number, year: number) {
       .where(and(eq(s.companyId, companyId), inArray(s.kind, ['invoice', 'rectifying']), notInArray(s.status, ['draft', 'cancelled']), gte(s.issueDate, from), lte(s.issueDate, to))),
     db.select({ date: e.issueDate, total: e.total, irpf: e.irpfTotal, supplier: e.supplier, contactNif: tables.contacts.nif, contactName: tables.contacts.name, cp: tables.contacts.postalCode })
       .from(e).leftJoin(tables.contacts, eq(tables.contacts.id, e.supplierId))
-      .where(and(eq(e.companyId, companyId), inArray(e.kind, ['invoice', 'ticket', 'other']), gte(e.issueDate, from), lte(e.issueDate, to))),
+      .where(and(eq(e.companyId, companyId), approvedExpense(), inArray(e.kind, ['invoice', 'ticket', 'other']), gte(e.issueDate, from), lte(e.issueDate, to))),
   ])
   const clients = new Map<string, Party>()
   const suppliers = new Map<string, Party>()
@@ -266,7 +266,7 @@ async function perceptors(companyId: number, year: number, rent: boolean) {
     base: sql<number>`SUM(${e.taxBase})`.mapWith(Number),
     irpf: sql<number>`SUM(${e.irpfTotal})`.mapWith(Number),
   }).from(e).leftJoin(cat, eq(cat.id, e.categoryId)).leftJoin(tables.contacts, eq(tables.contacts.id, e.supplierId))
-    .where(and(eq(e.companyId, companyId), gte(e.issueDate, `${year}-01-01`), lte(e.issueDate, `${year}-12-31`), gt(e.irpfTotal, 0), rent ? sql`${isRent}` : sql`NOT ${isRent}`))
+    .where(and(eq(e.companyId, companyId), approvedExpense(), gte(e.issueDate, `${year}-01-01`), lte(e.issueDate, `${year}-12-31`), gt(e.irpfTotal, 0), rent ? sql`${isRent}` : sql`NOT ${isRent}`))
     .groupBy(nifExpr, nameExpr)
   return rows.map(r => ({ nif: r.nif ? normalizeNif(r.nif) : '—', name: r.name, payroll: !!r.payroll, base: round2(r.base), irpf: round2(r.irpf) }))
 }

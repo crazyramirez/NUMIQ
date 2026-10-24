@@ -169,6 +169,8 @@ async function remove(m: Member) {
       </div>
     </UiCard>
 
+    <SettingsApprovalsCard :can-edit="data.canManage" />
+
     <div v-if="data.canManage" class="roles">
       <button v-for="r in (['advisor', 'member', 'admin'] as const)" :key="r" type="button" class="role-card" @click="openInvite(r)">
         <span class="rc-ic" :class="r" aria-hidden="true"><Icon :name="ROLES[r].icon" /></span>

@@ -94,7 +94,7 @@ function salesIn(companyId: number, from: string, to: string) {
 }
 
 function expensesIn(companyId: number, from: string, to: string) {
-  return and(eq(E().companyId, companyId), gte(E().issueDate, from), lte(E().issueDate, to))
+  return and(eq(E().companyId, companyId), approvedExpense(), gte(E().issueDate, from), lte(E().issueDate, to))
 }
 
 export interface ReportMetrics {

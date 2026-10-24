@@ -18,6 +18,7 @@ const salesWhere = (companyId: number, from: string, to: string) => and(
 
 const expensesWhere = (companyId: number, from: string, to: string) => and(
   eq(e().companyId, companyId),
+  approvedExpense(),
   gte(e().issueDate, from),
   lte(e().issueDate, to),
 )
@@ -81,7 +82,7 @@ export async function withholdings(companyId: number, from: string, to: string) 
     amount: sql<number>`SUM(${e.irpfTotal})`.mapWith(Number),
     recipients: sql<number>`COUNT(DISTINCT ${e.supplierId})`.mapWith(Number),
   }).from(e).leftJoin(cat, eq(cat.id, e.categoryId))
-    .where(and(eq(e.companyId, companyId), gte(e.issueDate, from), lte(e.issueDate, to), sql`${e.irpfTotal} > 0`))
+    .where(and(eq(e.companyId, companyId), approvedExpense(), gte(e.issueDate, from), lte(e.issueDate, to), sql`${e.irpfTotal} > 0`))
     .groupBy(sql`COALESCE(${cat.accountCode} = '621', 0)`)
   const pick = (rent: boolean) => {
     const r = rows.find(x => x.rent === rent)
@@ -192,6 +193,6 @@ export async function payables(companyId: number) {
   const [r] = await useDb().select({
     amount: sql<number>`COALESCE(SUM(${e().total} - ${e().paidTotal}), 0)`.mapWith(Number),
     count: sql<number>`COUNT(*)`.mapWith(Number),
-  }).from(e()).where(and(eq(e().companyId, companyId), inArray(e().status, ['pending', 'partial'])))
+  }).from(e()).where(and(eq(e().companyId, companyId), approvedExpense(), inArray(e().status, ['pending', 'partial'])))
   return { amount: round2(r!.amount), count: r!.count }
 }

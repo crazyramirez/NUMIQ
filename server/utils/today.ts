@@ -40,7 +40,7 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
     db.select({ n: sql<number>`COUNT(*)`.mapWith(Number) }).from(s)
       .where(and(eq(s.companyId, company.id), inArray(s.kind, ['quote', 'proforma']), inArray(s.status, ['issued', 'sent']), lt(s.issueDate, toISODate(new Date(now.getTime() - 7 * 86_400_000))))),
     db.select({ n: sql<number>`COUNT(*)`.mapWith(Number), amount: sql<number>`COALESCE(SUM(${e.total} - ${e.paidTotal}), 0)`.mapWith(Number) }).from(e)
-      .where(and(eq(e.companyId, company.id), inArray(e.status, ['pending', 'partial']), lt(e.dueDate, today))),
+      .where(and(eq(e.companyId, company.id), approvedExpense(), inArray(e.status, ['pending', 'partial']), lt(e.dueDate, today))),
     // Gastos del trimestre sin la foto o el PDF (nóminas, cuotas e impuestos no llevan factura adjunta)
     db.select({ n: sql<number>`COUNT(*)`.mapWith(Number) }).from(e)
       .where(and(eq(e.companyId, company.id), isNull(e.fileId), notInArray(e.kind, ['payroll', 'social_security', 'tax']), sql`${e.issueDate} >= ${quarterRange(now.getFullYear(), quarterOf(now)).from}`)),
@@ -91,6 +91,22 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
           `modelos ${pending.join(', ')}`,
         ].filter(Boolean).join(' · '),
         action: { label: 'Cerrar trimestre', to: m ? `/impuestos/cerrar?anio=${year}&t=${m[1]}` : '/impuestos' },
+      })
+    }
+  }
+
+  // Gastos del equipo esperando aprobación (solo los ven quienes pueden aprobar)
+  if (viewer && ['owner', 'admin'].includes(viewer.role)) {
+    const [toApprove] = await db.select({ n: sql<number>`COUNT(*)`.mapWith(Number), amount: sql<number>`COALESCE(SUM(${e.total}), 0)`.mapWith(Number) }).from(e)
+      .where(and(eq(e.companyId, company.id), eq(e.approval, 'pending')))
+    if (toApprove!.n > 0) {
+      urgent.push({
+        key: 'approvals',
+        icon: 'ph:check-square-offset',
+        tone: 'warning',
+        title: `${plural(toApprove!.n, 'gasto del equipo espera', 'gastos del equipo esperan')} tu aprobación`,
+        detail: `${eurText0(toApprove!.amount)} · no cuentan en impuestos hasta que los apruebes`,
+        action: { label: 'Revisar', to: '/gastos?aprobacion=pending&periodo=all' },
       })
     }
   }

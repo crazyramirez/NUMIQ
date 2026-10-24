@@ -9,6 +9,8 @@ const query = z.object({
   categoryId: z.coerce.number().int().positive().optional(),
   /** full: deducible al 100 % · partial: en parte · none: no deducible */
   deductible: z.enum(['all', 'full', 'partial', 'none']).default('all'),
+  /** Aprobación del equipo: pendientes o rechazados */
+  approval: z.enum(['pending', 'rejected']).optional(),
   limit: z.coerce.number().int().min(1).max(1000).default(300),
 })
 
@@ -48,12 +50,18 @@ export default defineEventHandler(async (event) => {
     reviewed: e.reviewed,
     aiConfidence: e.aiConfidence,
     fileId: e.fileId,
+    approval: e.approval,
+    rejectReason: e.rejectReason,
+    createdBy: e.createdBy,
+    createdByName: tables.users.name,
   })
     .from(e)
     .leftJoin(c, eq(c.id, e.supplierId))
     .leftJoin(cat, eq(cat.id, e.categoryId))
+    .leftJoin(tables.users, eq(tables.users.id, e.createdBy))
     .where(and(
       eq(e.companyId, company.id),
+      p.approval ? eq(e.approval, p.approval) : undefined,
       p.status === 'pending' ? eq(e.status, 'pending') : p.status === 'paid' ? eq(e.status, 'paid') : p.status === 'review' ? eq(e.reviewed, false) : undefined,
       p.from ? gte(e.issueDate, p.from) : undefined,
       p.to ? lte(e.issueDate, p.to) : undefined,
