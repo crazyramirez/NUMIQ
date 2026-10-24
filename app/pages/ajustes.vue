@@ -567,7 +567,10 @@ function onDesignSaved(accent: string) {
           </UiCard>
 
           <!-- ─── Recordatorios de cobro ─── -->
-          <SettingsRemindersPanel v-if="section === 'cobros'" class="rise" style="--i: 2" :can-edit="canEdit" />
+          <div v-if="section === 'cobros'" class="stack gap-4">
+            <SettingsOnlinePaymentsPanel class="rise" style="--i: 2" :can-edit="canEdit" />
+            <SettingsRemindersPanel class="rise" style="--i: 3" :can-edit="canEdit" />
+          </div>
 
           <!-- ─── Gestoría ─── -->
           <UiCard v-if="section === 'gestoria'" class="rise" style="--i: 2" title="Tu gestor o asesoría" icon="ph:briefcase" subtitle="NUMIQ prepara la documentación de cada mes, trimestre o año y se la envía con un clic: facturas, gastos con su original, extractos y un resumen en Excel y PDF.">

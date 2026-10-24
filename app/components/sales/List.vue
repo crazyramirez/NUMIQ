@@ -17,6 +17,7 @@ interface Row {
   irpfTotal: number
   total: number
   paidTotal: number
+  viewedAt?: string | null
   overdue: boolean
   invoices: SalesInvoiceLink[]
   conceptPreview?: string | null
@@ -100,6 +101,8 @@ const PERIODS = [
 
 // Presupuestos y proformas: base imponible (rotulada como tal); facturas: total con impuestos
 const amountOf = (x: { taxBase: number, total: number }) => (isQuote.value ? x.taxBase : x.total)
+// «Vista»: el cliente abrió el enlace y aún no está cobrada ni cerrada (cuando más útil es saberlo)
+const seen = (r: Row) => !!r.viewedAt && !['paid', 'cancelled', 'invoiced', 'rejected', 'accepted', 'draft'].includes(r.status)
 
 const summary = computed(() => {
   const r = (all.value ?? []).filter(x => x.status !== 'draft' && x.status !== 'cancelled')
@@ -334,7 +337,12 @@ const bulkActions = computed<BulkAction[]>(() => [
                   <template v-else>{{ fdate(r.dueDate) }}</template>
                 </td>
                 <td class="r col-total num strong">{{ eur(amountOf(r)) }}<span v-if="r.status === 'partial'" class="sub">pend. {{ eur(r.total - r.paidTotal) }}</span></td>
-                <td class="col-status"><UiBadge v-bind="{ tone: salesStatus(r.kind, r.status, r.overdue).tone }" dot>{{ salesStatus(r.kind, r.status, r.overdue).label }}</UiBadge></td>
+                <td class="col-status">
+                  <span class="st-wrap">
+                    <UiBadge v-bind="{ tone: salesStatus(r.kind, r.status, r.overdue).tone }" dot>{{ salesStatus(r.kind, r.status, r.overdue).label }}</UiBadge>
+                    <Icon v-if="seen(r)" name="ph:eye-fill" class="seen" :title="`Vista por el cliente ${relTime(r.viewedAt!)}`" :aria-label="`Vista por el cliente ${relTime(r.viewedAt!)}`" />
+                  </span>
+                </td>
                 <td class="act-col" @click.stop @keydown.stop>
                   <div class="row-acts">
                     <SalesInvoiceLinks v-if="isQuote && r.invoices.length" :invoices="r.invoices" />
@@ -369,6 +377,7 @@ const bulkActions = computed<BulkAction[]>(() => [
               </template>
               <template #status>
                 <UiBadge :tone="salesStatus(r.kind, r.status, r.overdue).tone" size="sm" dot>{{ salesStatus(r.kind, r.status, r.overdue).label }}</UiBadge>
+                <span v-if="seen(r)" class="seen-m"><Icon name="ph:eye-fill" aria-hidden="true" /> Vista</span>
               </template>
               <template #amount>
                 {{ eur(amountOf(r)) }}
@@ -501,6 +510,27 @@ const bulkActions = computed<BulkAction[]>(() => [
 .col-date,
 .col-due,
 .col-total,
+.st-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.seen {
+  width: 15px;
+  height: 15px;
+  color: var(--info);
+}
+
+.seen-m {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--text-xs);
+  font-weight: 560;
+  color: var(--info);
+}
+
 .col-status {
   white-space: nowrap;
   width: 1%;

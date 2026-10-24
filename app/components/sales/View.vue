@@ -14,7 +14,7 @@ type Doc = PaperDoc & {
   invoices: SalesInvoiceLink[]
   rectifiesId: number | null
   payments: Array<{ id: number, amount: number, date: string, method: string, notes: string | null }>
-  contact: (PaperDoc['contact'] & { id: number, logoUrl?: string | null }) | null
+  contact: (PaperDoc['contact'] & { id: number, logoUrl?: string | null, phone?: string | null }) | null
   verifactu: { hash: string, qrUrl: string, status: string, invoiceType: string, generatedAt: string, sentAt: string | null, error: string | null } | null
   imported: boolean
   fileId: number | null
@@ -198,6 +198,21 @@ async function copyLink() {
   else toast.error('No se pudo copiar el enlace')
 }
 
+/** WhatsApp con el enlace a la factura: al móvil del cliente si lo tenemos; si no, eliges el chat */
+function shareWhatsapp() {
+  const d = doc.value
+  if (!d || !publicUrl.value) return
+  const who = d.contact?.name ? `Hola, ${d.contact.name.split(' ')[0]}:` : 'Hola:'
+  const what = isQuote.value
+    ? `te envío el presupuesto ${d.number ?? ''} (${eur(d.taxBase)} + IVA). Puedes verlo y aceptarlo aquí:`
+    : `te envío la factura ${d.number ?? ''} por ${eur(d.total - d.paidTotal)}. Puedes verla, descargarla y pagarla aquí:`
+  const text = `${who} ${what}\n${publicUrl.value}`
+  let phone = (d.contact?.phone ?? '').replace(/[^\d+]/g, '')
+  if (/^[67]\d{8}$/.test(phone)) phone = `34${phone}`
+  phone = phone.replace(/^\+/, '')
+  window.open(`https://wa.me/${/^\d{10,15}$/.test(phone) ? phone : ''}?text=${encodeURIComponent(text)}`, '_blank', 'noopener')
+}
+
 async function copyHash() {
   if (!doc.value?.verifactu) return
   const ok = await copyToClipboard(doc.value.verifactu.hash)
@@ -214,6 +229,7 @@ const moreItems = computed<MenuItem[]>(() => {
   ]
   if (d.status !== 'draft' && publicUrl.value) {
     items.push(
+      { label: 'Enviar por WhatsApp', icon: 'ph:whatsapp-logo', onClick: shareWhatsapp },
       { label: 'Copiar enlace para el cliente', icon: 'ph:link-simple', onClick: copyLink },
       { label: 'Ver como el cliente', icon: 'ph:eye', onClick: () => window.open(publicUrl.value!, '_blank', 'noopener') },
     )

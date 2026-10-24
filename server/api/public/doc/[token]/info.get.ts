@@ -72,6 +72,8 @@ export default defineEventHandler(async (event) => {
           method: doc.paymentMethod,
           iban: doc.paymentMethod === 'transfer' ? company.iban : null,
           cancelled: doc.status === 'cancelled',
+          // Pago online del propio negocio (enlace de pago, Bizum): siempre que quede algo por pagar
+          online: onlinePaymentsOf(company),
         }
       : null,
   }

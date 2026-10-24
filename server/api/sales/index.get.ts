@@ -56,6 +56,7 @@ export default defineEventHandler(async (event) => {
     irpfTotal: s.irpfTotal,
     total: s.total,
     paidTotal: s.paidTotal,
+    viewedAt: s.viewedAt,
     description: s.description,
   })
     .from(s)

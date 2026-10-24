@@ -15,7 +15,7 @@ interface PublicDoc {
   logoUrl: string | null
   pdfUrl: string
   quote: { state: QuoteState, respondedAt: string | null, responseName: string | null, responseNote: string | null } | null
-  payment: { paid: boolean, pending: number, paidTotal: number, dueDate: string | null, method: string | null, iban: string | null, cancelled: boolean } | null
+  payment: { paid: boolean, pending: number, paidTotal: number, dueDate: string | null, method: string | null, iban: string | null, cancelled: boolean, online?: { link: string | null, linkLabel: string | null, bizum: string | null } } | null
 }
 
 const route = useRoute()
@@ -33,7 +33,10 @@ useHead({
 
 const pay = computed(() => data.value?.payment ?? null)
 const overdue = computed(() => !!pay.value && !pay.value.paid && !!pay.value.dueDate && daysUntil(pay.value.dueDate) < 0)
-const ibanText = computed(() => pay.value?.iban?.replace(/\s/g, '').replace(/(.{4})/g, '$1 ').trim() ?? '')
+// Bizum: el móvil sin prefijo, y para leerlo en grupos de tres (612 345 678)
+const bizumPlain = (phone: string) => phone.replace(/^\+34/, '')
+const bizumPretty = (phone: string) => bizumPlain(phone).replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3')
+const ibanText = computed(() =>pay.value?.iban?.replace(/\s/g, '').replace(/(.{4})/g, '$1 ').trim() ?? '')
 const website = computed(() => {
   const w = data.value?.company.website
   return w ? (/^https?:\/\//i.test(w) ? w : `https://${w}`) : null
@@ -215,6 +218,25 @@ async function copy(key: string, text: string) {
                 </p>
               </template>
             </template>
+          </section>
+
+          <!-- Pagar en un toque: enlace de pago del negocio o Bizum -->
+          <section v-if="pay && !pay.paid && !pay.cancelled && (pay.online?.link || pay.online?.bizum)" class="card side-card pay-now rise" style="--i: 1">
+            <h2 class="side-t">Paga ahora</h2>
+            <p class="side-s">{{ eur(pay.pending) }} · Factura {{ data.doc.number }}</p>
+            <a v-if="pay.online?.link" :href="pay.online.link" target="_blank" rel="noopener" class="pay-btn">
+              <Icon name="ph:credit-card" aria-hidden="true" />
+              {{ pay.online.linkLabel ? `Pagar con ${pay.online.linkLabel}` : 'Pagar online' }}
+              <Icon name="ph:arrow-up-right" class="pay-out" aria-hidden="true" />
+            </a>
+            <button v-if="pay.online?.bizum" type="button" class="copy" @click="copy('bizum', bizumPlain(pay.online.bizum))">
+              <span class="min0">
+                <span class="copy-l">Bizum</span>
+                <span class="copy-v num">{{ bizumPretty(pay.online.bizum) }}</span>
+              </span>
+              <Icon :name="copied === 'bizum' ? 'ph:check-bold' : 'ph:copy'" :class="{ ok: copied === 'bizum' }" aria-hidden="true" />
+            </button>
+            <p v-if="pay.online?.bizum" class="side-s small">En el concepto de Bizum pon «Factura {{ data.doc.number }}».</p>
           </section>
 
           <section v-if="pay && !pay.paid && !pay.cancelled && pay.iban" class="card side-card rise" style="--i: 1">
@@ -580,6 +602,51 @@ async function copy(key: string, text: string) {
   margin: 2px 0 var(--s-3);
   font-size: var(--text-sm);
   color: var(--text-3);
+}
+
+.side-s.small {
+  margin: var(--s-2) 0 0;
+  font-size: var(--text-xs);
+}
+
+.pay-now {
+  border-color: color-mix(in srgb, var(--brand) 30%, var(--border));
+}
+
+.pay-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  height: 48px;
+  margin-bottom: var(--s-3);
+  font-size: var(--text-md);
+  font-weight: 650;
+  color: var(--on-brand);
+  background: var(--brand);
+  border-radius: var(--r-lg);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--brand) 30%, transparent);
+  transition: background var(--t-fast), transform var(--t-fast);
+}
+
+.pay-btn:hover {
+  background: var(--brand-hover);
+}
+
+.pay-btn:active {
+  transform: scale(0.98);
+}
+
+.pay-btn :deep(svg) {
+  width: 20px;
+  height: 20px;
+}
+
+.pay-btn .pay-out {
+  width: 16px;
+  height: 16px;
+  opacity: 0.8;
 }
 
 .copy {
