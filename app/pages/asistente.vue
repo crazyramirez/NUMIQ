@@ -221,12 +221,37 @@ function autosize() {
   el.style.height = `${Math.min(el.scrollHeight, 200)}px`
 }
 watch(draft, () => nextTick(autosize))
+// Pantalla táctil: Intro hace salto de línea y se envía con el botón (como en cualquier app de mensajes)
+const touch = import.meta.client && window.matchMedia('(pointer: coarse)').matches
 function onKey(e: KeyboardEvent) {
-  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !touch) {
     e.preventDefault()
     send()
   }
 }
+
+// ─── Móvil: el chat ocupa justo lo que se ve ───
+// Con el teclado abierto, encima de él; al cerrarlo, la pantalla vuelve a su sitio
+const viewH = ref<number | null>(null)
+const keyboard = ref(false)
+function fitViewport() {
+  const vv = window.visualViewport
+  if (!vv) return
+  keyboard.value = window.innerHeight - vv.height > 120
+  viewH.value = Math.round(vv.height)
+}
+function onBlur() {
+  // Tras cerrar el teclado, iOS deja la página desplazada: se devuelve arriba
+  setTimeout(() => {
+    fitViewport()
+    if (!keyboard.value) window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, 80)
+}
+onMounted(() => {
+  window.visualViewport?.addEventListener('resize', fitViewport)
+  fitViewport()
+})
+onBeforeUnmount(() => window.visualViewport?.removeEventListener('resize', fitViewport))
 
 // Enlaces internos de las respuestas: navegación sin recargar
 function onContentClick(e: MouseEvent) {
@@ -246,7 +271,8 @@ onMounted(() => {
   const c = Number(route.query.c)
   if (c) open(c)
   else if (typeof route.query.q === 'string' && route.query.q.trim()) send(route.query.q)
-  input.value?.focus()
+  // En el móvil no se abre el teclado solo: tapa la pantalla antes de que hayas leído nada
+  if (!touch) input.value?.focus()
 })
 onBeforeUnmount(() => controller?.abort())
 
@@ -254,7 +280,7 @@ const html = (m: Message) => renderMarkdown(m.content)
 </script>
 
 <template>
-  <div class="ai-page">
+  <div class="ai-page" :class="{ kb: keyboard }" :style="viewH ? { '--view-h': `${viewH}px` } : undefined">
     <!-- Historial (escritorio) -->
     <aside class="side">
       <UiButton variant="secondary" icon="ph:plus" block @click="open(null)">Nueva conversación</UiButton>
@@ -323,11 +349,11 @@ const html = (m: Message) => renderMarkdown(m.content)
       <form class="composer" @submit.prevent="send()">
         <div class="box">
           <label for="ask" class="sr-only">Escribe tu pregunta</label>
-          <textarea id="ask" ref="input" v-model="draft" rows="1" :placeholder="ai.configured ? 'Pregunta o pide un cambio…' : 'Asistente no disponible'" :disabled="!ai.configured" @keydown="onKey" />
+          <textarea id="ask" ref="input" v-model="draft" rows="1" :placeholder="ai.configured ? 'Pregunta o pide un cambio…' : 'Asistente no disponible'" :disabled="!ai.configured" @keydown="onKey" @blur="onBlur" />
           <UiButton v-if="busy" variant="secondary" square icon="ph:stop-fill" aria-label="Detener" @click="stop" />
           <UiButton v-else type="submit" variant="ai" square icon="ph:paper-plane-right-fill" aria-label="Enviar" :disabled="!draft.trim() || !ai.configured" />
         </div>
-        <p class="disclaimer">Usa tus datos de NUMIQ. Los cambios solo se aplican cuando los confirmas. Los impuestos son estimaciones: confírmalos con tu asesor.</p>
+        <p class="disclaimer"><span class="d-long">Usa tus datos de NUMIQ. Los cambios solo se aplican cuando los confirmas. Los impuestos son estimaciones: confírmalos con tu asesor.</span><span class="d-short">Los cambios solo se aplican cuando los confirmas.</span></p>
       </form>
     </section>
 
@@ -836,6 +862,10 @@ textarea {
   outline: none;
 }
 
+.d-short {
+  display: none;
+}
+
 .disclaimer {
   max-width: 820px;
   margin: 8px auto 0;
@@ -859,10 +889,21 @@ textarea {
   }
 }
 
+/* Con barra inferior (móvil y tablet estrecha): lo visible menos la barra de arriba y la de abajo;
+   con el teclado abierto, la de abajo queda bajo él */
+@media (max-width: 767px) {
+  .ai-page {
+    height: calc(var(--view-h, 100dvh) - var(--topbar-h) - var(--bnav) - env(safe-area-inset-bottom));
+  }
+
+  .ai-page.kb {
+    height: calc(var(--view-h, 100dvh) - var(--topbar-h));
+  }
+}
+
 @media (max-width: 640px) {
   .ai-page {
     padding: 0;
-    height: calc(100dvh - var(--topbar-h));
   }
 
   .chat {
@@ -887,7 +928,23 @@ textarea {
   }
 
   .composer {
-    padding: var(--s-2) var(--s-3) calc(var(--s-3) + env(safe-area-inset-bottom));
+    padding: var(--s-2) var(--s-3) var(--s-2);
+  }
+
+  .disclaimer {
+    margin-top: 4px;
+  }
+
+  .d-long {
+    display: none;
+  }
+
+  .d-short {
+    display: inline;
+  }
+
+  .kb .disclaimer {
+    display: none;
   }
 
   .w-t {
