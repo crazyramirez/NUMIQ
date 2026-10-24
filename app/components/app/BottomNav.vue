@@ -24,7 +24,7 @@ const actions = [
   { label: 'Presupuesto', icon: 'ph:file-text', to: '/presupuestos/nuevo' },
   { label: 'Cliente', icon: 'ph:user-plus', to: '/clientes?nuevo=1' },
   { label: 'Proveedor', icon: 'ph:storefront', to: '/proveedores?nuevo=1' },
-  { label: 'Cobro o gasto fijo', icon: 'ph:arrows-clockwise', to: '/recurrentes?nuevo=factura' },
+  { label: 'Factura recurrente', icon: 'ph:arrows-clockwise', to: '/recurrentes?nuevo=factura' },
 ]
 
 function scan() {

@@ -44,11 +44,21 @@ export const NAV: readonly NavArea[][] = Object.freeze([
       tabs: [
         { label: 'Facturas', to: '/facturas', icon: 'ph:receipt', keywords: 'emitidas ventas cobros' },
         { label: 'Presupuestos', to: '/presupuestos', icon: 'ph:file-text', keywords: 'ofertas cotizaciones' },
-        { label: 'Recurrentes', to: '/recurrentes', icon: 'ph:arrows-clockwise', keywords: 'suscripciones cuotas periódicos automático mensual repetir' },
+        { label: 'Recurrentes', to: '/recurrentes', icon: 'ph:arrows-clockwise', keywords: 'facturas recurrentes igualas cuotas mantenimiento periódicas automático mensual repetir' },
         { label: 'Productos', to: '/productos', icon: 'ph:package', keywords: 'catálogo tarifas precios servicios' },
       ],
     },
-    { key: 'gastos', label: 'Gastos', to: '/gastos', icon: 'ph:wallet', keywords: 'facturas recibidas tickets compras' },
+    {
+      key: 'gastos',
+      label: 'Gastos',
+      to: '/gastos',
+      icon: 'ph:wallet',
+      keywords: 'facturas recibidas tickets compras',
+      tabs: [
+        { label: 'Gastos', to: '/gastos', icon: 'ph:wallet', keywords: 'facturas recibidas tickets compras' },
+        { label: 'Gastos fijos', to: '/gastos/fijos', icon: 'ph:arrows-clockwise', keywords: 'recurrentes alquiler cuota autónomos suscripciones software mensual repetir' },
+      ],
+    },
     { key: 'banco', label: 'Banco', to: '/banco', icon: 'ph:piggy-bank', keywords: 'extracto movimientos conciliar conciliación norma 43 cuenta saldo cobros pagos' },
     {
       key: 'impuestos',

@@ -127,7 +127,7 @@ export async function computeInsights(company: typeof tables.companies.$inferSel
   }
 
   // Recurrentes que no se pudieron generar, emitir o enviar
-  const failing = await db.select({ id: tables.recurrings.id, name: tables.recurrings.name, lastError: tables.recurrings.lastError }).from(tables.recurrings)
+  const failing = await db.select({ id: tables.recurrings.id, kind: tables.recurrings.kind, name: tables.recurrings.name, lastError: tables.recurrings.lastError }).from(tables.recurrings)
     .where(and(eq(tables.recurrings.companyId, company.id), isNotNull(tables.recurrings.lastError)))
     .limit(5)
   if (failing.length) {
@@ -137,8 +137,8 @@ export async function computeInsights(company: typeof tables.companies.$inferSel
       icon: 'ph:arrows-clockwise',
       title: failing.length === 1 ? `Recurrente con problemas: ${failing[0]!.name}` : `${failing.length} recurrentes con problemas`,
       body: failing.length === 1 ? failing[0]!.lastError! : failing.map(f => `${f.name}: ${f.lastError}`).join(' · '),
-      actionLabel: 'Ver recurrentes',
-      actionUrl: '/recurrentes',
+      actionLabel: failing.some(f => f.kind === 'invoice') ? 'Ver recurrentes' : 'Ver gastos fijos',
+      actionUrl: failing.some(f => f.kind === 'invoice') ? '/recurrentes' : '/gastos/fijos',
     })
   }
 
