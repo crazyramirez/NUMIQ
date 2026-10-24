@@ -27,21 +27,21 @@ export default defineEventHandler(async (event) => {
   const ids = rows.map(r => r.id)
   if (!ids.length) return []
 
-  // Facturado y pendiente de cobro (clientes) / gastado (proveedores) en los últimos 12 meses
+  // Facturado y pendiente de cobro (clientes) / gastado (proveedores) en los últimos 12 meses, por importe total de cada factura (con impuestos)
   const since = new Date()
   since.setFullYear(since.getFullYear() - 1)
   const sinceIso = toISODate(since)
   const s = tables.salesDocuments
   const sales = await db.select({
     contactId: s.contactId,
-    billed: sum(s.taxBase).mapWith(Number),
+    billed: sum(s.total).mapWith(Number),
     pending: sql<number>`SUM(CASE WHEN ${s.status} IN ('issued','sent','partial') THEN ${s.total} - ${s.paidTotal} ELSE 0 END)`.mapWith(Number),
     last: sql<string>`MAX(${s.issueDate})`,
   }).from(s)
     .where(and(eq(s.companyId, company.id), inArray(s.contactId, ids), inArray(s.kind, ['invoice', 'rectifying']), notInArray(s.status, ['draft', 'cancelled']), sql`${s.issueDate} >= ${sinceIso}`))
     .groupBy(s.contactId)
   const e = tables.expenses
-  const spent = await db.select({ supplierId: e.supplierId, spent: sum(e.taxBase).mapWith(Number), last: sql<string>`MAX(${e.issueDate})` }).from(e)
+  const spent = await db.select({ supplierId: e.supplierId, spent: sum(e.total).mapWith(Number), last: sql<string>`MAX(${e.issueDate})` }).from(e)
     .where(and(eq(e.companyId, company.id), inArray(e.supplierId, ids), sql`${e.issueDate} >= ${sinceIso}`))
     .groupBy(e.supplierId)
 

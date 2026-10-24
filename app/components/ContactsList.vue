@@ -191,7 +191,7 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
       <div class="stat">
         <p class="eyebrow">{{ t.amount }}</p>
         <p class="v num">{{ eur(totals.amount, false) }}</p>
-        <p class="s">Base imponible, sin IVA</p>
+        <p class="s">Importe total {{ isClient ? 'de las facturas' : 'de los gastos' }}, con impuestos</p>
       </div>
       <div v-if="isClient" class="stat">
         <p class="eyebrow">Pendiente de cobro</p>
