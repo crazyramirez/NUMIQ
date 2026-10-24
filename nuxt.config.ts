@@ -1,6 +1,23 @@
+import { execSync } from 'node:child_process'
+import pkg from './package.json'
+
 // URL pública del .env (nuxi build también lo lee): las redes sociales solo aceptan og:image absolutas
 const siteUrl = (process.env.NUXT_SITE_URL || '').replace(/\/+$/, '')
 const description = 'Facturación, gastos e impuestos para autónomos y pymes, con IA.'
+
+// Versión junto al logo: mayor.menor de package.json + nº de build, que sube con cada push (commits de la rama).
+// En Plesk la carpeta desplegada no trae .git: scripts/plesk-deploy.sh lo calcula y lo pasa en NUMIQ_BUILD
+function buildNumber() {
+  if (process.env.NUMIQ_BUILD) return process.env.NUMIQ_BUILD.trim()
+  try {
+    return execSync('git rev-list --count HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+  }
+  catch {
+    return ''
+  }
+}
+const build = buildNumber()
+const appVersion = build ? `${pkg.version.split('.').slice(0, 2).join('.')}.${build}` : pkg.version
 
 export default defineNuxtConfig({
   compatibilityDate: '2026-10-01',
@@ -122,6 +139,7 @@ export default defineNuxtConfig({
     },
     public: {
       appName: 'NUMIQ',
+      appVersion,
     },
   },
 
@@ -167,6 +185,11 @@ export default defineNuxtConfig({
 
   // Carpeta de salida configurable: scripts/plesk-deploy.sh compila en .output-next y solo la cambia si sale bien
   nitro: process.env.NITRO_OUTPUT_DIR ? { output: { dir: process.env.NITRO_OUTPUT_DIR } } : {},
+
+  experimental: {
+    // Las versiones nuevas las vigila el plugin app-update (al volver a la pestaña y cada pocos minutos), no cada hora
+    checkOutdatedBuildInterval: false,
+  },
 
   typescript: {
     strict: true,

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const { toasts, dismiss } = useToast()
 const icons = { success: 'ph:check-circle-fill', error: 'ph:warning-circle-fill', info: 'ph:info-fill' }
+const update = useAppUpdate()
 </script>
 
 <template>
@@ -14,6 +15,13 @@ const icons = { success: 'ph:check-circle-fill', error: 'ph:warning-circle-fill'
         </div>
         <button v-if="t.action" type="button" class="action" @click="t.action.run(); dismiss(t.id)">{{ t.action.label }}</button>
         <button type="button" class="x" aria-label="Cerrar aviso" @click="dismiss(t.id)"><Icon name="ph:x" /></button>
+      </div>
+      <!-- Versión nueva publicada: queda abajo, compacto, hasta que se actualice o se cierre -->
+      <div v-if="update.visible.value" key="update" class="toast update">
+        <Icon name="ph:arrow-clockwise-bold" class="ic" aria-hidden="true" />
+        <p class="title">Nueva versión</p>
+        <button type="button" class="action" @click="update.apply()">Actualizar</button>
+        <button type="button" class="x" aria-label="Cerrar aviso" @click="update.dismiss()"><Icon name="ph:x" /></button>
       </div>
     </TransitionGroup>
   </div>
@@ -87,6 +95,44 @@ const icons = { success: 'ph:check-circle-fill', error: 'ph:warning-circle-fill'
 .x:hover {
   opacity: 1;
 }
+
+.update {
+  align-self: flex-end;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px 7px 12px;
+  font-size: var(--text-sm);
+  border-radius: var(--r-full);
+}
+
+.update .ic {
+  width: 15px;
+  height: 15px;
+  margin-top: 0;
+  color: #818cf8;
+}
+
+:root[data-theme='dark'] .update .ic { color: var(--brand); }
+
+.update .title {
+  font-weight: 550;
+  white-space: nowrap;
+}
+
+.update .action {
+  padding: 3px 10px;
+  background: rgb(255 255 255 / 0.1);
+  border-radius: var(--r-full);
+  transition: background var(--t-fast);
+}
+
+.update .action:hover {
+  background: rgb(255 255 255 / 0.18);
+}
+
+:root[data-theme='dark'] .action { color: #4338ca; }
+:root[data-theme='dark'] .update .action { background: rgb(0 0 0 / 0.07); }
+:root[data-theme='dark'] .update .action:hover { background: rgb(0 0 0 / 0.13); }
 
 .toast-enter-active {
   transition: transform var(--t-slow) var(--ease-spring), opacity var(--t-base);

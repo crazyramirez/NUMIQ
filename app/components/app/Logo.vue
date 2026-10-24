@@ -1,6 +1,7 @@
 <script setup lang="ts">
 withDefaults(defineProps<{ size?: number, wordmark?: boolean }>(), { size: 30, wordmark: true })
 const gid = useId()
+const version = useRuntimeConfig().public.appVersion
 </script>
 
 <template>
@@ -16,7 +17,7 @@ const gid = useId()
       <path d="M10 23V10.2l12 12.6V14.2" fill="none" stroke="#fff" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" />
       <circle cx="22" cy="9.4" r="2.4" fill="#67e8f9" />
     </svg>
-    <span v-if="wordmark" class="word">NUMIQ</span>
+    <span v-if="wordmark" class="word">NUMIQ<small v-if="version" class="ver num">v{{ version }}</small></span>
   </span>
 </template>
 
@@ -33,9 +34,19 @@ svg {
 }
 
 .word {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
   font-size: 17px;
   font-weight: 760;
   letter-spacing: 0.04em;
   color: var(--text);
+}
+
+.ver {
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text-4);
 }
 </style>
