@@ -1,0 +1,774 @@
+/* ═══ NUMIQ · hoja de factura ══════════════════════════════════════════════════
+   La factura se ve como un documento real, en blanco también en modo oscuro.
+   Mismas clases en el editor (campos en línea) y en la vista (texto) e impresión A4. */
+
+.paper {
+  --p-text: #11141b;
+  --p-text-2: #3d4452;
+  --p-text-3: #6b7280;
+  --p-line: #e7e9ee;
+  --p-line-strong: #d6d9e0;
+  --p-soft: #f6f7f9;
+  --p-accent: var(--doc-accent, #4f46e5);
+
+  position: relative;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 56px 60px 44px;
+  color: var(--p-text);
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 12px 40px -12px rgb(16 24 40 / 0.18), 0 0 0 1px rgb(16 24 40 / 0.06);
+  font-size: 13.5px;
+  line-height: 1.5;
+  font-family: var(--doc-font, var(--font-sans));
+  color-scheme: light;
+  /* La hoja es siempre blanca: barras de scroll claras también en modo oscuro */
+  --sb-thumb: rgb(15 23 42 / 0.16);
+  --sb-thumb-hover: rgb(15 23 42 / 0.32);
+}
+
+.paper-logo {
+  display: block;
+  max-width: 200px;
+  max-height: 64px;
+  object-fit: contain;
+  object-position: left center;
+}
+
+/* ─── Estructuras del diseño a medida (mismas que el PDF) ─── */
+
+/* Clásica: cabecera centrada, doble filete, tabla enmarcada, total en color */
+.paper.l-classic::before {
+  display: none;
+}
+
+.l-classic .paper-head {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.l-classic .paper-brand {
+  justify-content: center;
+  text-align: center;
+  padding-bottom: 18px;
+  border-bottom: 3px double var(--p-accent);
+}
+
+.l-classic .paper-logo {
+  object-position: center;
+}
+
+.l-classic .paper-title {
+  text-align: left;
+}
+
+.l-classic .paper-title h2 {
+  color: var(--p-accent);
+  letter-spacing: 0.08em;
+}
+
+.l-classic .paper-meta,
+.l-classic .paper-parties {
+  border-radius: 0;
+}
+
+.l-classic .paper-parties {
+  gap: 0;
+  border: 1px solid var(--p-line);
+}
+
+.l-classic .paper-party {
+  padding: 14px 16px;
+}
+
+.l-classic .paper-party + .paper-party {
+  border-left: 1px solid var(--p-line);
+}
+
+.l-classic .paper-lines th {
+  padding: 9px 10px;
+  color: var(--p-text);
+  background: color-mix(in srgb, var(--p-accent) 12%, white);
+  border: 1px solid var(--p-line);
+}
+
+.l-classic .paper-lines td {
+  padding: 10px;
+  border: 1px solid var(--p-line);
+}
+
+.l-classic .paper-totals .t-total {
+  color: var(--p-on-accent);
+  background: var(--p-accent);
+  border-radius: 0;
+}
+
+/* Minimalista: sin rellenos, filetes finos, título y total en color */
+.paper.l-minimal::before {
+  display: none;
+}
+
+.l-minimal .paper-title h2 {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: -0.01em;
+  font-size: 32px;
+  color: var(--p-accent);
+}
+
+.l-minimal .paper-meta {
+  display: flex;
+  gap: 40px;
+  background: none;
+  border: 0;
+}
+
+.l-minimal .paper-meta > div {
+  padding: 0;
+}
+
+.l-minimal .paper-lines th {
+  border-bottom: 1px solid var(--p-line);
+}
+
+.l-minimal .paper-totals .t-total {
+  padding: 12px 0 0;
+  color: var(--p-accent);
+  background: none;
+  border-top: 1.5px solid var(--p-text);
+  border-radius: 0;
+}
+
+.l-minimal .paper-totals .t-total strong {
+  font-size: 26px;
+}
+
+/* Impacto: cabecera a todo color, tabla y total en color */
+.paper.l-bold {
+  overflow: hidden;
+}
+
+.paper.l-bold::before {
+  display: none;
+}
+
+.l-bold .paper-head {
+  margin: -56px -60px 0;
+  padding: 44px 60px 34px;
+  color: var(--p-on-accent);
+  background: var(--p-accent);
+}
+
+.l-bold .paper-company,
+.l-bold .paper-title h2,
+.l-bold .paper-number {
+  color: var(--p-on-accent);
+}
+
+.l-bold .paper-company-sub,
+.l-bold .paper-qr div {
+  color: color-mix(in srgb, var(--p-on-accent) 78%, transparent);
+}
+
+.l-bold .paper-qr strong {
+  color: var(--p-on-accent);
+}
+
+/* Celdas con fondo o rejilla: la primera y la última columna necesitan aire */
+.paper.l-bold .paper-lines th:first-child,
+.paper.l-bold .paper-lines td:first-child,
+.paper.l-classic .paper-lines th:first-child,
+.paper.l-classic .paper-lines td:first-child {
+  padding-left: 10px;
+}
+
+.paper.l-bold .paper-lines th:last-child,
+.paper.l-bold .paper-lines td:last-child,
+.paper.l-classic .paper-lines th:last-child,
+.paper.l-classic .paper-lines td:last-child {
+  padding-right: 10px;
+}
+
+.l-bold .paper-qr svg {
+  padding: 4px;
+  background: #fff;
+}
+
+.l-bold .paper-logo {
+  padding: 7px 10px;
+  background: #fff;
+  border-radius: 8px;
+  box-sizing: content-box;
+}
+
+.l-bold .paper-mark {
+  color: var(--p-accent);
+  background: var(--p-on-accent);
+}
+
+.l-bold .paper-lines th {
+  padding: 9px 10px;
+  color: var(--p-on-accent);
+  background: var(--p-accent);
+  border: 0;
+}
+
+.l-bold .paper-lines td {
+  padding-left: 10px;
+  padding-right: 10px;
+  border-bottom: 0;
+}
+
+.l-bold .paper-lines tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--p-accent) 6%, white);
+}
+
+.l-bold .paper-totals .t-total {
+  color: var(--p-on-accent);
+  background: var(--p-accent);
+}
+
+@media (max-width: 767px) {
+  .l-bold .paper-head {
+    margin: -32px -20px 0;
+    padding: 28px 20px 24px;
+  }
+}
+
+.paper::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 5px;
+  border-radius: 14px 14px 0 0;
+  background: var(--p-accent);
+}
+
+.paper-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 32px;
+}
+
+.paper-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.paper-mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  font-size: 17px;
+  font-weight: 750;
+  color: #fff;
+  background: var(--p-accent);
+  border-radius: 12px;
+  letter-spacing: -0.02em;
+}
+
+.paper-company {
+  font-size: 17px;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.paper-company-sub {
+  font-size: 12px;
+  color: var(--p-text-3);
+}
+
+.paper-title {
+  text-align: right;
+}
+
+.paper-title h2 {
+  font-size: 26px;
+  font-weight: 760;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  color: var(--p-text);
+}
+
+.paper-number {
+  margin-top: 2px;
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: var(--p-text-2);
+}
+
+.paper-number.pending {
+  color: var(--p-text-3);
+  font-style: italic;
+  font-family: var(--font-sans);
+}
+
+.paper-meta {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 1px;
+  margin-top: 36px;
+  overflow: hidden;
+  background: var(--p-line);
+  border: 1px solid var(--p-line);
+  border-radius: 10px;
+}
+
+.paper-meta > div {
+  padding: 10px 14px;
+  background: #fff;
+}
+
+.paper-label {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--p-text-3);
+}
+
+.paper-parties {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  margin-top: 32px;
+}
+
+.paper-party-name {
+  font-size: 14.5px;
+  font-weight: 650;
+}
+
+.paper-party p {
+  color: var(--p-text-2);
+}
+
+/* Líneas */
+.paper-lines {
+  width: 100%;
+  margin-top: 36px;
+  border-collapse: collapse;
+}
+
+.paper-lines thead {
+  display: table-header-group;
+}
+
+.paper-lines th {
+  padding: 0 10px 10px;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--p-text-3);
+  border-bottom: 1.5px solid var(--p-text);
+}
+
+.paper-lines td {
+  padding: 12px 10px;
+  vertical-align: top;
+  border-bottom: 1px solid var(--p-line);
+}
+
+.paper-lines tr {
+  break-inside: avoid;
+}
+
+.paper-lines .r {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.paper-lines th:first-child,
+.paper-lines td:first-child {
+  padding-left: 0;
+}
+
+.paper-lines th:last-child,
+.paper-lines td:last-child {
+  padding-right: 0;
+}
+
+.paper-desc {
+  white-space: pre-line;
+}
+
+.paper-desc-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--p-text-3);
+}
+
+/* Totales */
+.paper-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+  gap: 40px;
+  margin-top: 28px;
+  break-inside: avoid;
+}
+
+.paper-totals {
+  font-variant-numeric: tabular-nums;
+}
+
+.paper-totals .t-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+  color: var(--p-text-2);
+}
+
+.paper-totals .t-row.minus {
+  color: #b42318;
+}
+
+.paper-totals .t-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 8px;
+  padding: 14px 16px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--p-text);
+  background: var(--p-soft);
+  border-radius: 10px;
+}
+
+.paper-totals .t-total strong {
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+
+.paper-notes {
+  color: var(--p-text-2);
+  white-space: pre-line;
+}
+
+.paper-pay {
+  margin-top: 24px;
+  break-inside: avoid;
+}
+
+.paper-pay .paper-label {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.paper-pay .iban {
+  margin-top: 2px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--p-text);
+}
+
+/* Texto con formato (descripción): mismo aspecto al editar, en la ficha, en la página pública y en el PDF */
+.paper-desc {
+  margin-top: 28px;
+}
+
+.rich {
+  color: var(--p-text-2);
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+.rich p,
+.rich h3,
+.rich ul,
+.rich ol {
+  margin: 0;
+}
+
+.rich p + p,
+.rich p + ul,
+.rich p + ol,
+.rich ul + p,
+.rich ol + p,
+.rich ul + ul,
+.rich ol + ol,
+.rich ul + ol,
+.rich ol + ul {
+  margin-top: 6px;
+}
+
+.rich h3 {
+  font-size: 1.08em;
+  font-weight: 650;
+  color: var(--p-text);
+  letter-spacing: -0.01em;
+}
+
+.rich * + h3 {
+  margin-top: 12px;
+}
+
+.rich h3 + * {
+  margin-top: 3px;
+}
+
+.rich ul,
+.rich ol {
+  padding-left: 22px;
+}
+
+.rich ul {
+  list-style: disc;
+}
+
+.rich ol {
+  list-style: decimal;
+}
+
+.rich li + li {
+  margin-top: 2px;
+}
+
+.rich li::marker {
+  color: var(--p-accent);
+}
+
+.rich b,
+.rich strong,
+.rich .b {
+  font-weight: 650;
+  color: var(--p-text);
+}
+
+.rich i,
+.rich em,
+.rich .i {
+  font-style: italic;
+}
+
+.rich u,
+.rich .u {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.paper-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  margin-top: 40px;
+  padding-top: 18px;
+  font-size: 11.5px;
+  color: var(--p-text-3);
+  border-top: 1px solid var(--p-line);
+  break-inside: avoid;
+}
+
+.paper-qr {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.paper-qr svg,
+.paper-qr img {
+  width: 84px;
+  height: 84px;
+}
+
+.paper-qr strong {
+  display: block;
+  font-size: 12px;
+  color: var(--p-text);
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 767px) {
+  .paper {
+    padding: 32px 20px 24px;
+    border-radius: 12px;
+    font-size: 13px;
+  }
+
+  .paper-head {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .paper-title {
+    text-align: left;
+  }
+
+  .paper-meta {
+    grid-auto-flow: row;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* Tres datos en dos columnas: el último ocupa la fila entera (sin hueco gris) */
+  .paper-meta > :last-child:nth-child(odd) {
+    grid-column: span 2;
+  }
+
+  .paper-parties,
+  .paper-bottom {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+}
+
+/* ─── Impresión / Guardar como PDF: solo la hoja, A4, cabecera de tabla en cada página ─── */
+@page {
+  size: A4;
+  margin: 14mm 14mm 16mm;
+}
+
+@media print {
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .print-root,
+  .print-root * {
+    visibility: visible;
+  }
+
+  .print-root {
+    position: absolute;
+    inset: 0 0 auto;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .paper {
+    max-width: none;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+    font-size: 11.5px;
+  }
+
+  .paper::before {
+    display: none;
+  }
+
+  .paper-head {
+    flex-direction: row;
+  }
+
+  .paper-title {
+    text-align: right;
+  }
+
+  .paper-meta {
+    grid-auto-flow: column;
+    grid-template-columns: none;
+  }
+
+  .paper-meta > :last-child:nth-child(odd) {
+    grid-column: auto;
+  }
+
+  .paper-parties {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .paper-bottom {
+    grid-template-columns: 1fr 300px;
+  }
+}
+
+/* ─── Móvil: cada línea es una ficha (concepto arriba; cantidad × precio e importe debajo) ─── */
+@media screen and (max-width: 560px) {
+  .paper.paper .lines-wrap {
+    overflow: visible;
+  }
+
+  .paper.paper .lines-wrap .paper-lines {
+    display: block;
+    min-width: 0;
+  }
+
+  .paper.paper .lines-wrap thead {
+    display: none;
+  }
+
+  .paper.paper .lines-wrap tbody {
+    display: block;
+    border-top: 2px solid var(--p-accent);
+  }
+
+  .paper.paper .lines-wrap tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 5px;
+    padding: 12px 2px;
+    border-bottom: 1px solid var(--p-line);
+  }
+
+  .paper.paper .lines-wrap td {
+    display: block;
+    padding: 0;
+    font-size: 12px;
+    color: var(--p-text-3);
+    text-align: left;
+    background: none;
+    border: 0;
+  }
+
+  .paper.paper .lines-wrap td.c-desc,
+  .paper.paper .lines-wrap td.c-a {
+    padding: 0;
+  }
+
+  .paper.paper .lines-wrap td.c-desc {
+    flex-basis: 100%;
+    margin-bottom: 3px;
+    font-size: 13px;
+    color: var(--p-text);
+  }
+
+  .paper.paper .lines-wrap td.c-q::after {
+    content: ' \00d7';
+  }
+
+  .paper.paper .lines-wrap td.c-d:empty {
+    display: none;
+  }
+
+  .paper.paper .lines-wrap td.c-d::before {
+    content: '\00b7  Dto. ';
+  }
+
+  .paper.paper .lines-wrap td.c-v::before {
+    content: '\00b7  IVA ';
+  }
+
+  .paper.paper .lines-wrap td.c-a {
+    margin-left: auto;
+    font-size: 13.5px;
+    font-weight: 650;
+    color: var(--p-text);
+  }
+}

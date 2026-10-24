@@ -1,0 +1,1 @@
+ALTER TABLE `contacts` ADD `logo_path` varchar(500);

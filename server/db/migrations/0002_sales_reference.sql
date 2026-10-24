@@ -1,0 +1,1 @@
+ALTER TABLE `sales_documents` ADD `customer_reference` varchar(80);

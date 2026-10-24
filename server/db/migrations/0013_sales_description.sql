@@ -1,0 +1,1 @@
+ALTER TABLE `sales_documents` ADD `description` longtext;

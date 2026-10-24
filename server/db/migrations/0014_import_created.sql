@@ -1,0 +1,1 @@
+ALTER TABLE `import_batches` ADD `created` longtext;

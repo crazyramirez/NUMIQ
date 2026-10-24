@@ -1,0 +1,190 @@
+/* ═══ NUMIQ · tokens de diseño ═════════════════════════════════════════════════
+   Colores semánticos (nunca hex sueltos en componentes), escala de espacio de 4 px,
+   tipografía Inter con cifras tabulares. Claro por defecto; oscuro con [data-theme="dark"].  */
+
+:root {
+  /* Tipografía */
+  --font-sans: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  --text-2xs: 0.6875rem;  /* 11 */
+  --text-xs: 0.75rem;     /* 12 */
+  --text-sm: 0.8125rem;   /* 13 */
+  --text-base: 0.875rem;  /* 14 */
+  --text-md: 0.9375rem;   /* 15 */
+  --text-lg: 1.0625rem;   /* 17 */
+  --text-xl: 1.25rem;     /* 20 */
+  --text-2xl: 1.5rem;     /* 24 */
+  --text-3xl: 1.875rem;   /* 30 */
+  --text-4xl: 2.375rem;   /* 38 */
+
+  /* Espacio */
+  --s-0: 2px;
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-7: 32px;
+  --s-8: 40px;
+  --s-9: 56px;
+  --s-10: 72px;
+
+  /* Radios */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-2xl: 22px;
+  --r-full: 999px;
+
+  /* Movimiento */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.55, 0, 1, 0.45);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --t-fast: 120ms;
+  --t-base: 180ms;
+  --t-slow: 280ms;
+
+  /* Capas */
+  --z-sticky: 20;
+  --z-sidebar: 30;
+  --z-dropdown: 40;
+  --z-overlay: 50;
+  --z-modal: 60;
+  --z-palette: 70;
+  /* Menús y desplegables (van a <body>): por encima de cualquier modal abierto */
+  --z-popover: 75;
+  --z-toast: 80;
+
+  /* Layout */
+  --sidebar-w: 248px;
+  --sidebar-w-collapsed: 68px;
+  --topbar-h: 60px;
+  --content-max: 1360px;
+
+  /* ─── Colores · claro ─── */
+  color-scheme: light;
+  --bg: #f5f6f8;
+  --bg-grad: radial-gradient(1200px 600px at 100% -10%, #eef0ff 0%, transparent 60%);
+  --surface: #ffffff;
+  --surface-2: #fafbfc;
+  --surface-sunken: #f1f3f6;
+  --surface-hover: #f4f5f8;
+  --surface-active: #eceef3;
+  --surface-inverse: #0d1117;
+  --overlay: rgb(9 11 16 / 0.48);
+
+  --border: #e5e7ec;
+  --border-subtle: #eef0f3;
+  --border-strong: #d3d7df;
+
+  --text: #0d1117;
+  --text-2: #3f4654;
+  --text-3: #626a79;
+  --text-4: #9aa1ae;
+  --text-inverse: #ffffff;
+
+  --brand: #4f46e5;
+  --brand-hover: #4338ca;
+  --brand-text: #4338ca;
+  --brand-soft: #eef0ff;
+  --brand-soft-2: #e0e4ff;
+  --brand-ring: rgb(79 70 229 / 0.28);
+  --on-brand: #ffffff;
+
+  --success: #047857;
+  --success-solid: #059669;
+  --success-soft: #e9f8f1;
+  --warning: #a15c07;
+  --warning-solid: #d97706;
+  --warning-soft: #fdf5e6;
+  --danger: #c81e1e;
+  --danger-solid: #dc2626;
+  --danger-soft: #fdeeee;
+  --info: #0369a1;
+  --info-solid: #0284c7;
+  --info-soft: #eaf5fc;
+
+  /* IA: degradado propio, reservado a funciones inteligentes */
+  --ai-1: #7c3aed;
+  --ai-2: #4f46e5;
+  --ai-3: #0ea5e9;
+  --ai-grad: linear-gradient(120deg, var(--ai-1) 0%, var(--ai-2) 45%, var(--ai-3) 100%);
+  --ai-soft: linear-gradient(120deg, rgb(124 58 237 / 0.08), rgb(14 165 233 / 0.08));
+  --ai-text: #5b3fd9;
+
+  /* Gráficos */
+  --chart-income: #4f46e5;
+  --chart-expense: #d97706;
+  --chart-profit: #059669;
+  --chart-grid: #eceef2;
+
+  /* Sombras: capas suaves con tinte frío */
+  --shadow-xs: 0 1px 2px rgb(16 24 40 / 0.05);
+  --shadow-sm: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.06);
+  --shadow-md: 0 2px 4px -1px rgb(16 24 40 / 0.05), 0 6px 16px -4px rgb(16 24 40 / 0.08);
+  --shadow-lg: 0 4px 8px -2px rgb(16 24 40 / 0.05), 0 16px 32px -8px rgb(16 24 40 / 0.14);
+  --shadow-xl: 0 8px 16px -4px rgb(16 24 40 / 0.06), 0 28px 56px -12px rgb(16 24 40 / 0.22);
+  --shadow-ring: 0 0 0 1px var(--border);
+  --focus-ring: 0 0 0 3px var(--brand-ring);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0a0c10;
+  --bg-grad: radial-gradient(1200px 600px at 100% -10%, rgb(79 70 229 / 0.10) 0%, transparent 60%);
+  --surface: #11141a;
+  --surface-2: #14181f;
+  --surface-sunken: #0d1015;
+  --surface-hover: #181c24;
+  --surface-active: #1e232d;
+  --surface-inverse: #f3f4f7;
+  --overlay: rgb(0 0 0 / 0.62);
+
+  --border: #222732;
+  --border-subtle: #1a1e27;
+  --border-strong: #2e3441;
+
+  --text: #eef0f4;
+  --text-2: #c2c7d1;
+  --text-3: #9098a7;
+  --text-4: #626a79;
+  --text-inverse: #0d1117;
+
+  --brand: #6366f1;
+  --brand-hover: #7477f5;
+  --brand-text: #a5b4fc;
+  --brand-soft: rgb(99 102 241 / 0.14);
+  --brand-soft-2: rgb(99 102 241 / 0.22);
+  --brand-ring: rgb(129 140 248 / 0.38);
+
+  --success: #34d399;
+  --success-solid: #10b981;
+  --success-soft: rgb(16 185 129 / 0.13);
+  --warning: #fbbf24;
+  --warning-solid: #f59e0b;
+  --warning-soft: rgb(245 158 11 / 0.13);
+  --danger: #f87171;
+  --danger-solid: #ef4444;
+  --danger-soft: rgb(239 68 68 / 0.13);
+  --info: #38bdf8;
+  --info-solid: #0ea5e9;
+  --info-soft: rgb(14 165 233 / 0.13);
+
+  --ai-text: #c4b5fd;
+  --ai-soft: linear-gradient(120deg, rgb(124 58 237 / 0.16), rgb(14 165 233 / 0.12));
+
+  --chart-income: #6366f1;
+  --chart-expense: #c98210;
+  --chart-profit: #34d399;
+  --chart-grid: #1f242e;
+
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px rgb(0 0 0 / 0.25);
+  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.35), 0 6px 16px -4px rgb(0 0 0 / 0.45);
+  --shadow-lg: 0 4px 8px -2px rgb(0 0 0 / 0.4), 0 16px 32px -8px rgb(0 0 0 / 0.55);
+  --shadow-xl: 0 8px 16px -4px rgb(0 0 0 / 0.45), 0 28px 56px -12px rgb(0 0 0 / 0.65);
+}

@@ -1,0 +1,191 @@
+<p align="center">
+  <img src=".github/assets/readme-header.webp" alt="NUMIQ — Facturación, gastos e impuestos con IA" width="100%">
+</p>
+
+# NUMIQ
+
+Gestión completa para autónomos y pequeñas empresas españolas: facturas y presupuestos, gastos, banco, impuestos, archivo para la gestoría e IA que lee documentos y responde con las cifras reales de la empresa.
+
+App web instalable (PWA), responsive y en español. Varias empresas por cuenta y equipo con roles.
+
+---
+
+## Qué hace
+
+| Área | Funciones |
+|---|---|
+| **Ventas** | Facturas, presupuestos y rectificativas con numeración por series. Diseño de factura a medida (logo, colores, tipografías, textos por defecto) y PDF generado en el servidor. Envío por correo con PDF y adjuntos. Página pública para el cliente (`/p/:token`): ver, descargar, aceptar o rechazar presupuestos y datos de pago, con aviso de lectura. Cobros parciales y recordatorios de pago automáticos. |
+| **Catálogo y contactos** | Productos y servicios con imagen, precio, IVA y unidad, que se sugieren al escribir el concepto de una línea. Clientes y proveedores con validación de NIF/CIF/NIE y NIF-IVA, retención IRPF, recargo de equivalencia y categoría de gasto por defecto. Relleno con IA a partir de una firma, una foto o un PDF. |
+| **Gastos** | Registro manual o leído con IA desde foto, PDF, Word o Excel. Importación por lotes (PDF, imágenes, Word, Excel, CSV, XML o un ZIP con todo) con detección de duplicados. Recepción de facturas por correo (IMAP): cada empresa tiene su alias `cuenta+empresa@…`. Gastos deducibles según la normativa. |
+| **Banco** | Importación de extractos (Norma 43, CSV, Excel; si el formato es desconocido, la IA identifica las columnas). Conciliación de movimientos con facturas y gastos, y saldo por cuenta. |
+| **Impuestos** | Borradores de los modelos 303, 130, 111 y 115 (trimestrales) y 390, 190, 180 y 347 (anuales) con sus casillas, listos para copiar en la Sede de la AEAT. Guía de presentación y lectura con IA del justificante. |
+| **VeriFactu** | Registros encadenados con hash, QR en la factura y XML validado contra los XSD oficiales. Envío SOAP a la AEAT con el certificado de la empresa (guardado cifrado). Es opcional por empresa: si está desactivado, no aparece en ningún sitio. *El envío automático está apagado en el código (`server/plugins/verifactu-sender.ts`) porque la obligación se ha pospuesto.* |
+| **Gestoría** | Archivo documental por trimestre (banco, contratos, nóminas…). «Envío al gestor»: ZIP con emitidas, recibidas con sus originales, archivo y resumen en Excel y PDF, enviado con enlace seguro. Rol *asesor* con acceso de solo lectura. |
+| **Recurrentes** | Cuotas, igualas, alquileres y suscripciones que se generan solos en su fecha, como borrador o emitidos y enviados. |
+| **Informes** | Panel de inicio, informes por periodo, libros registro y exportación a Excel y PDF. |
+| **Asistente IA** | Chat que consulta los datos de la empresa con herramientas de solo lectura (ventas, gastos, impuestos, banco…) y puede preparar borradores de factura. |
+| **Cuenta y equipo** | Registro con verificación de email, recuperación de contraseña e invitaciones con roles (`owner`, `admin`, `member`, `advisor`). Copia de seguridad completa en ZIP desde Ajustes. Modo claro y oscuro. |
+
+---
+
+## Tecnología
+
+- **Nuxt 4** en modo SPA (`ssr: false`): el servidor Nitro solo expone la API (`/api/*`).
+- **Vue 3 + TypeScript estricto**, con un sistema de diseño propio en CSS puro (`app/assets/css`) e iconos Phosphor (`@nuxt/icon`).
+- **MariaDB / MySQL** con **Drizzle ORM** (`mysql2`) y migraciones SQL versionadas.
+- **Zod 4** para validar las entradas de la API y **nuxt-auth-utils** para sesiones en cookie cifrada.
+- **pdfmake** para los PDF, **SheetJS** para los Excel, **fflate** para los ZIP y **qrcode** para el QR.
+- **nodemailer** (SMTP) para enviar e **imapflow** con **mailparser** para recibir.
+- **OpenAI** para leer documentos y para el asistente, y **node-forge** para los certificados .p12/.pfx.
+
+Requisitos: **Node.js ≥ 22.22**. En local no hace falta instalar MySQL (ver más abajo).
+
+---
+
+## Puesta en marcha en local
+
+```bash
+npm install
+cp .env.example .env      # y rellena al menos NUXT_SESSION_PASSWORD
+npm run dev               # http://localhost:3210
+```
+
+`npm run dev` hace dos cosas:
+
+1. Arranca un **MariaDB portable** del propio proyecto en `127.0.0.1:3308` (usuario `root` sin contraseña). La primera vez descarga los binarios a `.data/mariadb` y guarda los datos en `.data/mysql`, fuera de git. Está pensado para Windows. En otros sistemas, apunta `NUXT_DATABASE_URL` a tu MySQL.
+2. Lanza Nuxt en el puerto **3210**, escuchando en `0.0.0.0`, así que también se puede abrir desde el móvil en `http://<ip-del-pc>:3210`.
+
+Al arrancar se aplican las migraciones pendientes (`autoMigrate`).
+
+Para tener datos con los que probar, crea una cuenta en `/registro` y, en la bienvenida, activa **«Rellenar con datos de ejemplo»**. Genera un año de actividad ficticia de un estudio de diseño: facturas emitidas en orden cronológico, gastos, clientes, banco e impuestos.
+
+Para generar la clave de sesión:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+---
+
+## Variables de entorno
+
+Plantilla completa y comentada en [`.env.example`](.env.example). Las claves reales van solo en `.env`, que no se sube a git.
+
+| Variable | Para qué |
+|---|---|
+| `NUXT_SESSION_PASSWORD` | **Obligatoria.** 32 o más caracteres aleatorios para cifrar las sesiones. |
+| `NUXT_DATABASE_URL` | Conexión MySQL (`mysql://usuario:clave@host:puerto/base`). |
+| `DB_HOST` `DB_PORT` `DB_USER` `DB_PASSWORD` `DB_NAME` `DB_SOCKET` | Alternativa por partes (útil en Plesk). Tienen prioridad sobre la URL y la contraseña no necesita codificarse. |
+| `NUXT_UPLOADS_DIR` | Carpeta de archivos subidos (por defecto `./storage/uploads`). |
+| `NUXT_SITE_URL` | URL pública para los enlaces de los correos, sin barra final. |
+| `NUXT_OPENAI_API_KEY` | IA: lectura de documentos, importación, relleno de contactos y asistente. |
+| `NUXT_OPENAI_MODEL` · `NUXT_OPENAI_PRO_MODEL` · `NUXT_OPENAI_CHAT_MODEL` · `NUXT_OPENAI_CONCURRENCY` | Opcionales: modelo de lectura rápida, modelo de segunda lectura cuando los importes no cuadran, modelo del asistente y documentos leídos en paralelo. |
+| `GOOGLE_APP_EMAIL` · `GOOGLE_APP_PASSWORD` | Correo con Gmail o Workspace (contraseña de aplicación): envío por SMTP y recepción por IMAP. |
+| `NUXT_MAIL_SMTP_HOST` `…_PORT` `NUXT_MAIL_IMAP_HOST` `NUXT_MAIL_USER` `NUXT_MAIL_PASSWORD` `NUXT_MAIL_FROM` | Otro proveedor de correo en lugar de Gmail. |
+| `NUXT_MAIL_INBOX_OWNERS` | Usuarios que pueden buscar facturas en todo el buzón, no solo en su alias. |
+| `NUXT_MAIL_ONLY_TO` | **Modo pruebas:** solo salen correos a estas direcciones o `@dominios`; el resto se omite y queda registrado como no enviado. |
+| `NUXT_CERT_SECRET` | Clave para cifrar los certificados digitales. Si falta, se usa la de sesión, y cambiar esa obliga a volver a subir el certificado. |
+| `NUXT_VERIFACTU_PRODUCER_NAME` · `NUXT_VERIFACTU_PRODUCER_NIF` | Productor del sistema informático en los registros VeriFactu. |
+| `NUXT_RECURRING_DISABLED` · `NUXT_REMINDERS_DISABLED` · `NUXT_VERIFACTU_SENDER_DISABLED` | `true` apaga la tarea programada correspondiente. |
+
+Sin `NUXT_OPENAI_API_KEY` la app funciona, pero sin las funciones de IA. Sin el correo configurado no sale ningún email: la verificación de cuenta se omite y los envíos quedan registrados como no enviados («Sin configurar»).
+
+---
+
+## Scripts
+
+| Comando | Qué hace |
+|---|---|
+| `npm run dev` | MariaDB local y Nuxt en el puerto 3210. |
+| `npm run build` | Compila a `.output/`, migraciones incluidas. |
+| `npm run preview` | Arranca la versión compilada (`node .output/server/index.mjs`). |
+| `npm run db:local` / `npm run db:stop` | Arranca en primer plano o detiene el MariaDB local. |
+| `npm run db:generate` | Crea una migración a partir de `server/db/schema.ts`. |
+| `npm run db:migrate` · `npm run db:studio` | Aplica migraciones a mano o abre Drizzle Studio. |
+| `npm run clone:export` / `npm run clone:import <zip>` | Clona una instalación completa (todas las tablas y archivos) a otro servidor. |
+| `npm run test:*` | Pruebas de la importación: duplicados, fechas de archivo, lectura y vista previa. |
+
+---
+
+## Estructura
+
+```
+app/                      Cliente (Vue)
+  pages/                  Rutas: facturas, presupuestos, gastos, banco, impuestos, informes, ajustes…
+  components/             Pantallas y piezas por área (sales/, bank/, import/, settings/, taxes/…)
+  components/ui/          Sistema de diseño: <UiButton>, <UiModal>, <UiInput>… (prefijo Ui)
+  components/app/         Estructura de la app: barra lateral, paleta de comandos… (prefijo App)
+  composables/            useMe, useToast, useConfirm, usePwa, useTheme…
+  assets/css/             tokens.css, base.css, ui.css (utilidades) y paper.css (factura)
+server/
+  api/                    Endpoints REST, agrupados por recurso
+  utils/                  Lógica de negocio (autoimportada en Nitro)
+  plugins/                Tareas programadas y comprobación de configuración
+  db/schema.ts            Esquema Drizzle
+  db/migrations/          Migraciones SQL (0000…)
+shared/                   Tipos y utilidades comunes a cliente y servidor (NIF, IVA, recurrencias…)
+public/                   Manifest de la PWA, iconos y estáticos
+scripts/                  MariaDB local, clonación y pruebas
+storage/uploads/          Archivos subidos, por empresa (fuera de git)
+```
+
+Las rutas de la API comprueban la sesión y la empresa activa con `requireCompany(event, rolMínimo)`. Todas las consultas filtran por `companyId`.
+
+---
+
+## Base de datos
+
+- El esquema está en `server/db/schema.ts`. Tras cambiarlo:
+  ```bash
+  npx drizzle-kit generate --name descripcion_corta
+  ```
+  Eso crea `server/db/migrations/00NN_descripcion_corta.sql`. Revísalo antes de dar el cambio por bueno.
+- Las migraciones se aplican solas al arrancar el servidor, en desarrollo y en producción. `npm run build` las copia dentro de `.output`.
+- Los ajustes flexibles de cada empresa (gestoría, VeriFactu, recordatorios, copia de seguridad…) se guardan como JSON en `companies.settings`.
+
+---
+
+## Tareas programadas
+
+Se ejecutan dentro del propio servidor Nitro (`server/plugins`):
+
+| Tarea | Frecuencia |
+|---|---|
+| Recurrentes: genera las facturas y gastos que tocan | Cada 15 min. Usa un bloqueo por fila, así que es seguro con varias instancias. |
+| Recordatorios de cobro a clientes con facturas vencidas | Cada 20 min, de lunes a viernes de 9 a 19 h (hora de Madrid). |
+| Limpieza de escaneos no guardados y ZIP de gestoría caducados | Cada hora. |
+| Envío automático VeriFactu | Desactivado en el código. |
+
+---
+
+## Despliegue
+
+1. `npm run build`.
+2. Sube la carpeta `.output/` al servidor, que necesita Node ≥ 22.22, y arranca con `node .output/server/index.mjs`.
+3. Configura las variables de entorno. En Plesk, `DB_*` con los datos de la base creada en el panel, más `NUXT_SESSION_PASSWORD`, `NUXT_SITE_URL`, el correo y la IA.
+4. La primera vez que arranca crea las tablas. Asegura que `NUXT_UPLOADS_DIR` apunta a una carpeta persistente y con copia de seguridad.
+
+Usa HTTPS en producción: la cookie de sesión es `Secure`. En desarrollo se relaja para poder entrar desde otros dispositivos de la red.
+
+Para mover una instalación con todos sus datos usa `npm run clone:export` en el origen y `npm run clone:import <zip>` en el destino.
+
+---
+
+## Comprobar tipos
+
+El `tsconfig.json` raíz solo contiene referencias, así que `vue-tsc` sin `-p` no comprueba nada. Hay que comprobar cada proyecto por separado:
+
+```bash
+npx vue-tsc --noEmit -p .nuxt/tsconfig.app.json
+npx vue-tsc --noEmit -p .nuxt/tsconfig.server.json
+npx vue-tsc --noEmit -p .nuxt/tsconfig.shared.json
+```
+
+---
+
+## Buenas prácticas del proyecto
+
+- **Secretos:** solo en `.env`. Nunca en `.env.example` ni en el código.
+- **Correos en pruebas:** arranca con `NUXT_MAIL_ONLY_TO=<tu correo>` para no escribir nunca a clientes reales. Las direcciones de dominios reservados (`example.com`, `.test`…) se omiten siempre.
+- **Autoimportaciones:** las utilidades de `server/utils` y `shared/utils` se autoimportan. Si una función nueva da «is not defined» en desarrollo, reinicia el servidor.
+- **Imágenes subidas:** el tipo se comprueba por el contenido, no por la extensión. Productos y contactos admiten PNG o JPG; el logo de la empresa admite también SVG, que se sirve aislado para que no pueda ejecutar nada en el dominio.
