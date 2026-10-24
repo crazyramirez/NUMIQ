@@ -19,7 +19,6 @@ App web instalable (PWA), responsive y en español. Varias empresas por cuenta y
 | **Gastos** | Registro manual o leído con IA desde foto, PDF, Word o Excel. Importación por lotes (PDF, imágenes, Word, Excel, CSV, XML o un ZIP con todo) con detección de duplicados. Recepción de facturas por correo (IMAP): cada empresa tiene su alias `cuenta+empresa@…`. Gastos deducibles según la normativa. |
 | **Banco** | Importación de extractos (Norma 43, CSV, Excel; si el formato es desconocido, la IA identifica las columnas). Conciliación de movimientos con facturas y gastos, y saldo por cuenta. |
 | **Impuestos** | Borradores de los modelos 303, 130, 111 y 115 (trimestrales) y 390, 190, 180 y 347 (anuales) con sus casillas, listos para copiar en la Sede de la AEAT. Guía de presentación y lectura con IA del justificante. |
-| **VeriFactu** | Registros encadenados con hash, QR en la factura y XML validado contra los XSD oficiales. Envío SOAP a la AEAT con el certificado de la empresa (guardado cifrado). Es opcional por empresa: si está desactivado, no aparece en ningún sitio. *El envío automático está apagado en el código (`server/plugins/verifactu-sender.ts`) porque la obligación se ha pospuesto.* |
 | **Gestoría** | Archivo documental por trimestre (banco, contratos, nóminas…). «Envío al gestor»: ZIP con emitidas, recibidas con sus originales, archivo y resumen en Excel y PDF, enviado con enlace seguro. Rol *asesor* con acceso de solo lectura. |
 | **Recurrentes** | Cuotas, igualas, alquileres y suscripciones que se generan solos en su fecha, como borrador o emitidos y enviados. |
 | **Informes** | Panel de inicio, informes por periodo, libros registro y exportación a Excel y PDF. |
@@ -34,7 +33,7 @@ App web instalable (PWA), responsive y en español. Varias empresas por cuenta y
 - **Vue 3 + TypeScript estricto**, con un sistema de diseño propio en CSS puro (`app/assets/css`) e iconos Phosphor (`@nuxt/icon`).
 - **MariaDB / MySQL** con **Drizzle ORM** (`mysql2`) y migraciones SQL versionadas.
 - **Zod 4** para validar las entradas de la API y **nuxt-auth-utils** para sesiones en cookie cifrada.
-- **pdfmake** para los PDF, **SheetJS** para los Excel, **fflate** para los ZIP y **qrcode** para el QR.
+- **pdfmake** para los PDF, **SheetJS** para los Excel y **fflate** para los ZIP.
 - **nodemailer** (SMTP) para enviar e **imapflow** con **mailparser** para recibir.
 - **OpenAI** para leer documentos y para el asistente, y **node-forge** para los certificados .p12/.pfx.
 
@@ -85,8 +84,7 @@ Plantilla completa y comentada en [`.env.example`](.env.example). Las claves rea
 | `NUXT_MAIL_INBOX_OWNERS` | Usuarios que pueden buscar facturas en todo el buzón, no solo en su alias. |
 | `NUXT_MAIL_ONLY_TO` | **Modo pruebas:** solo salen correos a estas direcciones o `@dominios`; el resto se omite y queda registrado como no enviado. |
 | `NUXT_CERT_SECRET` | Clave para cifrar los certificados digitales. Si falta, se usa la de sesión, y cambiar esa obliga a volver a subir el certificado. |
-| `NUXT_VERIFACTU_PRODUCER_NAME` · `NUXT_VERIFACTU_PRODUCER_NIF` | Productor del sistema informático en los registros VeriFactu. |
-| `NUXT_RECURRING_DISABLED` · `NUXT_REMINDERS_DISABLED` · `NUXT_VERIFACTU_SENDER_DISABLED` | `true` apaga la tarea programada correspondiente. |
+| `NUXT_RECURRING_DISABLED` · `NUXT_REMINDERS_DISABLED` | `true` apaga la tarea programada correspondiente. |
 
 Sin `NUXT_OPENAI_API_KEY` la app funciona, pero sin las funciones de IA. Sin el correo configurado no sale ningún email: la verificación de cuenta se omite y los envíos quedan registrados como no enviados («Sin configurar»).
 
@@ -141,7 +139,7 @@ Las rutas de la API comprueban la sesión y la empresa activa con `requireCompan
   ```
   Eso crea `server/db/migrations/00NN_descripcion_corta.sql`. Revísalo antes de dar el cambio por bueno.
 - Las migraciones se aplican solas al arrancar el servidor, en desarrollo y en producción. `npm run build` las copia dentro de `.output`.
-- Los ajustes flexibles de cada empresa (gestoría, VeriFactu, recordatorios, copia de seguridad…) se guardan como JSON en `companies.settings`.
+- Los ajustes flexibles de cada empresa (gestoría, recordatorios, copia de seguridad…) se guardan como JSON en `companies.settings`.
 
 ---
 
@@ -154,7 +152,6 @@ Se ejecutan dentro del propio servidor Nitro (`server/plugins`):
 | Recurrentes: genera las facturas y gastos que tocan | Cada 15 min. Usa un bloqueo por fila, así que es seguro con varias instancias. |
 | Recordatorios de cobro a clientes con facturas vencidas | Cada 20 min, de lunes a viernes de 9 a 19 h (hora de Madrid). |
 | Limpieza de escaneos no guardados y ZIP de gestoría caducados | Cada hora. |
-| Envío automático VeriFactu | Desactivado en el código. |
 
 ---
 
