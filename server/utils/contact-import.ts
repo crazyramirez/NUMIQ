@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import type { ContactChange, ContactDraft, ContactDraftField } from '../../shared/utils/contact-clean'
 import type { ContactImportAction, ContactImportCommitResult, ContactImportFile, ContactImportJobView, ContactImportMatch, ContactImportPhase, ContactImportResult, ContactImportRole, ContactImportRow, ContactImportUndoResult } from '../../shared/types/contact-import'
-import { findSimilarContact, taxIdKey } from '../../shared/utils/duplicate-matching'
+import { bestByName, findSimilarContact, taxIdKey } from '../../shared/utils/duplicate-matching'
 import type { ReadContact, RefineFix, RefineInput } from './contact-import-read'
 
 /**
@@ -281,11 +281,15 @@ function dedupeChanges(list: ContactChange[]) {
 
 const MERGE_FIELDS: readonly ContactDraftField[] = Object.freeze(['tradeName', 'contactPerson', 'nif', 'email', 'phone', 'website', 'address', 'postalCode', 'city', 'province', 'iban', 'paymentTermsDays', 'irpfRate'] as ContactDraftField[])
 
-/** Mismo NIF, o sin NIF con el mismo nombre o email: se unen y se completan los huecos de la primera */
+/**
+ * Mismo NIF, o sin NIF con el mismo nombre o email, o un nombre que solo cambia por una errata, el orden o
+ * las siglas («Acme Consultng» y «ACME CONSULTING, S.L.»): se unen y se completan los huecos de la primera
+ */
 function mergeRepeated(rows: Working[]) {
   const byNif = new Map<string, Working>()
   const byName = new Map<string, Working>()
   const byEmail = new Map<string, Working>()
+  const kept: Working[] = []
   for (const r of rows) {
     if (r.notContact) continue
     const nif = taxIdKey(r.data.nif)
@@ -296,6 +300,11 @@ function mergeRepeated(rows: Working[]) {
       const cand = (name ? byName.get(name) : undefined) ?? (email ? byEmail.get(email) : undefined)
       const candNif = cand ? taxIdKey(cand.data.nif) : ''
       if (cand && (!nif || !candNif)) target = cand
+    }
+    if (!target) {
+      // Casi el mismo nombre (todas las palabras, como mucho una errata) y ningún NIF que lo contradiga
+      const close = bestByName(kept.filter(k => !nif || !taxIdKey(k.data.nif)).map(k => ({ ...k.data, row: k })), r.data.name, r.data.tradeName)
+      if (close && close.score >= 0.75) target = close.contact.row
     }
     if (target && target.role !== r.role) target.role = 'both'
     if (target) {
@@ -310,6 +319,7 @@ function mergeRepeated(rows: Working[]) {
       if (r.data.notes && !(target.data.notes ?? '').includes(r.data.notes)) target.data.notes = [target.data.notes, r.data.notes].filter(Boolean).join('\n').slice(0, 5000)
       continue
     }
+    kept.push(r)
     if (nif) byNif.set(nif, r)
     if (name && !byName.has(name)) byName.set(name, r)
     if (email && !byEmail.has(email)) byEmail.set(email, r)

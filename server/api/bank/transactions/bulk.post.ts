@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
             continue
           }
           if (s.kind === 'invoice' || s.kind === 'expense' || s.kind === 'payment') await confirmMatch(company, user.id, tx.id, { kind: s.kind, id: s.id! })
-          else if (s.kind === 'new_expense') await expenseFromTx(company, user.id, tx.id, { kind: s.expenseKind ?? 'other', categoryId: s.categoryId ?? null, supplier: s.supplier ?? null, vatRate: s.vatRate ?? 0, description: null, deductiblePct: s.deductiblePct, vatDeductiblePct: s.vatDeductiblePct })
+          else if (s.kind === 'new_expense') await expenseFromTx(company, user.id, tx.id, { kind: s.expenseKind ?? 'other', categoryId: s.categoryId ?? null, supplier: s.supplier ?? null, vatRate: s.vatRate ?? 0, description: null, deductiblePct: s.deductiblePct, vatDeductiblePct: s.vatDeductiblePct, contactId: s.contactId })
           else await db.update(t).set({ status: 'ignored', ignoreReason: s.label, matchedAt: new Date(), matchedBy: user.id }).where(eq(t.id, tx.id))
         }
         else if (action === 'ignore') {

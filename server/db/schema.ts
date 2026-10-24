@@ -504,6 +504,8 @@ export type BankSuggestion = {
   /** Deducibilidad propuesta (la última vez con ese proveedor o la de la categoría) */
   deductiblePct?: number | null
   vatDeductiblePct?: number | null
+  /** Cliente o proveedor reconocido en el movimiento (su IBAN, NIF, historial o nombre) */
+  contactId?: number | null
 }
 
 /** Movimientos de los extractos bancarios importados (Norma 43, CSV o Excel) */

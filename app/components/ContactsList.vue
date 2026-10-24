@@ -201,6 +201,8 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
       </div>
     </section>
 
+    <ContactDuplicates :role="role" @merged="refresh" />
+
     <UiCard padding="none" class="rise list-card" style="--i: 1">
       <div class="toolbar">
         <UiInput v-model="q" icon="ph:magnifying-glass" :placeholder="`Buscar por nombre, NIF, email o ciudad`" :aria-label="`Buscar ${t.title.toLowerCase()}`" class="search" type="search" />

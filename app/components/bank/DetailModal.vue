@@ -13,6 +13,7 @@ interface Suggestion {
   vatRate?: number | null
   deductiblePct?: number | null
   vatDeductiblePct?: number | null
+  contactId?: number | null
 }
 
 interface Tx {

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { and, desc, eq, gte, inArray, isNotNull, lte, ne } from 'drizzle-orm'
 import type { BankSuggestion } from '../db/schema'
+import { bankContactMatcher, learnContactFromTx, type BankContactHit } from './bank-contacts'
 import { significantWords, similarNames } from '../../shared/utils/duplicate-matching'
 
 type Company = typeof tables.companies.$inferSelect
@@ -84,18 +85,18 @@ export async function suggestMatches(company: Company, ids?: number[]) {
   if (!txs.length) return 0
   const since = toISODate(new Date(Date.now() - 600 * DAY))
 
-  const [linked, invoices, expenses, payments, categories, accounts] = await Promise.all([
+  const [linked, invoices, expenses, payments, categories, accounts, contactsOf] = await Promise.all([
     db.select({ paymentId: t.paymentId, expenseId: t.expenseId, salesDocumentId: t.salesDocumentId }).from(t)
       .where(and(eq(t.companyId, company.id), eq(t.status, 'matched'))),
     db.select({
-      id: tables.salesDocuments.id, number: tables.salesDocuments.number, customer: tables.salesDocuments.customer, issueDate: tables.salesDocuments.issueDate,
+      id: tables.salesDocuments.id, number: tables.salesDocuments.number, customer: tables.salesDocuments.customer, contactId: tables.salesDocuments.contactId, issueDate: tables.salesDocuments.issueDate,
       dueDate: tables.salesDocuments.dueDate, total: tables.salesDocuments.total, paidTotal: tables.salesDocuments.paidTotal, kind: tables.salesDocuments.kind,
     }).from(tables.salesDocuments).where(and(
       eq(tables.salesDocuments.companyId, company.id), inArray(tables.salesDocuments.kind, ['invoice', 'rectifying']),
       inArray(tables.salesDocuments.status, ['issued', 'sent', 'partial']),
     )),
     db.select({
-      id: tables.expenses.id, number: tables.expenses.number, supplier: tables.expenses.supplier, description: tables.expenses.description,
+      id: tables.expenses.id, number: tables.expenses.number, supplier: tables.expenses.supplier, supplierId: tables.expenses.supplierId, description: tables.expenses.description,
       issueDate: tables.expenses.issueDate, dueDate: tables.expenses.dueDate, total: tables.expenses.total, paidTotal: tables.expenses.paidTotal, status: tables.expenses.status,
     }).from(tables.expenses).where(and(eq(tables.expenses.companyId, company.id), gte(tables.expenses.issueDate, since))),
     db.select({
@@ -105,29 +106,37 @@ export async function suggestMatches(company: Company, ids?: number[]) {
     db.select({ id: tables.categories.id, name: tables.categories.name, accountCode: tables.categories.accountCode }).from(tables.categories)
       .where(and(eq(tables.categories.companyId, company.id), eq(tables.categories.kind, 'expense'))),
     db.select({ id: tables.bankAccounts.id, bankName: tables.bankAccounts.bankName }).from(tables.bankAccounts).where(eq(tables.bankAccounts.companyId, company.id)),
+    bankContactMatcher(company.id),
   ])
   const usedPayments = new Set(linked.map(l => l.paymentId).filter(Boolean))
   const usedExpenses = new Set(linked.map(l => l.expenseId).filter(Boolean))
-  const docNames = new Map<number, { number: string | null, name: string | null }>()
-  for (const inv of invoices) docNames.set(inv.id, { number: inv.number, name: inv.customer?.name ?? null })
+  const docNames = new Map<number, { number: string | null, name: string | null, contactId: number | null }>()
+  for (const inv of invoices) docNames.set(inv.id, { number: inv.number, name: inv.customer?.name ?? null, contactId: inv.contactId })
   // Documentos de los cobros ya registrados (facturas cobradas): número y cliente para el texto
   const paidDocIds = [...new Set(payments.map(p => p.salesDocumentId).filter((x): x is number => !!x && !docNames.has(x)))]
   if (paidDocIds.length) {
-    const rows = await db.select({ id: tables.salesDocuments.id, number: tables.salesDocuments.number, customer: tables.salesDocuments.customer })
+    const rows = await db.select({ id: tables.salesDocuments.id, number: tables.salesDocuments.number, customer: tables.salesDocuments.customer, contactId: tables.salesDocuments.contactId })
       .from(tables.salesDocuments).where(inArray(tables.salesDocuments.id, paidDocIds))
-    for (const r of rows) docNames.set(r.id, { number: r.number, name: r.customer?.name ?? null })
+    for (const r of rows) docNames.set(r.id, { number: r.number, name: r.customer?.name ?? null, contactId: r.contactId })
   }
   const expenseById = new Map(expenses.map(e => [e.id, e]))
   const cat = (code: string, name: RegExp) => categories.find(c => c.accountCode === code && name.test(c.name))?.id ?? categories.find(c => name.test(c.name))?.id ?? null
   const taken = new Set<string>()
 
   const results = new Map<number, BankSuggestion | null>()
+  /** Cliente o proveedor reconocido en cada movimiento (IBAN, NIF, lo aprendido o el nombre) */
+  const who = new Map<number, BankContactHit>()
   // Primero los movimientos con más información (número en el concepto) para que no les quiten el documento
   for (const tx of txs) {
     const amount = Math.abs(tx.amount)
     const text = `${tx.description} ${tx.counterparty ?? ''} ${tx.reference ?? ''}`
     const candidates: BankSuggestion[] = []
     const near = (d: string) => Math.abs(daysBetween(d, tx.date))
+    const contact = contactsOf.identify(tx)
+    if (contact) who.set(tx.id, contact)
+    /** Puntos por ser de ese cliente o proveedor: lo que da su nombre en el concepto, o más si le reconocen su IBAN, su NIF o el historial */
+    const party = (contactId: number | null | undefined, name: string | null | undefined, weight: number) =>
+      Math.max(Math.round(nameScore(name, text) * weight), contact && contactId === contact.id ? Math.round(weight * Math.min(1, contact.score / 90)) : 0)
 
     if (tx.amount > 0) {
       for (const p of payments) {
@@ -135,7 +144,7 @@ export async function suggestMatches(company: Company, ids?: number[]) {
         if (p.direction !== 'in' || usedPayments.has(p.id) || diff > MATCH_TOLERANCE || near(p.date) > 10) continue
         const doc = p.salesDocumentId ? docNames.get(p.salesDocumentId) : null
         const exact = diff <= 0.01
-        const score = (exact ? 72 : 64) + (numberInText(doc?.number, text) ? 20 : 0) + Math.round(nameScore(doc?.name, text) * 15) - near(p.date)
+        const score = (exact ? 72 : 64) + (numberInText(doc?.number, text) ? 20 : 0) + party(doc?.contactId, doc?.name, 15) - near(p.date)
         candidates.push({ kind: 'payment', id: p.id, label: `Cobro ya anotado${doc?.number ? ` · ${doc.number}` : ''}${exact ? '' : ' (±1 €)'}`, detail: doc?.name ?? null, confidence: score, source: 'match' })
       }
       for (const inv of invoices) {
@@ -144,12 +153,16 @@ export async function suggestMatches(company: Company, ids?: number[]) {
         const diff = Math.abs(pending - amount)
         const exact = diff <= 0.01
         const nearAmount = diff <= MATCH_TOLERANCE
-        if (!exact && !nearAmount && !(byNumber && amount < pending)) continue
-        let score = exact ? 62 : nearAmount ? 58 : 50
+        // Su cliente pagó un poco menos: comisión de la transferencia, retención o redondeo (hasta 15 € o el 3 %)
+        const ownClient = !!contact && inv.contactId === contact.id
+        const shortBy = ownClient && amount < pending && pending - amount <= Math.max(15, pending * 0.03)
+        if (!exact && !nearAmount && !shortBy && !(byNumber && amount < pending)) continue
+        let score = exact ? 62 : nearAmount ? 58 : shortBy ? 52 : 50
         if (byNumber) score += 26
-        score += Math.round(nameScore(inv.customer?.name, text) * 18)
+        score += party(inv.contactId, inv.customer?.name, 18)
         if (tx.date < inv.issueDate) score -= 25
-        candidates.push({ kind: 'invoice', id: inv.id, label: `Factura ${inv.number}${exact ? '' : nearAmount ? ' (±1 €)' : ' (cobro parcial)'}`, detail: inv.customer?.name ?? null, confidence: score, source: 'match' })
+        const missing = exact || nearAmount ? '' : shortBy ? ` (faltan ${eurText(round2(pending - amount))})` : ' (cobro parcial)'
+        candidates.push({ kind: 'invoice', id: inv.id, label: `Factura ${inv.number}${exact ? '' : nearAmount ? ' (±1 €)' : missing}`, detail: inv.customer?.name ?? null, confidence: score, source: 'match', contactId: inv.contactId })
       }
     }
     else {
@@ -158,7 +171,7 @@ export async function suggestMatches(company: Company, ids?: number[]) {
         if (p.direction !== 'out' || usedPayments.has(p.id) || diff > MATCH_TOLERANCE || near(p.date) > 10) continue
         const e = p.expenseId ? expenseById.get(p.expenseId) : null
         const exact = diff <= 0.01
-        const score = (exact ? 72 : 64) + Math.round(nameScore(e?.supplier?.name, text) * 18) - near(p.date)
+        const score = (exact ? 72 : 64) + party(e?.supplierId, e?.supplier?.name, 18) - near(p.date)
         candidates.push({ kind: 'payment', id: p.id, label: `Pago ya anotado${e?.supplier?.name ? ` · ${e.supplier.name}` : ''}${exact ? '' : ' (±1 €)'}`, detail: e?.description ?? null, confidence: score, source: 'match' })
       }
       for (const e of expenses) {
@@ -174,14 +187,14 @@ export async function suggestMatches(company: Company, ids?: number[]) {
         const gap = daysBetween(e.issueDate, tx.date)
         if (gap < -7 || gap > (open ? 120 : 45)) continue
         // Sin proveedor (tickets, cuota de autónomos…) la descripción también identifica el gasto
-        const name = Math.max(nameScore(e.supplier?.name, text), nameScore(e.description, text))
+        const name = Math.max(nameScore(e.supplier?.name, text), nameScore(e.description, text), contact && e.supplierId === contact.id ? Math.min(1, contact.score / 90) : 0)
         let score = (open ? (exact ? 62 : 56) : (exact ? 55 : 50)) + Math.round(name * 22) + (numberInText(e.number, text) ? 15 : 0)
         // Pagado y sin nombre en común: solo cuenta si la fecha casi coincide (evita duplicar gastos ya anotados)
         if (!open && name === 0 && Math.abs(gap) > 3) score -= 15
         // Gastos que se repiten cada mes por el mismo importe: manda la fecha más cercana
         score -= open ? Math.min(12, Math.floor(Math.abs(gap) / 5)) : Math.min(25, Math.round(Math.abs(gap) * 0.8))
         if (Math.abs(gap) <= 5 && name >= 0.5) score += 10
-        candidates.push({ kind: 'expense', id: e.id, label: `${open ? 'Gasto pendiente' : 'Gasto'} · ${e.supplier?.name ?? e.description ?? 'sin proveedor'}${exact ? '' : ' (±1 €)'}`, detail: e.number ? `Factura ${e.number}` : e.description ?? null, confidence: score, source: 'match' })
+        candidates.push({ kind: 'expense', id: e.id, label: `${open ? 'Gasto pendiente' : 'Gasto'} · ${e.supplier?.name ?? e.description ?? 'sin proveedor'}${exact ? '' : ' (±1 €)'}`, detail: e.number ? `Factura ${e.number}` : e.description ?? null, confidence: score, source: 'match', contactId: e.supplierId })
       }
     }
 
@@ -201,15 +214,25 @@ export async function suggestMatches(company: Company, ids?: number[]) {
       const bank = accounts.find(a => a.id === tx.accountId)?.bankName ?? null
       if (rule) best = { ...rule.make(cat, bank), confidence: 95, source: 'rule' }
       else if (tx.bankCode === '17' && tx.amount < 0) best = { ...RULES[2]!.make(cat, bank), confidence: 90, source: 'rule' }
+      // Cargo de un proveedor conocido con gastos anteriores: el mismo tipo, categoría e IVA que la última vez
+      else if (contact?.usual && tx.amount < 0 && contact.usual.vatRate != null) {
+        const usual = contact.usual
+        const category = categories.find(c => c.id === usual.categoryId)
+        best = {
+          kind: 'new_expense', label: `${contact.name}${category ? ` · ${category.name}` : ''}`, detail: `${contact.reason}. Como su último gasto`,
+          confidence: Math.min(90, contact.score), source: 'rule', expenseKind: usual.kind,
+          categoryId: usual.categoryId, supplier: contact.name, vatRate: usual.vatRate, contactId: contact.id,
+        }
+      }
     }
     results.set(tx.id, best)
   }
 
-  // IA: categoría para los cargos que no casan con nada
+  // IA: categoría para los cargos que no casan con nada, eligiendo entre tus proveedores si es uno de ellos
   const rest = txs.filter(tx => !results.get(tx.id) && tx.amount < 0)
   if (rest.length && aiEnabled()) {
     try {
-      const ai = await categorizeWithAi(company, rest, categories)
+      const ai = await categorizeWithAi(company, rest, categories, contactsOf.suppliers, who)
       for (const [id, s] of ai) results.set(id, s)
     }
     catch (err) {
@@ -217,12 +240,24 @@ export async function suggestMatches(company: Company, ids?: number[]) {
     }
   }
 
+  // Gasto nuevo de un proveedor reconocido: su ficha (no otra con el nombre del banco) y lo que se le suele anotar
+  for (const [id, s] of results) {
+    const contact = who.get(id)
+    if (s?.kind !== 'new_expense' || !contact || s.contactId) continue
+    // Comisiones y cuotas de las reglas llevan su propio proveedor: solo si es él (el propio banco)
+    if (s.source === 'rule' && s.supplier && !similarNames(s.supplier, contact.name)) continue
+    s.contactId = contact.id
+    s.supplier = contact.name
+    if (contact.usual?.categoryId && !s.categoryId) s.categoryId = contact.usual.categoryId
+    s.detail = [contact.reason, s.detail].filter(Boolean).join('. ')
+  }
+
   // Gastos nuevos: con la deducibilidad que el usuario suele marcar para ese proveedor o categoría
   const fresh = [...results.values()].filter((s): s is BankSuggestion => s?.kind === 'new_expense')
   if (fresh.length) {
     const guess = await deductibleGuesser(company.id)
     for (const s of fresh) {
-      const g = guess({ supplierName: s.supplier, categoryId: s.categoryId })
+      const g = guess({ supplierId: s.contactId, supplierName: s.supplier, categoryId: s.categoryId })
       s.deductiblePct = g.deductiblePct
       s.vatDeductiblePct = g.vatDeductiblePct
     }
@@ -242,9 +277,10 @@ const AI_SCHEMA = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['id', 'type', 'categoryId', 'supplier', 'vatRate', 'confidence', 'note'],
+        required: ['id', 'type', 'categoryId', 'contactId', 'supplier', 'vatRate', 'confidence', 'note'],
         properties: {
           id: { type: 'integer' },
+          contactId: { type: ['integer', 'null'], description: 'Id del proveedor de la lista si el cargo es suyo (AMZN Mktp = Amazon, PAYPAL *ADOBE = Adobe…); null si no está' },
           type: { type: 'string', enum: ['expense', 'social_security', 'tax_payment', 'payroll', 'transfer', 'loan', 'personal', 'unknown'] },
           categoryId: { type: ['integer', 'null'] },
           supplier: { type: ['string', 'null'], description: 'Nombre limpio del comercio o proveedor (Endesa, Amazon, Repsol…)' },
@@ -264,11 +300,14 @@ const AI_IGNORE: Record<string, string> = {
   personal: 'Gasto personal',
 }
 
-async function categorizeWithAi(company: Company, txs: BankTx[], categories: Array<{ id: number, name: string }>) {
+async function categorizeWithAi(company: Company, txs: BankTx[], categories: Array<{ id: number, name: string }>, suppliers: Array<{ id: number, name: string, tradeName: string | null }>, known: Map<number, BankContactHit>) {
   const out = new Map<number, BankSuggestion>()
+  const supplierById = new Map(suppliers.map(s => [s.id, s]))
+  // Los proveedores más habituales: suficientes para reconocerlos sin alargar demasiado la petición
+  const list = suppliers.slice(0, 250).map(s => `${s.id}: ${s.name}${s.tradeName && s.tradeName !== s.name ? ` (${s.tradeName})` : ''}`).join('; ')
   for (let i = 0; i < txs.length; i += 60) {
     const chunk = txs.slice(i, i + 60)
-    const { data } = await aiJson<{ items: Array<{ id: number, type: string, categoryId: number | null, supplier: string | null, vatRate: number | null, confidence: number, note: string }> }>({
+    const { data } = await aiJson<{ items: Array<{ id: number, type: string, categoryId: number | null, contactId: number | null, supplier: string | null, vatRate: number | null, confidence: number, note: string }> }>({
       name: 'bank_categories',
       schema: AI_SCHEMA,
       effort: 'low',
@@ -277,28 +316,33 @@ async function categorizeWithAi(company: Company, txs: BankTx[], categories: Arr
         `Empresa: ${company.tradeName || company.legalName} (${company.kind === 'autonomo' ? 'autónomo' : 'sociedad'}${company.activityDescription ? `, ${company.activityDescription}` : ''}).`,
         `Categorías de gasto (id: nombre): ${categories.map(c => `${c.id}: ${c.name}`).join('; ')}.`,
         'Para cada movimiento indica el tipo, la categoría más adecuada (o null), el proveedor limpio y el IVA habitual en España.',
+        ...(list ? [`Proveedores que ya tiene (id: nombre): ${list}.`, 'Si el cargo es de uno de ellos, aunque el banco lo escriba abreviado o distinto, pon su id en contactId; si dudas o no está, null. Nunca un id que no esté en la lista.'] : []),
         'Seguridad Social, nóminas, comisiones bancarias, seguros y alquileres de vivienda no llevan IVA (0). Suministros, software y compras: 21 salvo que sepas otro.',
         'Si no lo ves claro, type "unknown" y confianza baja. No inventes.',
       ].join('\n'),
-      parts: [{ type: 'input_text', text: JSON.stringify(chunk.map(tx => ({ id: tx.id, fecha: tx.date, importe: tx.amount, concepto: tx.description, ordenante: tx.counterparty }))) }],
+      parts: [{ type: 'input_text', text: JSON.stringify(chunk.map(tx => ({ id: tx.id, fecha: tx.date, importe: tx.amount, concepto: tx.description, ordenante: tx.counterparty, ...(known.has(tx.id) ? { proveedorReconocido: known.get(tx.id)!.id } : {}) }))) }],
     })
     for (const item of data.items) {
       if (!chunk.some(tx => tx.id === item.id) || item.type === 'unknown' || item.confidence < 40) continue
       const confidence = Math.min(85, item.confidence)
+      // Lo reconocido sin IA (IBAN, NIF, historial, nombre) manda; la IA solo elige ids de la lista
+      const supplier = known.get(item.id) ?? (item.contactId ? supplierById.get(item.contactId) : undefined)
       if (AI_IGNORE[item.type]) {
         out.set(item.id, { kind: 'ignore', label: AI_IGNORE[item.type]!, detail: item.note, confidence, source: 'ai' })
         continue
       }
       const category = categories.find(c => c.id === item.categoryId)
+      const name = supplier?.name ?? item.supplier
       out.set(item.id, {
         kind: 'new_expense',
-        label: item.supplier ? `${item.supplier}${category ? ` · ${category.name}` : ''}` : category?.name ?? 'Nuevo gasto',
+        label: name ? `${name}${category ? ` · ${category.name}` : ''}` : category?.name ?? 'Nuevo gasto',
         detail: item.note,
         confidence,
         source: 'ai',
         expenseKind: item.type === 'social_security' ? 'social_security' : item.type === 'payroll' ? 'payroll' : 'ticket',
         categoryId: category?.id ?? null,
-        supplier: item.supplier,
+        supplier: name,
+        contactId: supplier?.id ?? null,
         vatRate: item.vatRate != null && [0, 4, 5, 10, 21].includes(item.vatRate) ? item.vatRate : 21,
       })
     }
@@ -406,8 +450,16 @@ async function loadTx(companyId: number, id: number) {
   return tx
 }
 
-/** Concilia un movimiento con una factura, un gasto o un cobro/pago ya anotado */
+/**
+ * Concilia un movimiento con una factura, un gasto o un cobro/pago ya anotado. La ficha del cliente o
+ * proveedor aprende el IBAN o el NIF que traía el movimiento, para reconocerle la próxima vez.
+ */
 export async function confirmMatch(company: Company, userId: number, txId: number, target: { kind: 'invoice' | 'expense' | 'payment', id: number }) {
+  await linkTx(company, userId, txId, target)
+  await learnContactFromTx(company, await loadTx(company.id, txId)).catch(err => console.warn('[banco] aprender contacto', (err as Error).message))
+}
+
+async function linkTx(company: Company, userId: number, txId: number, target: { kind: 'invoice' | 'expense' | 'payment', id: number }): Promise<void> {
   const db = useDb()
   let tx = await loadTx(company.id, txId)
   if (tx.status === 'matched') {
@@ -453,7 +505,7 @@ export async function confirmMatch(company: Company, userId: number, txId: numbe
         .where(and(eq(tables.payments.companyId, company.id), eq(tables.payments.salesDocumentId, doc.id), eq(tables.payments.direction, 'in')))
       const same = paid.filter(p => !used.includes(p.id) && Math.abs(p.amount - amount) <= MATCH_TOLERANCE)
         .sort((a, b) => Math.abs(daysBetween(a.date, tx.date)) - Math.abs(daysBetween(b.date, tx.date)))[0]
-      if (same) return confirmMatch(company, userId, tx.id, { kind: 'payment', id: same.id })
+      if (same) return linkTx(company, userId, tx.id, { kind: 'payment', id: same.id })
       throw createError({ statusCode: 409, statusMessage: 'Esta factura no tiene cobros pendientes' })
     }
     const pending = round2(doc.total - doc.paidTotal)
@@ -498,12 +550,12 @@ export async function confirmMatch(company: Company, userId: number, txId: numbe
  * antes del cargo o poco después) y algo en común: proveedor, concepto, número de factura o tipo (cuota de
  * autónomos, nómina, impuestos). Los gastos ya unidos a otro movimiento no cuentan: son otro pago.
  */
-async function recordedExpenseFor(company: Company, tx: BankTx, input: { kind?: string | null, supplier: string | null, description: string | null }) {
+async function recordedExpenseFor(company: Company, tx: BankTx, input: { kind?: string | null, supplier: string | null, description: string | null, contactId?: number | null }) {
   const db = useDb()
   const e = tables.expenses
   const t = tables.bankTransactions
   const amount = Math.abs(tx.amount)
-  const rows = await db.select({ id: e.id, kind: e.kind, number: e.number, supplier: e.supplier, description: e.description, issueDate: e.issueDate, total: e.total, paidTotal: e.paidTotal, status: e.status })
+  const rows = await db.select({ id: e.id, kind: e.kind, number: e.number, supplier: e.supplier, supplierId: e.supplierId, description: e.description, issueDate: e.issueDate, total: e.total, paidTotal: e.paidTotal, status: e.status })
     .from(e).where(and(
       eq(e.companyId, company.id), ne(e.approval, 'rejected'),
       gte(e.issueDate, shiftDay(tx.date, -60)), lte(e.issueDate, shiftDay(tx.date, 10)),
@@ -515,7 +567,7 @@ async function recordedExpenseFor(company: Company, tx: BankTx, input: { kind?: 
   const text = `${tx.description} ${tx.counterparty ?? ''} ${tx.reference ?? ''}`
   const typed = !!input.kind && ['social_security', 'payroll', 'tax'].includes(input.kind)
   const found = rows.filter(r => !linked.has(r.id) && (r.status !== 'partial' || Math.abs(round2(r.total - r.paidTotal) - amount) <= 0.01)).filter(r =>
-    nameScore(r.supplier?.name, text) >= 0.5 || nameScore(r.description, text) >= 0.5 || numberInText(r.number, text)
+    (!!input.contactId && r.supplierId === input.contactId) || nameScore(r.supplier?.name, text) >= 0.5 || nameScore(r.description, text) >= 0.5 || numberInText(r.number, text)
     || similarNames(input.supplier, r.supplier?.name) || similarNames(input.supplier, r.description) || similarNames(input.description, r.description)
     || (typed && r.kind === input.kind))
   // El más cercano en fecha
@@ -535,6 +587,8 @@ export async function expenseFromTx(company: Company, userId: number, txId: numb
   /** Sin indicar: la que se marcó la última vez con ese proveedor o la de la categoría */
   deductiblePct?: number | null
   vatDeductiblePct?: number | null
+  /** Proveedor ya guardado (reconocido en el movimiento): se usa su ficha en vez de buscarla por el nombre */
+  contactId?: number | null
 }) {
   const db = useDb()
   const tx = await loadTx(company.id, txId)
@@ -545,7 +599,11 @@ export async function expenseFromTx(company: Company, userId: number, txId: numb
     await confirmMatch(company, userId, tx.id, { kind: 'expense', id: recorded })
     return { expenseId: recorded, linked: true }
   }
-  const guess = input.deductiblePct == null ? (await deductibleGuesser(company.id))({ supplierName: input.supplier, categoryId: input.categoryId }) : null
+  const [known] = input.contactId
+    ? await db.select({ id: tables.contacts.id, isSupplier: tables.contacts.isSupplier }).from(tables.contacts).where(and(eq(tables.contacts.id, input.contactId), eq(tables.contacts.companyId, company.id)))
+    : []
+  if (known && !known.isSupplier) await db.update(tables.contacts).set({ isSupplier: true }).where(eq(tables.contacts.id, known.id))
+  const guess = input.deductiblePct == null ? (await deductibleGuesser(company.id))({ supplierId: known?.id, supplierName: input.supplier, categoryId: input.categoryId }) : null
   const deductiblePct = guess?.deductiblePct ?? input.deductiblePct ?? 100
   // Sin IVA el % de IVA no importa: se guarda igual que el del gasto para que se lea «no deducible» o «50 %»
   const vatDeductiblePct = input.vatRate ? guess?.vatDeductiblePct ?? input.vatDeductiblePct ?? deductiblePct : deductiblePct
@@ -566,7 +624,8 @@ export async function expenseFromTx(company: Company, userId: number, txId: numb
     paymentMethod: method,
     paid: true,
     notes: `Creado desde el banco: ${tx.description}`.slice(0, 5000),
-    newSupplier: input.supplier ? { name: input.supplier.slice(0, 200), nif: null, address: null, postalCode: null, city: null, province: null, country: 'ES', email: null, phone: null, isPerson: false } : null,
+    supplierId: known?.id ?? null,
+    newSupplier: !known && input.supplier ? { name: input.supplier.slice(0, 200), nif: null, address: null, postalCode: null, city: null, province: null, country: 'ES', email: null, phone: null, isPerson: false } : null,
   }, undefined, { checkDuplicates: false })
   const [res] = await db.insert(tables.payments).values({
     companyId: company.id, direction: 'out', expenseId, amount: total, date: tx.date, method, bankAccountId: tx.accountId, notes: 'Conciliado con el banco',

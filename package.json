@@ -18,6 +18,7 @@
     "test:import-reading": "node --experimental-strip-types --test scripts/import-reading.test.mjs",
     "test:file-preview": "node --experimental-strip-types --test scripts/file-preview.test.mjs",
     "test:contact-clean": "node --experimental-strip-types --test scripts/contact-clean.test.mjs",
+    "test:matching": "node --experimental-strip-types --test scripts/party-matching.test.mjs",
     "test:imports:integration": "npm run build && node scripts/import-duplicates.integration.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",

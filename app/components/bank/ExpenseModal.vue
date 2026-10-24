@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** Crear el gasto de un cargo del banco (ya pagado): proveedor, categoría e IVA, con la propuesta precargada */
-interface Suggestion { expenseKind?: string, categoryId?: number | null, supplier?: string | null, vatRate?: number | null, deductiblePct?: number | null, vatDeductiblePct?: number | null }
+interface Suggestion { expenseKind?: string, categoryId?: number | null, supplier?: string | null, vatRate?: number | null, deductiblePct?: number | null, vatDeductiblePct?: number | null, contactId?: number | null }
 const props = defineProps<{ tx: { id: number, date: string, amount: number, description: string, suggestion: Suggestion | null } | null }>()
 const emit = defineEmits<{ created: [] }>()
 const open = defineModel<boolean>({ default: false })
@@ -68,7 +68,10 @@ async function submit() {
   busy.value = true
   try {
     const url: string = `/api/bank/transactions/${props.tx.id}/expense`
-    const r = await $fetch<{ linked?: boolean }>(url, { method: 'POST', body: { ...form, supplier: form.supplier || null, description: form.description || null } })
+    // El proveedor reconocido en el movimiento, mientras no se cambie el nombre
+    const s = props.tx.suggestion
+    const contactId = s?.contactId && form.supplier.trim() === (s.supplier ?? '').trim() ? s.contactId : null
+    const r = await $fetch<{ linked?: boolean }>(url, { method: 'POST', body: { ...form, supplier: form.supplier || null, description: form.description || null, contactId } })
     // Ya estaba anotado (escaneado, importado o a mano): se concilia con él en vez de duplicarlo
     if (r.linked) toast.success('Ya estaba anotado', `${eur(total.value)} · conciliado con el gasto que tenías, sin duplicarlo`)
     else toast.success('Gasto creado y conciliado', `${eur(total.value)} · ya cuenta en tus impuestos`)

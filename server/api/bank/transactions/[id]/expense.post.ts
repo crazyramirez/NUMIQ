@@ -9,6 +9,8 @@ const schema = z.object({
   /** Sin indicar: la que se marcó la última vez con ese proveedor o la de la categoría */
   deductiblePct: z.number().min(0).max(100).nullish(),
   vatDeductiblePct: z.number().min(0).max(100).nullish(),
+  /** Proveedor ya guardado que se reconoció en el movimiento */
+  contactId: z.number().int().positive().nullish(),
 })
 
 /** Crea el gasto de un cargo del banco (ya pagado) y lo deja conciliado; si ya estaba anotado, lo enlaza (linked) */
