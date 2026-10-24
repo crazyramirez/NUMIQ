@@ -54,16 +54,12 @@ const { confirm } = useConfirm()
 const { me } = useMe()
 const readOnly = computed(() => me.value?.company?.role === 'advisor')
 
-const route = useRoute()
-const status = ref<'pending' | 'matched' | 'ignored' | 'all'>(
-  (['pending', 'matched', 'ignored', 'all'].includes(String(route.query.estado))
-    ? String(route.query.estado)
-    : 'all') as 'pending' | 'matched' | 'ignored' | 'all'
-)
-const account = ref<number | null>(null)
-const q = ref('')
-const qDebounced = ref('')
-const page = ref(1)
+// Filtros, búsqueda y página en la URL: al volver atrás desde un documento conciliado, todo sigue igual
+const status = useQueryState<'pending' | 'matched' | 'ignored' | 'all'>('estado', 'all', { allowed: ['pending', 'matched', 'ignored', 'all'] })
+const account = useQueryState<number | null>('cuenta', null, { parse: r => Number(r) || undefined })
+const q = useQueryState('q', '', { debounce: 250 })
+const qDebounced = ref(q.value.trim())
+const page = useQueryState('pagina', 1, { parse: r => (Number(r) >= 1 ? Math.floor(Number(r)) : undefined) })
 let timer: ReturnType<typeof setTimeout> | undefined
 watch(q, (v) => {
   clearTimeout(timer)

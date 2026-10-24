@@ -4,7 +4,6 @@ import type { MenuItem } from '~/components/ui/Menu.vue'
 useHead({ title: 'Informes · NUMIQ' })
 
 const route = useRoute()
-const router = useRouter()
 const now = new Date()
 const currentYear = now.getFullYear()
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -25,8 +24,9 @@ const query = computed(() => ({
   ...(mode.value === 'month' ? { month: month.value } : {}),
 }))
 
+const patchQuery = useQueryPatch()
 watch(query, (q) => {
-  router.replace({ query: { anio: q.year, ...(q.quarter ? { t: q.quarter } : {}), ...(q.month ? { mes: q.month } : {}) } })
+  patchQuery({ anio: String(q.year), t: q.quarter ? String(q.quarter) : undefined, mes: q.month ? String(q.month) : undefined })
 })
 
 const { data, status, error, refresh } = await useFetch('/api/reports/summary', { query, lazy: true })

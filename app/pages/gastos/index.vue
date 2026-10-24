@@ -48,12 +48,13 @@ const { open: openScan } = useScan()
 
 // ─── Filtros ───
 
-// ?estado= y ?periodo= abren la lista ya filtrada (p. ej. «Pendiente de pago» desde Inicio)
-const status = ref(['pending', 'paid', 'review'].includes(String(route.query.estado)) ? String(route.query.estado) : 'all')
-const period = ref(['q', 'pq', 'y', 'py', 'all'].includes(String(route.query.periodo)) ? String(route.query.periodo) : 'y')
-const categoryId = ref<number | null>(null)
-const deductible = ref<'all' | 'full' | 'partial' | 'none'>('all')
-const q = ref('')
+// Filtros en la URL: ?estado= y ?periodo= abren la lista ya filtrada (p. ej. «Pendiente de pago» desde Inicio)
+// y al volver atrás desde un gasto o una factura el listado sigue igual
+const status = useQueryState('estado', 'all', { allowed: ['all', 'pending', 'paid', 'review'] })
+const period = useQueryState('periodo', 'y', { allowed: ['q', 'pq', 'y', 'py', 'all'] })
+const categoryId = useQueryState<number | null>('categoria', null, { parse: r => Number(r) || undefined })
+const deductible = useQueryState<'all' | 'full' | 'partial' | 'none'>('deducible', 'all', { allowed: ['all', 'full', 'partial', 'none'] })
+const q = useQueryState('q', '', { debounce: 250 })
 const qDebounced = refDebounced(q, 250)
 
 const now = new Date()
@@ -101,10 +102,7 @@ const categoryOptions = computed(() => [
 ])
 
 // Aprobación del equipo: ?aprobacion=pending|rejected abre la lista filtrada (desde «Hoy» o un aviso)
-const approvalFilter = ref<'pending' | 'rejected' | null>(['pending', 'rejected'].includes(String(route.query.aprobacion)) ? String(route.query.aprobacion) as 'pending' | 'rejected' : null)
-watch(approvalFilter, (v) => {
-  if (!v && route.query.aprobacion) router.replace({ query: { ...route.query, aprobacion: undefined } })
-})
+const approvalFilter = useQueryState<'pending' | 'rejected' | null>('aprobacion', null, { allowed: ['pending', 'rejected'] })
 const { me } = useMe()
 const canApprove = computed(() => ['owner', 'admin'].includes(me.value?.company?.role ?? ''))
 
@@ -124,12 +122,9 @@ const { data, status: fetchStatus, refresh } = useFetch<ExpenseRow[]>('/api/expe
 
 // «Sin justificante» (desde la tarea de Inicio): gastos sin foto ni PDF; nóminas, cuotas e impuestos no llevan factura
 const NO_DOC_KINDS = ['payroll', 'social_security', 'tax']
-const noFile = ref(route.query.justificante === 'no')
-watch(noFile, (v) => {
-  if (!v && route.query.justificante) router.replace({ query: { ...route.query, justificante: undefined } })
-})
+const noFile = useQueryState('justificante', false, { parse: r => r === 'no', format: v => (v ? 'no' : '') })
 // «Por revisar»: un motivo concreto (desde el panel de motivos)
-const reviewFilter = ref<ReviewKind | null>(null)
+const reviewFilter = useQueryState<ReviewKind | null>('motivo', null, { parse: r => r as ReviewKind })
 watch(status, (v) => {
   if (v !== 'review') reviewFilter.value = null
 })
@@ -277,7 +272,7 @@ function clearFilters() {
 
 // ─── Páginas (50 por defecto) y selección de todo lo filtrado: marcar muchos gastos de una vez (los que llegan del banco o de una importación) ───
 
-const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(rows, [status, period, categoryId, deductible, qDebounced, approvalFilter, noFile, reviewFilter])
+const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(rows, [status, period, categoryId, deductible, qDebounced, approvalFilter, noFile, reviewFilter], 'pagina')
 const { selected, selectedSet, selecting, allSelected, toggle, toggleAll, selectAll, clear: stopSelecting } = useSelection(rows, shown)
 const selectedTotal = computed(() => rows.value.reduce((s, e) => s + (selectedSet.value.has(e.id) ? e.total : 0), 0))
 

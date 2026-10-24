@@ -27,17 +27,14 @@ interface Row {
 
 const props = defineProps<{ kind: 'invoice' | 'quote' }>()
 const { verifactu } = useMe()
-const route = useRoute()
-const router = useRouter()
 const isQuote = computed(() => props.kind === 'quote')
 const base = computed(() => (isQuote.value ? '/presupuestos' : '/facturas'))
 
-const status = ref(String(route.query.estado ?? 'all'))
-const q = ref('')
-const period = ref(String(route.query.periodo ?? 'all'))
+// Búsqueda y filtros en la URL: al volver atrás desde un documento, el listado sigue igual
+const status = useQueryState('estado', 'all')
+const q = useQueryState('q', '', { debounce: 250 })
+const period = useQueryState('periodo', 'all')
 const debouncedQ = refDebounced(q, 250)
-
-watch([status, period], () => router.replace({ query: { ...route.query, estado: status.value === 'all' ? undefined : status.value, periodo: period.value === 'all' ? undefined : period.value } }))
 
 const range = computed(() => {
   const now = new Date()
@@ -166,7 +163,7 @@ function rowMenu(r: Row): MenuItem[] {
 // ─── Páginas (50 por defecto) y selección de todo lo filtrado: cambiar el estado o eliminar muchos de una vez ───
 
 const list = computed(() => rows.value ?? [])
-const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(list, [status, debouncedQ, period])
+const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(list, [status, debouncedQ, period], 'pagina')
 const { selected, selectedSet, selectedRows, selecting, allSelected, toggle: pick, toggleAll, selectAll, clear } = useSelection(list, shown)
 const busy = ref(false)
 const selectedTotal = computed(() => selectedRows.value.reduce((s, r) => s + amountOf(r), 0))

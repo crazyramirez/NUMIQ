@@ -35,7 +35,7 @@ const categories = computed(() => catData.value ?? [])
 const catById = computed(() => new Map(categories.value.map(c => [c.id, c])))
 const catsOpen = ref(false)
 /** Filtro: null todas, 'none' sin categoría */
-const cat = ref<number | 'none' | null>(null)
+const cat = useQueryState<number | 'none' | null>('categoria', null, { parse: r => (r === 'none' ? 'none' : Number(r) || undefined) })
 
 function refreshAll() {
   return Promise.all([refresh(), refreshCats()])
@@ -46,8 +46,9 @@ watch(categories, (list) => {
   if (typeof cat.value === 'number' && !list.some(c => c.id === cat.value)) cat.value = null
 })
 
-const q = ref('')
-const kind = ref('all')
+// Búsqueda y filtros en la URL: al volver atrás, el catálogo sigue igual
+const q = useQueryState('q', '', { debounce: 250 })
+const kind = useQueryState('tipo', 'all', { allowed: ['all', 'service', 'product'] })
 const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
 const byKind = computed(() => items.value.filter(i => kind.value === 'all' || i.kind === kind.value))
@@ -109,7 +110,7 @@ const rowMenu = (i: Item): MenuItem[] => [
 
 // ─── Páginas de 25 y selección (de la página a la vista): eliminar o mover de categoría muchos de una vez ───
 
-const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(filtered, [q, kind, cat])
+const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(filtered, [q, kind, cat], 'pagina')
 const sel = useSelection(filtered, shown)
 const busy = ref(false)
 

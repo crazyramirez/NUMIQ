@@ -30,7 +30,8 @@ const router = useRouter()
 const isClient = computed(() => props.role === 'client')
 const base = computed(() => (isClient.value ? '/clientes' : '/proveedores'))
 
-const q = ref('')
+// Búsqueda y página en la URL: al volver atrás desde una ficha, el listado sigue igual
+const q = useQueryState('q', '', { debounce: 250 })
 const qDebounced = refDebounced(q, 250)
 const { data, status, refresh } = useFetch<ContactRow[]>('/api/contacts', {
   key: `contacts-${props.role}`,
@@ -120,7 +121,7 @@ function rowMenu(r: ContactRow): MenuItem[] {
 
 // ─── Páginas de 25 y selección (de la página a la vista): eliminar muchos de una vez ───
 
-const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(rows, [qDebounced])
+const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(rows, [qDebounced], 'pagina')
 const { selected, selectedSet, selectedRows, selecting, allSelected, toggle: pick, toggleAll, selectAll, clear } = useSelection(rows, shown)
 const busy = ref(false)
 const noun = (n: number) => (isClient.value ? (n === 1 ? 'cliente' : 'clientes') : (n === 1 ? 'proveedor' : 'proveedores'))

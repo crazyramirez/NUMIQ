@@ -23,7 +23,7 @@ const { open: openScan } = useScan()
 
 const { data: ai } = await useFetch<{ configured: boolean }>('/api/ai/status', { default: () => ({ configured: true }) })
 const { data: batches, refresh, pending } = await useFetch<Batch[]>('/api/imports', { default: () => [] })
-const { page, pages, items: shownBatches, size: pageSize, total: pageTotal } = usePaged(batches)
+const { page, pages, items: shownBatches, size: pageSize, total: pageTotal } = usePaged(batches, [], 'pagina')
 
 // Lotes leyéndose: se refrescan solos
 const anyRunning = computed(() => batches.value.some(b => b.running || b.status === 'processing'))

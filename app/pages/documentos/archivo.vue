@@ -21,17 +21,14 @@ interface VaultData {
   quarters: Record<string, { count: number, bytes: number }>
 }
 
-const route = useRoute()
-const router = useRouter()
 const toast = useToast()
 const { confirm } = useConfirm()
 
 const now = new Date()
-const year = ref(Number(route.query.anio) || now.getFullYear())
-const quarter = ref<string>(route.query.t ? String(route.query.t) : String(quarterOf(now)))
-const folder = ref<string>('all')
-
-watch([year, quarter], () => router.replace({ query: { ...route.query, anio: String(year.value), t: quarter.value } }))
+// Periodo, carpeta y página en la URL: enlaces directos y, al volver atrás, el archivo sigue igual
+const year = useQueryState('anio', now.getFullYear(), { parse: r => Number(r) || undefined })
+const quarter = useQueryState('t', String(quarterOf(now)), { allowed: ['all', '1', '2', '3', '4'] })
+const folder = useQueryState('carpeta', 'all')
 
 const { data, refresh, pending } = await useFetch<VaultData>('/api/vault', {
   query: computed(() => ({ year: year.value, quarter: quarter.value === 'all' ? undefined : quarter.value })),
@@ -54,7 +51,7 @@ const folders = computed(() => {
 
 const files = computed(() => (folder.value === 'all' ? data.value.files : data.value.files.filter(f => (f.folder ?? 'otros') === folder.value)))
 const totalBytes = computed(() => files.value.reduce((s, f) => s + f.size, 0))
-const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(files, [year, quarter, folder])
+const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(files, [year, quarter, folder], 'pagina')
 const periodLabel = computed(() => (quarter.value === 'all' ? `${year.value}` : `${quarter.value}.º trimestre de ${year.value}`))
 
 // ─── Subida ───

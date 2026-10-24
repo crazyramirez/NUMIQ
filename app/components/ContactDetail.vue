@@ -109,7 +109,8 @@ const tabs = computed(() => {
   if (c.value?.isSupplier) t.push({ value: 'gastos', label: 'Gastos', count: expenses.value.length })
   return t
 })
-const tab = ref(props.role === 'client' ? 'facturas' : 'gastos')
+// Pestaña, filtro y página en la URL: al volver atrás desde un documento, la ficha sigue igual
+const tab = useQueryState('lista', props.role === 'client' ? 'facturas' : 'gastos', { allowed: ['facturas', 'presupuestos', 'gastos'] })
 
 const editing = ref(false)
 
@@ -213,7 +214,7 @@ interface Entry {
   note: string | null
 }
 
-const filter = ref('all')
+const filter = useQueryState('filtro', 'all')
 watch(tab, () => (filter.value = 'all'))
 
 const dueText = (iso: string) => (daysUntil(iso) >= 0 ? `vence ${relDays(iso)}` : `venció ${relDays(iso)}`)
@@ -294,7 +295,7 @@ const shown = computed(() => {
   return f?.test ? entries.value.filter(f.test) : entries.value
 })
 
-const { page, pages, items: paged, size: pageSize, total: pageTotal } = usePaged(shown, [tab, filter])
+const { page, pages, items: paged, size: pageSize, total: pageTotal } = usePaged(shown, [tab, filter], 'pagina')
 
 // La página a la vista, por años (la lista ya viene de más reciente a más antigua). Cada año resume
 // todo lo suyo, también lo que cae en otras páginas; el total no cuenta borradores ni anulados

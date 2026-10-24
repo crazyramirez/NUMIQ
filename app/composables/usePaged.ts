@@ -12,9 +12,10 @@ export function usePageSize() {
 /**
  * Paginación en el cliente de un listado ya cargado: los elementos de la página a la vista y cuántas hay.
  * Al cambiar los filtros (`reset`) vuelve a la primera; si el listado encoge (al borrar), no se queda en una página vacía.
+ * Con `pageKey`, la página va en la URL: al volver atrás desde un elemento se sigue en la misma.
  */
-export function usePaged<T>(rows: MaybeRefOrGetter<T[]>, reset: WatchSource[] = []) {
-  const page = ref(1)
+export function usePaged<T>(rows: MaybeRefOrGetter<T[]>, reset: WatchSource[] = [], pageKey?: string) {
+  const page = pageKey ? useQueryState(pageKey, 1, { parse: r => (Number(r) >= 1 ? Math.floor(Number(r)) : undefined) }) : ref(1)
   const size = usePageSize()
   const total = computed(() => toValue(rows).length)
   const pages = computed(() => pageCount(total.value, size.value))

@@ -69,10 +69,11 @@ const failed = computed(() => data.value?.files.filter(f => f.aiStatus === 'fail
 
 // ─── Filtros ───
 
-const status = ref<'all' | ImportItemStatus>('all')
+// Filtros en la URL: al volver atrás desde un documento importado, la revisión sigue igual
+const status = useQueryState<'all' | ImportItemStatus>('estado', 'all')
 // Filtro por clase: los presupuestos aparte de las facturas emitidas
-const types = ref<string[]>([])
-const q = ref('')
+const types = useQueryState<string[]>('clases', [], { parse: r => r.split(',').filter(Boolean), format: v => v.join(',') })
+const q = useQueryState('q', '', { debounce: 250 })
 
 const statusOptions = computed(() => {
   const c = data.value?.counts
@@ -117,7 +118,7 @@ const rows = computed(() => {
   for (const r of filtered.value) if (nested.value.has(r.id)) children.set(r.linkedTo!, [...(children.get(r.linkedTo!) ?? []), r])
   return filtered.value.flatMap(r => (nested.value.has(r.id) ? [] : [r, ...(children.get(r.id) ?? [])]))
 })
-const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(rows, [status, types, q])
+const { page, pages, items: shown, size: pageSize, total: pageTotal } = usePaged(rows, [status, types, q], 'pagina')
 const isQuoteRow = (r: Row) => r.type === 'sales' && (r.docType === 'quote' || r.docType === 'proforma')
 const kindOf = (r: Row) => (isQuoteRow(r) ? 'quote' : r.type)
 const rowType = (r: Row) => (isQuoteRow(r)

@@ -77,7 +77,7 @@ const upcomingTotal = computed(() => round2(upcoming.value.reduce((s, u) => s + 
 
 // ─── Filtro ───
 
-const filter = ref('all')
+const filter = useQueryState('filtro', 'all', { allowed: ['all', 'active', 'paused'] })
 const filterOptions = computed(() => [
   { value: 'all', label: isInvoice.value ? 'Todas' : 'Todos', count: rows.value.length || null },
   { value: 'active', label: isInvoice.value ? 'Activas' : 'Activos', count: rows.value.filter(r => r.status === 'active').length || null },
@@ -86,7 +86,7 @@ const filterOptions = computed(() => [
 const shown = computed(() => rows.value.filter(r =>
   filter.value === 'all' ? true : filter.value === 'paused' ? r.status !== 'active' : r.status === 'active',
 ))
-const { page, pages, items: paged, size: pageSize, total: pageTotal } = usePaged(shown, [filter])
+const { page, pages, items: paged, size: pageSize, total: pageTotal } = usePaged(shown, [filter], 'pagina')
 
 function statusOf(r: Row) {
   if (r.status === 'finished') return { label: 'Terminado', tone: 'neutral' as const }

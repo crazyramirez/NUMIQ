@@ -6,8 +6,9 @@ const props = defineProps<{
   label: string
 }>()
 
-const tab = ref('issued')
-const search = ref('')
+// Libro, búsqueda y página en la URL: al volver atrás desde una factura o un gasto, el libro sigue igual
+const tab = useQueryState('libro', 'issued', { allowed: ['issued', 'received'] })
+const search = useQueryState('buscar', '', { debounce: 250 })
 
 const bookQuery = computed(() => ({ ...props.query, type: tab.value }))
 const { data, status, error, refresh } = await useFetch('/api/reports/book', { query: bookQuery, lazy: true })
@@ -53,7 +54,7 @@ const filtered = computed(() => {
   if (!q) return rows.value
   return rows.value.filter(r => norm(`${r.number ?? ''} ${r.name} ${r.nif ?? ''} ${r.sub ?? ''}`).includes(q))
 })
-const { page, pages, items: visible, size: pageSize, total: pageTotal } = usePaged(filtered, [bookQuery, search])
+const { page, pages, items: visible, size: pageSize, total: pageTotal } = usePaged(filtered, [bookQuery, search], 'pagina')
 const totals = computed(() => filtered.value.reduce((t, r) => ({
   base: round2(t.base + r.base), vat: round2(t.vat + r.vat), irpf: round2(t.irpf + r.irpf), total: round2(t.total + r.total),
 }), { base: 0, vat: 0, irpf: 0, total: 0 }))
