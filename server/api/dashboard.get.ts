@@ -50,6 +50,9 @@ export default defineEventHandler(async (event) => {
   // Concepto de cada factura reciente, como en el listado
   const concepts = await salesConcepts(recent)
 
+  // Lo que hay que hacer hoy, cada cosa con su botón (Inicio lo pone lo primero)
+  const tasks = await todayTasks(company, now)
+
   const insights = await computeInsights(company, { quarter, year, vat303, irpf130, receivables: recv, monthly, top, ytd })
 
   return {
@@ -69,6 +72,7 @@ export default defineEventHandler(async (event) => {
     expensesByCategory: byCategory,
     recent: recent.map(({ description: _description, ...r }) => ({ ...r, conceptPreview: concepts.get(r.id)?.conceptPreview ?? null, overdue: isOpenStatus(r.status) && !!r.dueDate && r.dueDate < today })),
     deadlines: upcomingDeadlines(now, company.kind, 4),
+    tasks,
     insights,
   }
 })

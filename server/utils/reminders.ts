@@ -45,6 +45,8 @@ export interface ReminderItem {
   sent: number
   /** Fecha del próximo aviso (null si ya se enviaron todos) */
   nextDate: string | null
+  /** Último intento de aviso (enviado o fallido) */
+  lastAt: string | null
   ready: boolean
   problem: 'no_email' | null
 }
@@ -98,6 +100,7 @@ export async function reminderQueue(company: Company, today = toISODate(new Date
       overdueDays: dayDiff(due, today),
       sent,
       nextDate,
+      lastAt: last ? toISODate(last) : null,
       ready: !!nextDate && nextDate <= today && !!email,
       problem: email ? null : 'no_email',
     }
@@ -139,8 +142,31 @@ export function businessHours(now = new Date()) {
 
 /** Envía los recordatorios que tocan hoy (como mucho 25 por pasada) */
 export async function sendDueReminders(company: Company, site: string, opts: { userId?: number | null, limit?: number } = {}) {
-  const s = reminderSettings(company)
   const ready = (await reminderQueue(company)).filter(i => i.ready).slice(0, opts.limit ?? MAX_PER_RUN)
+  return sendReminders(company, ready, site, opts.userId ?? null)
+}
+
+/**
+ * «Recordar a todos los vencidos»: a quién se puede escribir ya, sin esperar al calendario de avisos.
+ * Se salta las facturas sin email y las que ya recibieron un aviso hace menos de 4 días.
+ */
+export async function overdueReminderPlan(company: Company, today = toISODate(new Date())) {
+  const queue = await reminderQueue(company, today)
+  const recentCut = addDays(today, -MIN_GAP_DAYS)
+  const noEmail = queue.filter(i => !i.email)
+  const recent = queue.filter(i => i.email && i.lastAt && i.lastAt > recentCut)
+  const ready = queue.filter(i => i.email && !(i.lastAt && i.lastAt > recentCut)).slice(0, MAX_PER_RUN)
+  return {
+    ready,
+    amount: round2(ready.reduce((sum, i) => sum + i.pending, 0)),
+    noEmail: noEmail.length,
+    recent: recent.length,
+  }
+}
+
+/** Envía un recordatorio a cada factura de la lista (con el mensaje de la empresa o el de NUMIQ) */
+export async function sendReminders(company: Company, ready: ReminderItem[], site: string, userId: number | null) {
+  const s = reminderSettings(company)
   if (!ready.length) return { sent: 0, failed: 0 }
   const db = useDb()
   const contactIds = ready.map(i => i.contactId).filter((x): x is number => !!x)
@@ -153,7 +179,7 @@ export async function sendDueReminders(company: Company, site: string, opts: { u
     const person = people.find(p => p.id === item.contactId)
     const firstName = person?.kind === 'person' ? person.name.split(' ')[0] ?? null : null
     try {
-      await sendSalesEmail(company, opts.userId ?? null, item.id, {
+      await sendSalesEmail(company, userId, item.id, {
         to: [item.email!],
         cc: [],
         subject: `Recordatorio de pago · factura ${item.number ?? ''}`.trim(),

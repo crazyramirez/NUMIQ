@@ -107,9 +107,15 @@ const { data, status: fetchStatus, refresh } = useFetch<ExpenseRow[]>('/api/expe
   lazy: true,
 })
 
-const rows = computed(() => data.value ?? [])
+// «Sin justificante» (desde la tarea de Inicio): gastos sin foto ni PDF; nóminas, cuotas e impuestos no llevan factura
+const NO_DOC_KINDS = ['payroll', 'social_security', 'tax']
+const noFile = ref(route.query.justificante === 'no')
+watch(noFile, (v) => {
+  if (!v && route.query.justificante) router.replace({ query: { ...route.query, justificante: undefined } })
+})
+const rows = computed(() => (data.value ?? []).filter(e => !noFile.value || (!e.fileId && !NO_DOC_KINDS.includes(e.kind))))
 const firstLoad = computed(() => fetchStatus.value === 'pending' && !data.value)
-const filtersActive = computed(() => status.value !== 'all' || !!q.value.trim() || categoryId.value != null || deductible.value !== 'all')
+const filtersActive = computed(() => status.value !== 'all' || !!q.value.trim() || categoryId.value != null || deductible.value !== 'all' || noFile.value)
 
 const levelOf = (e: ExpenseRow) => deductibleLevel(e.deductiblePct, e.vatDeductiblePct, e.vatTotal !== 0)
 
@@ -207,6 +213,7 @@ function clearFilters() {
   q.value = ''
   categoryId.value = null
   deductible.value = 'all'
+  noFile.value = false
 }
 
 // ─── Selección: marcar muchos gastos de una vez (los que llegan del banco o de una importación) ───
@@ -417,6 +424,9 @@ function savePartial() {
           <UiSelect v-model="categoryId" :options="categoryOptions" aria-label="Categoría" class="cat" />
           <UiSelect v-model="deductible" :options="deductibleOptions" aria-label="Deducibilidad" class="ded-filter" />
           <UiSelect v-model="period" :options="periodOptions" aria-label="Periodo" class="period" />
+          <button v-if="noFile" type="button" class="nofile-chip" @click="noFile = false">
+            <Icon name="ph:paperclip" aria-hidden="true" /> Sin justificante <Icon name="ph:x-bold" class="x" aria-label="Quitar filtro" />
+          </button>
           <UiButton
             v-if="rows.length"
             class="mobile sel-toggle"
@@ -806,6 +816,25 @@ input[type='checkbox'] {
 .ded-pill:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
+}
+
+.nofile-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 12px;
+  font-size: var(--text-sm);
+  font-weight: 560;
+  color: var(--brand-text);
+  background: var(--brand-soft);
+  border-radius: var(--r-full);
+}
+
+.nofile-chip .x {
+  width: 12px;
+  height: 12px;
+  opacity: 0.7;
 }
 
 .ded-mini {

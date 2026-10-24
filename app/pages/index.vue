@@ -2,6 +2,10 @@
 useHead({ title: 'Inicio · NUMIQ' })
 
 const { me, companyName } = useMe()
+const readOnly = computed(() => me.value?.company?.role === 'advisor')
+// Lo que ya es una tarea de «Hoy» no se repite como recomendación del asesor
+const TASK_INSIGHTS = /^(overdue|drafts|bank:)/
+const insights = computed(() => (data.value?.insights ?? []).filter(i => !TASK_INSIGHTS.test(i.key)))
 const { data, status, error, refresh } = await useFetch('/api/dashboard', { lazy: true })
 
 const showAllInsights = ref(false)
@@ -98,6 +102,9 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
     </div>
 
     <div v-else-if="data" class="layout">
+      <!-- Hoy: lo que hay que hacer, con su botón -->
+      <DashboardToday class="rise" :tasks="data.tasks" :read-only="readOnly" @done="refresh()" />
+
       <!-- KPIs -->
       <section class="kpis" aria-label="Indicadores del trimestre">
         <article v-for="(k, i) in kpis" :key="k.key" class="card kpi rise" :style="{ '--i': i + 1 }">
@@ -168,8 +175,8 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
               <UiButton class="adv-analyze" size="sm" variant="ai" icon="ph:magic-wand" :to="`/asistente?q=${encodeURIComponent('Analiza cómo va mi negocio este trimestre y dame 3 recomendaciones concretas para mejorar')}`">Analizar</UiButton>
             </div>
           </template>
-          <ul v-if="data.insights.length" class="insights">
-            <li v-for="(ins, i) in data.insights.slice(0, showAllInsights ? 8 : 3)" :key="ins.key" class="insight" :class="ins.severity" :style="{ '--i': i }">
+          <ul v-if="insights.length" class="insights">
+            <li v-for="(ins, i) in insights.slice(0, showAllInsights ? 8 : 3)" :key="ins.key" class="insight" :class="ins.severity" :style="{ '--i': i }">
               <span class="ins-ic" :class="`t-${severity[ins.severity].tone}`" aria-hidden="true">
                 <Icon :name="ins.icon || severity[ins.severity].icon" />
               </span>
@@ -182,11 +189,11 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
               </div>
             </li>
           </ul>
-          <button v-if="data.insights.length > 3" type="button" class="more-ins" @click="showAllInsights = !showAllInsights">
-            {{ showAllInsights ? 'Ver menos' : `Ver ${data.insights.length - 3} recomendación${data.insights.length - 3 === 1 ? '' : 'es'} más` }}
+          <button v-if="insights.length > 3" type="button" class="more-ins" @click="showAllInsights = !showAllInsights">
+            {{ showAllInsights ? 'Ver menos' : `Ver ${insights.length - 3} recomendación${insights.length - 3 === 1 ? '' : 'es'} más` }}
             <Icon :name="showAllInsights ? 'ph:caret-up' : 'ph:caret-down'" aria-hidden="true" />
           </button>
-          <div v-else-if="!data.insights.length" class="adv-empty">
+          <div v-else-if="!insights.length" class="adv-empty">
             <span class="ok-ic" aria-hidden="true"><Icon name="ph:seal-check-fill" /></span>
             <p class="ins-title">Todo en orden</p>
             <p class="ins-body">No hay nada urgente: sin facturas vencidas ni sorpresas fiscales a la vista.</p>
@@ -949,25 +956,37 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
     display: block;
   }
 
-  .page-actions {
-    width: 100%;
+  /* En el móvil crear va en el «+» de la barra inferior */
+  .page-head .page-actions,
+  .page-head .sub {
+    display: none;
   }
 
-  .page-actions > * {
-    flex: 1;
-  }
-
+  /* Cifras en 2 × 2, compactas: lo primero que se ve es «Hoy» */
   .kpis {
     gap: var(--s-3);
   }
 
   .kpi {
-    padding: var(--s-4);
+    padding: 14px;
     min-height: 0;
   }
 
+  .kpi-top {
+    margin-bottom: 0;
+  }
+
+  .kpi-label {
+    font-size: var(--text-xs);
+  }
+
+  .kpi-ic {
+    display: none;
+  }
+
   .kpi-value {
-    font-size: var(--text-xl);
+    margin-top: 6px;
+    font-size: var(--text-lg);
   }
 
   .kpi-foot .muted {
@@ -983,15 +1002,6 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
   }
 }
 
-@media (max-width: 420px) {
-  .kpis {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .kpi-foot .muted {
-    display: inline;
-  }
-}
 .adv-analyze {
   margin-left: auto;
   flex: none;
