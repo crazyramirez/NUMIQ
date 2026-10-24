@@ -12,7 +12,6 @@ const CLOSED: Record<string, string> = {
   rejected: 'Este presupuesto ya está rechazado',
   invoiced: 'Este presupuesto ya está facturado',
   cancelled: 'Este presupuesto está anulado',
-  expired: 'Este presupuesto ha caducado: pide uno actualizado',
 }
 
 /** El cliente acepta o rechaza el presupuesto desde su enlace, sin cuenta */

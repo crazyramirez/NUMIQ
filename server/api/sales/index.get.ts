@@ -97,7 +97,8 @@ export default defineEventHandler(async (event) => {
       linesSummary,
       invoices: invoiceLinks.get(r.id) ?? [],
       contactLogoUrl: contactLogoUrl(r.contactId, contactLogo),
-      overdue: isOpenStatus(r.status) && !!r.dueDate && r.dueDate < today,
+      // Solo las facturas vencen: un presupuesto pasado de validez sigue pendiente
+      overdue: !isQuoteKind(r.kind) && isOpenStatus(r.status) && !!r.dueDate && r.dueDate < today,
     }
   })
 })

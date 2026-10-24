@@ -103,6 +103,8 @@ if (doc.value && !canEditDoc.value) {
 }
 
 const isAlreadyIssued = computed(() => !!doc.value && doc.value.status !== 'draft' && !isQuote.value)
+// Un presupuesto facturado ya está aceptado: su estado no se toca
+const canPickStatus = computed(() => isQuote.value && doc.value?.status !== 'invoiced')
 
 let keySeq = 0
 const companyVat = Number(company.value?.defaultVatRate ?? 21)
@@ -129,6 +131,8 @@ const form = reactive({
   rectificationCode: 'R1' as string | null,
   rectificationReason: '',
   lines: [blankLine()] as Line[],
+  // Presupuestos: pendiente, enviado, aceptado o rechazado (no tienen borrador)
+  status: 'issued' as string,
 })
 
 if (doc.value) {
@@ -149,6 +153,7 @@ if (doc.value) {
     rectificationCode: doc.value.rectificationCode ?? 'R1',
     rectificationReason: doc.value.rectificationReason ?? '',
     lines: doc.value.lines.map(({ id: _id, ...l }) => ({ ...l, key: ++keySeq })),
+    status: doc.value.status === 'expired' ? 'rejected' : doc.value.status === 'draft' ? 'issued' : doc.value.status,
   })
 }
 else if (source.value) {
@@ -509,22 +514,23 @@ async function save(issue: boolean) {
         irpfApplies: l.irpfApplies,
       })),
       issue,
+      status: canPickStatus.value ? form.status : undefined,
     }
     const r = props.id
       ? await $fetch<{ id: number, number: string | null }>(`/api/sales/${props.id}`, { method: 'PATCH', body })
       : await $fetch<{ id: number, number: string | null }>('/api/sales', { method: 'POST', body })
     dirty.value = false
     toast.success(
-      issue
-        ? `${r.number} emitida`
-        : isAlreadyIssued.value
-          ? 'Factura actualizada'
-          : isQuote.value && doc.value && doc.value.status !== 'draft'
-            ? 'Presupuesto actualizado'
+      isQuote.value
+        ? (doc.value && doc.value.status !== 'draft' ? 'Presupuesto actualizado' : `Presupuesto ${r.number ?? ''} guardado`)
+        : issue
+          ? `${r.number} emitida`
+          : isAlreadyIssued.value
+            ? 'Factura actualizada'
             : 'Borrador guardado',
-      issue
-        ? (isQuote.value ? 'Listo para enviar al cliente.' : verifactu.value ? 'Registrada con huella VeriFactu.' : undefined)
-        : undefined,
+      isQuote.value && !(doc.value && doc.value.status !== 'draft')
+        ? 'Listo para enviar al cliente.'
+        : issue && verifactu.value ? 'Registrada con huella VeriFactu.' : undefined,
     )
     await navigateTo(`${base.value}/${r.id}`)
   }
@@ -583,17 +589,23 @@ const R_CODES = [
           <h1>{{ title }}</h1>
           <p class="muted">
             <template v-if="doc?.number">{{ doc.number }}</template>
-            <template v-else-if="nextNumber">Se numerará como <span class="mono">{{ nextNumber }}</span> al emitir</template>
+            <template v-else-if="nextNumber">Se numerará como <span class="mono">{{ nextNumber }}</span> al {{ isQuote ? 'guardar' : 'emitir' }}</template>
             <span v-if="dirty" class="unsaved">· Sin guardar</span>
           </p>
         </div>
         <div class="ed-actions">
-          <UiButton :loading="saving === 'draft'" :disabled="!!saving" @click="save(false)">
-            {{ isAlreadyIssued || (isQuote && doc && doc.status !== 'draft') ? 'Guardar cambios' : 'Guardar borrador' }}
+          <!-- Presupuestos: un solo «Guardar» (nacen pendientes, con su número) -->
+          <UiButton v-if="isQuote" variant="primary" icon="ph:check" :loading="saving === 'draft'" :disabled="!!saving" @click="save(false)">
+            {{ doc && doc.status !== 'draft' ? 'Guardar cambios' : 'Guardar' }}
           </UiButton>
-          <UiButton v-if="!isAlreadyIssued && !(isQuote && doc && doc.status !== 'draft')" variant="primary" icon="ph:paper-plane-tilt" :loading="saving === 'issue'" :disabled="!!saving" @click="save(true)">
-            Emitir
-          </UiButton>
+          <template v-else>
+            <UiButton :loading="saving === 'draft'" :disabled="!!saving" @click="save(false)">
+              {{ isAlreadyIssued ? 'Guardar cambios' : 'Guardar borrador' }}
+            </UiButton>
+            <UiButton v-if="!isAlreadyIssued" variant="primary" icon="ph:paper-plane-tilt" :loading="saving === 'issue'" :disabled="!!saving" @click="save(true)">
+              Emitir
+            </UiButton>
+          </template>
         </div>
       </div>
     </div>
@@ -641,7 +653,7 @@ const R_CODES = [
                   <UiClear />
                 </span>
               </div>
-              <p v-else class="paper-number" :class="{ pending: !doc?.number }">{{ doc?.number ?? (nextNumber ? `${nextNumber} (al emitir)` : 'Borrador') }}</p>
+              <p v-else class="paper-number" :class="{ pending: !doc?.number }">{{ doc?.number ?? (nextNumber ? `${nextNumber} (al ${isQuote ? 'guardar' : 'emitir'})` : 'Borrador') }}</p>
             </div>
           </div>
 
@@ -837,6 +849,7 @@ const R_CODES = [
         <aside class="side">
           <UiCard title="Condiciones" icon="ph:file-text">
             <div class="stack gap-4">
+              <UiSelect v-if="canPickStatus" v-model="form.status" label="Estado" :options="QUOTE_STATUS_OPTIONS.map(o => ({ value: o.value, label: o.label }))" />
               <UiSelect v-if="seriesOptions.length > 1" v-model="form.seriesId" label="Serie" :options="seriesOptions.map(s => ({ value: s.id, label: `${s.name} (${s.prefix})` }))" />
               <div v-if="!isQuote" class="field">
                 <span class="label">Vencimiento</span>
@@ -869,7 +882,7 @@ const R_CODES = [
           <SalesAttachments v-if="id" :doc-id="id" :items="attachments" @changed="reloadAttachments" />
           <div v-else class="card att-hint">
             <Icon name="ph:paperclip" />
-            <p>Guarda el borrador para adjuntar la orden de pedido, el albarán u otros documentos.</p>
+            <p>Guarda {{ isQuote ? 'el presupuesto' : 'el borrador' }} para adjuntar la orden de pedido, el albarán u otros documentos.</p>
           </div>
 
         </aside>
@@ -882,11 +895,11 @@ const R_CODES = [
         <span class="muted">Total</span>
         <strong class="num">{{ eur(totals.total) }}</strong>
       </div>
-      <UiButton :loading="saving === 'draft'" :disabled="!!saving" @click="save(false)">
+      <UiButton :variant="isQuote && step === 3 ? 'primary' : 'secondary'" :loading="saving === 'draft'" :disabled="!!saving" @click="save(false)">
         {{ isAlreadyIssued || (isQuote && doc && doc.status !== 'draft') ? 'Guardar cambios' : 'Guardar' }}
       </UiButton>
       <UiButton v-if="step < 3" variant="primary" icon-right="ph:arrow-right" @click="nextStep">Siguiente</UiButton>
-      <UiButton v-else-if="!isAlreadyIssued && !(isQuote && doc && doc.status !== 'draft')" variant="primary" :loading="saving === 'issue'" :disabled="!!saving" @click="save(true)">Emitir</UiButton>
+      <UiButton v-else-if="!isAlreadyIssued && !isQuote" variant="primary" :loading="saving === 'issue'" :disabled="!!saving" @click="save(true)">Emitir</UiButton>
     </div>
 
     <ContactModal v-model="contactModal" role="client" :contact-id="editContactId" :prefill-name="prefillName" @saved="onContactSaved" />

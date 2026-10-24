@@ -1,12 +1,13 @@
 import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 
-const schema = salesInputSchema.extend({ issue: z.boolean().default(false) })
+const schema = salesInputSchema.extend({ issue: z.boolean().default(false), status: z.enum(QUOTE_STATUSES).optional() })
 
-/** Crea un borrador y, si se pide, lo emite en el mismo paso */
+/** Crea un borrador y, si se pide, lo emite en el mismo paso. Los presupuestos se emiten siempre (no tienen borrador) */
 export default defineEventHandler(async (event) => {
   const { company, user } = await requireCompany(event)
-  const { issue, ...input } = await readInput(event, schema)
+  const { issue: asked, status, ...input } = await readInput(event, schema)
+  const issue = asked || isQuoteKind(input.kind)
   const id = await saveSalesDraft(company.id, user.id, input)
   let number: string | null = null
   if (issue) {
@@ -21,6 +22,7 @@ export default defineEventHandler(async (event) => {
       throw err
     }
   }
+  if (status && isQuoteKind(input.kind) && status !== 'issued') await setSalesStatus(company.id, id, status)
   await audit(event, { companyId: company.id, userId: user.id, action: issue ? 'sales.issue' : 'sales.create', entity: 'sales_document', entityId: id, data: { number } })
   return { id, number }
 })

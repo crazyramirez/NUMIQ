@@ -1,14 +1,19 @@
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 
-/** Cambios de estado manuales: presupuesto aceptado/rechazado, factura marcada (o desmarcada) como enviada */
+/**
+ * Cambios de estado manuales: presupuesto pendiente/enviado/aceptado/rechazado, factura marcada (o
+ * desmarcada) como enviada. Los presupuestos no tienen borrador ni caducan.
+ */
 const ALLOWED: Record<string, string[]> = {
-  quote: ['issued', 'sent', 'accepted', 'rejected', 'expired'],
+  quote: ['issued', 'sent', 'accepted', 'rejected'],
   proforma: ['issued', 'sent', 'accepted', 'rejected'],
   invoice: ['issued', 'sent'],
   rectifying: ['issued', 'sent'],
 }
 
-export type ManualStatus = 'issued' | 'sent' | 'accepted' | 'rejected' | 'expired'
+/** Estados de un presupuesto: pendiente (issued), enviado, aceptado y rechazado */
+export const QUOTE_STATUSES = ['issued', 'sent', 'accepted', 'rejected'] as const
+export type ManualStatus = typeof QUOTE_STATUSES[number]
 
 /** Cambia el estado de un documento emitido; las facturas con cobros conservan su estado de cobro */
 export async function setSalesStatus(companyId: number, id: number, status: ManualStatus) {
@@ -48,10 +53,11 @@ export async function salesToDraft(companyId: number, id: number) {
 }
 
 const isInvoiceKind = (kind: string) => kind === 'invoice' || kind === 'rectifying'
+export const isQuoteKind = (kind: string) => kind === 'quote' || kind === 'proforma'
 
 export type SalesBulkAction =
   | { action: 'paid', date: 'today' | 'issue' | 'due' | string, method: 'transfer' | 'card' | 'cash' | 'direct_debit' | 'bizum' | 'other' }
-  | { action: 'pending' | 'sent' | 'accepted' | 'rejected' | 'expired' | 'draft' }
+  | { action: 'pending' | 'sent' | 'accepted' | 'rejected' | 'draft' }
   | { action: 'due', dueDate?: string | null, dueDays?: number }
 
 /**
@@ -87,16 +93,15 @@ export async function bulkSalesStatus(companyId: number, ids: number[], change: 
             await changeSalesPayments(companyId, doc.id, { action: 'clear' })
           }
           else {
-            if (['issued', 'sent'].includes(doc.status)) { skip('Ya estaba pendiente'); break }
-            await setSalesStatus(companyId, doc.id, doc.sentAt ? 'sent' : 'issued')
+            if (doc.status === 'issued') { skip('Ya estaba pendiente'); break }
+            await setSalesStatus(companyId, doc.id, 'issued')
           }
           done.push(doc.id)
           break
         }
         case 'sent':
         case 'accepted':
-        case 'rejected':
-        case 'expired': {
+        case 'rejected': {
           if (doc.status === change.action) { skip('Ya estaba así'); break }
           if (doc.status === 'draft') { skip('Es un borrador: emítelo antes'); break }
           if (isInvoiceKind(doc.kind) && change.action !== 'sent') { skip('Solo para presupuestos'); break }
@@ -106,6 +111,7 @@ export async function bulkSalesStatus(companyId: number, ids: number[], change: 
           break
         }
         case 'draft': {
+          if (isQuoteKind(doc.kind)) { skip('Los presupuestos no tienen borrador'); break }
           if (await salesToDraft(companyId, doc.id)) done.push(doc.id)
           else skip('Ya era un borrador')
           break
@@ -124,4 +130,29 @@ export async function bulkSalesStatus(companyId: number, ids: number[], change: 
     }
   }
   return { done, skipped }
+}
+
+/**
+ * Presupuestos con los estados de ahora (pendiente, enviado, aceptado, rechazado): los borradores
+ * que queden se emiten (reciben su número) y los caducados pasan a rechazados.
+ */
+export async function normalizeQuoteStatuses() {
+  const db = useDb()
+  const s = tables.salesDocuments
+  const quoteKinds = ['quote', 'proforma'] as const
+  await db.update(s).set({ status: 'rejected' }).where(and(inArray(s.kind, [...quoteKinds]), eq(s.status, 'expired')))
+  const drafts = await db.select({ id: s.id, companyId: s.companyId }).from(s)
+    .where(and(inArray(s.kind, [...quoteKinds]), eq(s.status, 'draft')))
+    .orderBy(asc(s.issueDate), asc(s.id))
+  let issued = 0
+  for (const d of drafts) {
+    try {
+      await issueSalesDocument(d.companyId, d.id)
+      issued++
+    }
+    catch (err) {
+      console.warn(`[presupuestos] no se pudo emitir el borrador ${d.id}:`, (err as { statusMessage?: string }).statusMessage ?? err)
+    }
+  }
+  if (issued) console.info(`[presupuestos] ${issued} borradores emitidos como pendientes`)
 }

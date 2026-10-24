@@ -90,7 +90,6 @@ const counts = computed(() => {
 const tabs = computed(() => isQuote.value
   ? [
       { value: 'all', label: 'Todos' },
-      { value: 'draft', label: 'Borradores', count: counts.value.draft },
       { value: 'open', label: 'Pendientes', count: counts.value.open },
       { value: 'accepted', label: 'Aceptados', count: counts.value.accepted },
       { value: 'rejected', label: 'Rechazados', count: counts.value.rejected },
@@ -150,6 +149,18 @@ async function removeDoc(r: Row) {
   }
 }
 
+async function setRowStatus(r: Row, s: string) {
+  if (r.status === s) return
+  try {
+    await $fetch(`/api/sales/${r.id}/status`, { method: 'POST', body: { status: s } })
+    toast.success(`Presupuesto ${r.number ?? ''} ${QUOTE_STATUS[s]?.label.toLowerCase()}`)
+    refresh()
+  }
+  catch (err) {
+    toast.error('No se pudo cambiar el estado', errorMessage(err))
+  }
+}
+
 function rowMenu(r: Row): MenuItem[] {
   const isQ = isQuote.value
   const items: MenuItem[] = [
@@ -159,6 +170,15 @@ function rowMenu(r: Row): MenuItem[] {
   // También aquí: en pantallas medianas el botón «Cobrar» de la fila no se muestra
   if (!isQ && ['issued', 'sent', 'partial'].includes(r.status)) {
     items.push({ label: 'Registrar cobro', icon: 'ph:hand-coins', onClick: () => { payDoc.value = r } })
+  }
+  // Estado del presupuesto a mano (el facturado ya está aceptado y no cambia)
+  if (isQ && r.status !== 'invoiced') {
+    items.push({ divider: true }, { heading: 'Estado' }, ...QUOTE_STATUS_OPTIONS.map(o => ({
+      label: o.label,
+      icon: o.icon,
+      active: r.status === o.value,
+      onClick: () => setRowStatus(r, o.value),
+    })), { divider: true })
   }
   if (r.status !== 'draft') {
     items.push({ label: 'Descargar PDF', icon: 'ph:download-simple', onClick: () => window.open(`/api/sales/${r.id}/pdf?download=1`, '_blank') })
@@ -293,8 +313,6 @@ const statusMenu = computed<MenuItem[]>(() => isQuote.value
       { label: 'Enviados', icon: 'ph:paper-plane-tilt', onClick: () => runStatus({ action: 'sent' }, n => done(n, 'enviada', 'enviado')) },
       { label: 'Aceptados', icon: 'ph:check-circle', onClick: () => runStatus({ action: 'accepted' }, n => done(n, 'aceptada', 'aceptado')) },
       { label: 'Rechazados', icon: 'ph:x-circle', onClick: () => runStatus({ action: 'rejected' }, n => done(n, 'rechazada', 'rechazado')) },
-      { label: 'Caducados', icon: 'ph:hourglass-low', onClick: () => runStatus({ action: 'expired' }, n => done(n, 'caducada', 'caducado')) },
-      { label: 'Borradores', icon: 'ph:pencil-simple-line', onClick: markDraft },
       { divider: true },
       { label: 'Válido hasta…', icon: 'ph:calendar-dots', onClick: () => (dueOpen.value = true) },
     ]
@@ -464,7 +482,7 @@ const bulkActions = computed<BulkAction[]>(() => [
                   <div class="row-acts">
                     <SalesInvoiceLinks v-if="isQuote && r.invoices.length" :invoices="r.invoices" />
                     <UiButton v-if="!isQuote && ['issued', 'sent', 'partial'].includes(r.status)" size="sm" variant="ghost" icon="ph:hand-coins" class="quick" @click="payDoc = r">Cobrar</UiButton>
-                    <UiMenu :items="rowMenu(r)" :width="190">
+                    <UiMenu :items="rowMenu(r)" :width="isQuote ? 220 : 190">
                       <template #default="{ toggle }">
                         <UiButton variant="ghost" size="sm" square icon="ph:dots-three-bold" :aria-label="`Acciones de ${r.number ?? 'borrador'}`" @click="toggle" />
                       </template>
@@ -502,7 +520,7 @@ const bulkActions = computed<BulkAction[]>(() => [
                 <small v-else-if="r.status === 'partial'">pend. {{ eur(r.total - r.paidTotal) }}</small>
               </template>
               <template #menu>
-                <UiMenu :items="rowMenu(r)" :width="190">
+                <UiMenu :items="rowMenu(r)" :width="isQuote ? 220 : 190">
                   <template #default="{ toggle }">
                     <UiButton variant="ghost" size="sm" square icon="ph:dots-three-bold" :aria-label="`Acciones de ${r.number ?? 'borrador'}`" @click="toggle" />
                   </template>
@@ -546,7 +564,7 @@ const bulkActions = computed<BulkAction[]>(() => [
       v-model="dueOpen"
       :title="isQuote ? 'Válido hasta' : 'Vencimiento'"
       :subtitle="`${selected.length} ${noun(selected.length)}`"
-      :late="isQuote ? 'Pasada esa fecha sin respuesta, puedes marcarlos como caducados.' : 'Las pendientes de cobro con el vencimiento ya pasado aparecen como vencidas.'"
+      :late="isQuote ? 'Pasada esa fecha siguen pendientes hasta que los marques como aceptados o rechazados.' : 'Las pendientes de cobro con el vencimiento ya pasado aparecen como vencidas.'"
       @apply="setDue"
     />
 

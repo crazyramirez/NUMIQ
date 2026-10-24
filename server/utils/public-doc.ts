@@ -20,13 +20,13 @@ export async function findPublicDoc(token: string) {
   return { doc, company }
 }
 
-export type QuoteState = 'open' | 'accepted' | 'rejected' | 'expired' | 'invoiced' | 'cancelled'
+export type QuoteState = 'open' | 'accepted' | 'rejected' | 'invoiced' | 'cancelled'
 
-/** Situación de un presupuesto para el cliente; null si no es un presupuesto */
-export function quoteState(doc: Pick<SalesDoc, 'kind' | 'status' | 'dueDate'>): QuoteState | null {
+/** Situación de un presupuesto para el cliente (no caduca: se puede aceptar pasada su validez); null si no es un presupuesto */
+export function quoteState(doc: Pick<SalesDoc, 'kind' | 'status'>): QuoteState | null {
   if (doc.kind !== 'quote' && doc.kind !== 'proforma') return null
   if (doc.status === 'accepted' || doc.status === 'rejected' || doc.status === 'invoiced' || doc.status === 'cancelled') return doc.status
-  if (doc.status === 'expired' || (doc.dueDate && doc.dueDate < toISODate(new Date()))) return 'expired'
+  if (doc.status === 'expired') return 'rejected'
   return 'open'
 }
 

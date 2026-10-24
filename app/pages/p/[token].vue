@@ -4,7 +4,7 @@ import type { PaperDoc } from '~/components/sales/Paper.vue'
 /** Vista pública de un documento para el cliente: ver, descargar, aceptar el presupuesto o pagar la factura */
 definePageMeta({ layout: 'blank' })
 
-type QuoteState = 'open' | 'accepted' | 'rejected' | 'expired' | 'invoiced' | 'cancelled'
+type QuoteState = 'open' | 'accepted' | 'rejected' | 'invoiced' | 'cancelled'
 interface PublicDoc {
   doc: PaperDoc & { total: number }
   company: {
@@ -89,7 +89,6 @@ const STATE: Record<QuoteState, { icon: string, tone: string, title: string }> =
   open: { icon: 'ph:hourglass-medium', tone: 'info', title: 'Pendiente de respuesta' },
   accepted: { icon: 'ph:check-circle-fill', tone: 'success', title: 'Presupuesto aceptado' },
   rejected: { icon: 'ph:x-circle-fill', tone: 'neutral', title: 'Presupuesto rechazado' },
-  expired: { icon: 'ph:clock-countdown-fill', tone: 'warning', title: 'Este presupuesto ha caducado' },
   invoiced: { icon: 'ph:check-circle-fill', tone: 'success', title: 'Presupuesto aceptado y facturado' },
   cancelled: { icon: 'ph:prohibit-fill', tone: 'neutral', title: 'Presupuesto anulado' },
 }
@@ -99,7 +98,6 @@ const stateDetail = computed(() => {
   if (!q) return ''
   if (answered.value) return q.state === 'accepted' ? `Hemos avisado a ${brand.value}: se pondrá en contacto contigo para ponerse en marcha.` : `Hemos trasladado tu respuesta a ${brand.value}. ¡Gracias por avisar!`
   if ((q.state === 'accepted' || q.state === 'rejected') && q.responseName) return `Por ${q.responseName}${q.respondedAt ? ` el ${fdate(q.respondedAt)}` : ''}.`
-  if (q.state === 'expired') return `Era válido hasta el ${fdate(data.value?.doc.dueDate)}. Escribe a ${brand.value} si quieres uno actualizado.`
   return ''
 })
 

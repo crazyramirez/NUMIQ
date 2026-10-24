@@ -24,7 +24,7 @@ const FILTER = obj({
   todos: { type: 'boolean', description: 'true SOLO si el usuario pide expresamente todos los registros, sin más filtro' },
   nombres: { type: ['array', 'null'], items: { type: 'string' }, description: 'Facturas/presupuestos: clientes. Gastos: proveedores o comercios. Movimientos: textos del concepto u ordenante. Contactos: nombres o NIF. Productos: nombres. Varios = cualquiera de ellos ("Paloma y Andrés" → ["Paloma", "Andrés"])' },
   texto: str('Texto dentro del concepto, la descripción o las notas'),
-  estado: { type: ['string', 'null'], enum: ['borrador', 'emitida', 'pendiente', 'cobrada', 'vencida', 'anulada', 'aceptado', 'rechazado', 'facturado', 'caducado', 'pagada', 'conciliado', 'ignorado', null], description: 'Facturas: borrador, emitida, pendiente (de cobro), cobrada, vencida, anulada. Presupuestos: borrador, emitida, aceptado, rechazado, facturado, caducado. Gastos: pendiente o pagada. Movimientos: pendiente (por revisar), conciliado o ignorado' },
+  estado: { type: ['string', 'null'], enum: ['borrador', 'emitida', 'pendiente', 'enviado', 'cobrada', 'vencida', 'anulada', 'aceptado', 'rechazado', 'facturado', 'pagada', 'conciliado', 'ignorado', null], description: 'Facturas: borrador, emitida, pendiente (de cobro), cobrada, vencida, anulada. Presupuestos: pendiente, enviado, aceptado, rechazado, facturado. Gastos: pendiente o pagada. Movimientos: pendiente (por revisar), conciliado o ignorado' },
   tipo: { type: ['string', 'null'], enum: ['rectificativa', 'factura', 'ticket', 'nomina', 'seguridad_social', 'impuesto', 'otro', 'cargo', 'abono', 'cliente', 'proveedor', 'servicio', 'producto', null], description: 'Facturas: rectificativa. Gastos: factura, ticket, nomina, seguridad_social, impuesto, otro. Movimientos: cargo o abono. Contactos: cliente o proveedor. Productos: servicio o producto' },
   categoria: str('Categoría de gasto (gastos) o de catálogo (productos); "ninguna" = sin categoría'),
   desde: str('Fecha inicial AAAA-MM-DD (emisión o movimiento)'),
@@ -61,7 +61,7 @@ function toolDefs() {
     fn('detalle_factura', 'Detalle completo de una factura emitida o recibida por su número (líneas, importes, estado, cobros).', {
       numero: { type: 'string' },
     }),
-    fn('crear_borrador', 'Crea un BORRADOR de factura o presupuesto para un cliente que ya existe (no se emite ni se envía: el usuario lo revisa y lo emite él). Úsalo solo cuando el usuario pida preparar una factura o un presupuesto. Si faltan el cliente o los conceptos, pregúntalos antes.', {
+    fn('crear_borrador', 'Crea un BORRADOR de factura (no se emite ni se envía: el usuario la revisa y la emite él) o un presupuesto (los presupuestos no tienen borrador: queda pendiente, con su número, sin enviar) para un cliente que ya existe. Úsalo solo cuando el usuario pida preparar una factura o un presupuesto. Si faltan el cliente o los conceptos, pregúntalos antes.', {
       tipo: { type: 'string', enum: ['factura', 'presupuesto'] },
       cliente: { type: 'string', description: 'Nombre o NIF del cliente tal como lo dice el usuario' },
       lineas: {
@@ -427,6 +427,8 @@ async function crearBorrador(company: Company, actor: Actor, a: { tipo: string, 
     notes: a.notas,
     lines,
   } as SalesInput)
+  // Los presupuestos no tienen borrador: nacen pendientes, con su número
+  if (kind === 'quote') await issueSalesDocument(company.id, id)
   const totals = computeTotals(lines, irpfRate)
   const missingPrice = lines.some(l => !l.unitPrice)
   return {
@@ -619,7 +621,7 @@ Cómo respondes:
 - Usa listas o tablas Markdown cortas cuando aclaren. Sin títulos grandes. Máximo unas 250 palabras salvo que pidan más detalle.
 - Eres experto en fiscalidad española de autónomos y pymes (IVA, IRPF, modelos 303, 130, 111, 115, 349, 390, 190, 180, 347, Renta y Sociedades, gastos deducibles, plazos, VeriFactu). Da consejos prácticos y concretos para esta empresa. En decisiones con riesgo fiscal, recomienda confirmarlo con su asesor en una sola frase.
 - Las cifras de impuestos de NUMIQ son estimaciones a partir de lo registrado: dilo si es relevante.
-- Puedes preparar BORRADORES de facturas y presupuestos con la herramienta crear_borrador cuando te lo pidan: confirma cliente y conceptos si no están claros, resume lo creado con su total y enlázalo para que lo revise y lo emita. Nunca digas que está emitido o enviado.
+- Puedes preparar BORRADORES de facturas y presupuestos con la herramienta crear_borrador cuando te lo pidan: confirma cliente y conceptos si no están claros, resume lo creado con su total y enlázalo para que lo revise (la factura la emite él; el presupuesto queda pendiente con su número). Nunca digas que está enviado.
 
 Cambios en los datos (tienes control completo, siempre con la confirmación del usuario):
 - Con operar_facturas, operar_gastos, operar_banco, operar_contactos y operar_productos puedes modificar, reasignar, emitir, marcar cobros y pagos, clasificar y eliminar cualquier registro de la empresa, uno o cientos a la vez.

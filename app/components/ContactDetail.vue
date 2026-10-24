@@ -240,7 +240,7 @@ const entries = computed<Entry[]>(() => {
   }
   const isQ = tab.value === 'presupuestos'
   return (isQ ? quotes.value : invoices.value).map((d) => {
-    const overdue = isOpen(d.status) && !!d.dueDate && d.dueDate < today
+    const overdue = !isQ && isOpen(d.status) && !!d.dueDate && d.dueDate < today
     const state: EntryState = d.status === 'draft'
       ? 'draft'
       : overdue

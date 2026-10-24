@@ -3,7 +3,7 @@ import { z } from 'zod'
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
 const schema = z.object({ ids: z.array(z.number().int().positive()).min(1).max(1000) }).and(z.discriminatedUnion('action', [
   z.object({ action: z.literal('paid'), date: z.union([z.enum(['today', 'issue', 'due']), isoDate]).default('today'), method: z.enum(['transfer', 'card', 'cash', 'direct_debit', 'bizum', 'other']).default('transfer') }),
-  z.object({ action: z.enum(['pending', 'sent', 'accepted', 'rejected', 'expired', 'draft']) }),
+  z.object({ action: z.enum(['pending', 'sent', 'accepted', 'rejected', 'draft']) }),
   z.object({ action: z.literal('due'), dueDate: isoDate.nullish(), dueDays: z.number().int().min(0).max(3650).optional() }),
 ]))
 

@@ -174,13 +174,13 @@ function salesStatus(estado: string | null, family: SalesFamily): SQL | undefine
     case 'borrador': return eq(s.status, 'draft')
     case 'emitida': return family === 'quote' ? inArray(s.status, ['issued', 'sent']) : notInArray(s.status, ['draft', 'cancelled'])
     case 'pendiente': return family === 'quote' ? inArray(s.status, ['issued', 'sent']) : inArray(s.status, [...open])
+    case 'enviado': return eq(s.status, 'sent')
     case 'cobrada': return eq(s.status, 'paid')
     case 'vencida': return and(inArray(s.status, [...open]), lt(s.dueDate, toISODate(new Date())))
     case 'anulada': return eq(s.status, 'cancelled')
     case 'aceptado': return eq(s.status, 'accepted')
     case 'rechazado': return eq(s.status, 'rejected')
     case 'facturado': return eq(s.status, 'invoiced')
-    case 'caducado': return eq(s.status, 'expired')
     default: return undefined
   }
 }

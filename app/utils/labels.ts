@@ -15,15 +15,28 @@ export const SALES_STATUS: Record<string, { label: string, tone: Tone }> = {
   invoiced: { label: 'Facturado', tone: 'success' },
 }
 
+/** Presupuestos: pendiente, enviado, aceptado o rechazado (sin borrador ni caducidad; facturado cuenta como aceptado) */
 export const QUOTE_STATUS: Record<string, { label: string, tone: Tone }> = {
   ...SALES_STATUS,
   issued: { label: 'Pendiente', tone: 'brand' },
   sent: { label: 'Enviado', tone: 'info' },
+  invoiced: { label: 'Aceptado', tone: 'success' },
+  expired: { label: 'Rechazado', tone: 'danger' },
 }
 
+/** Estados que se pueden elegir a mano en un presupuesto */
+export const QUOTE_STATUS_OPTIONS = [
+  { value: 'issued', label: 'Pendiente', icon: 'ph:clock' },
+  { value: 'sent', label: 'Enviado', icon: 'ph:paper-plane-tilt' },
+  { value: 'accepted', label: 'Aceptado', icon: 'ph:thumbs-up' },
+  { value: 'rejected', label: 'Rechazado', icon: 'ph:thumbs-down' },
+] as const
+
 export const salesStatus = (kind: string, status: string, overdue = false) => {
-  if (overdue) return { label: 'Vencida', tone: 'danger' as Tone }
-  return (kind === 'quote' || kind === 'proforma' ? QUOTE_STATUS : SALES_STATUS)[status] ?? { label: status, tone: 'neutral' as Tone }
+  const quote = kind === 'quote' || kind === 'proforma'
+  // Solo las facturas vencen: un presupuesto pasado de validez sigue con su estado
+  if (overdue && !quote) return { label: 'Vencida', tone: 'danger' as Tone }
+  return (quote ? QUOTE_STATUS : SALES_STATUS)[status] ?? { label: status, tone: 'neutral' as Tone }
 }
 
 export const KIND_LABEL: Record<string, string> = {

@@ -245,10 +245,12 @@ const moreItems = computed<MenuItem[]>(() => {
     if (d.kind === 'invoice') items.push({ label: 'Repetir cada mes…', icon: 'ph:arrows-clockwise', to: `/recurrentes?desde=${d.id}` })
   }
   if (isQuote.value && !['draft', 'invoiced'].includes(d.status)) {
-    if (d.status !== 'issued') items.push({ label: 'Marcar como pendiente', icon: 'ph:arrow-u-up-left', onClick: () => setStatus('issued', 'Presupuesto pendiente') })
-    if (d.status !== 'sent') items.push({ label: 'Marcar como enviado', icon: 'ph:paper-plane-tilt', onClick: () => setStatus('sent', 'Presupuesto enviado') })
-    if (d.status !== 'accepted') items.push({ label: 'Marcar como aceptado', icon: 'ph:thumbs-up', onClick: () => setStatus('accepted', 'Presupuesto aceptado') })
-    if (d.status !== 'rejected') items.push({ label: 'Marcar como rechazado', icon: 'ph:thumbs-down', onClick: () => setStatus('rejected', 'Presupuesto rechazado') })
+    items.push({ divider: true }, { heading: 'Estado' }, ...QUOTE_STATUS_OPTIONS.map(o => ({
+      label: o.label,
+      icon: o.icon,
+      active: d.status === o.value,
+      onClick: () => (d.status === o.value ? undefined : setStatus(o.value, `Presupuesto ${o.label.toLowerCase()}`)),
+    })), { divider: true })
   }
   if (d.contactId) items.push({ label: 'Ver ficha del cliente', icon: 'ph:user', to: `/clientes/${d.contactId}` })
   items.push({ divider: true }, { label: isQuote.value ? 'Eliminar presupuesto' : 'Eliminar factura', icon: 'ph:trash', danger: true, onClick: remove })

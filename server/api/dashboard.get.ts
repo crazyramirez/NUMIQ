@@ -72,7 +72,7 @@ export default defineEventHandler(async (event) => {
     monthly,
     topClients: top.map(t => ({ ...t, logoUrl: contactLogoUrl(t.id, t.id ? logos.get(t.id) : null) })),
     expensesByCategory: byCategory,
-    recent: recent.map(({ description: _description, ...r }) => ({ ...r, conceptPreview: concepts.get(r.id)?.conceptPreview ?? null, overdue: isOpenStatus(r.status) && !!r.dueDate && r.dueDate < today })),
+    recent: recent.map(({ description: _description, ...r }) => ({ ...r, conceptPreview: concepts.get(r.id)?.conceptPreview ?? null, overdue: !isQuoteKind(r.kind) && isOpenStatus(r.status) && !!r.dueDate && r.dueDate < today })),
     deadlines: upcomingDeadlines(now, company.kind, 4),
     tasks,
     money,
