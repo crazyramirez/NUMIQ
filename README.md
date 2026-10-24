@@ -27,7 +27,7 @@ App web instalable (PWA), responsive y en español. Varias empresas por cuenta y
 | **Gestoría** | Archivo documental por trimestre (banco, contratos, nóminas…). «Envío al gestor»: ZIP con emitidas, recibidas con sus originales, archivo y resumen en Excel y PDF, enviado con enlace seguro. Rol *asesor* con acceso de solo lectura. |
 | **Recurrentes** | Cuotas, igualas, alquileres y suscripciones que se generan solos en su fecha, como borrador o emitidos y enviados. |
 | **Informes** | Panel de inicio, informes por periodo, libros registro y exportación a Excel y PDF. |
-| **Asistente IA** | Chat que consulta los datos de la empresa con herramientas de solo lectura (ventas, gastos, impuestos, banco…) y puede preparar borradores de factura. |
+| **Asistente IA** | Chat que consulta los datos de la empresa (ventas, gastos, impuestos, banco…) y opera sobre ellos: reasignar clientes, aplicar retenciones, clasificar o ignorar movimientos del banco, cambiar categorías, marcar cobros y pagos, emitir, eliminar o dar de alta registros. Cada cambio llega como una propuesta con los registros exactos que el usuario confirma (botón o «sí»), queda auditado y, si se puede, se deshace con un clic. |
 | **Cuenta y equipo** | Registro con verificación de email, recuperación de contraseña e invitaciones con roles (`owner`, `admin`, `member`, `advisor`). Copia de seguridad completa en ZIP desde Ajustes. Modo claro y oscuro. |
 
 ---

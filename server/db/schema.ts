@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm'
+import type { AiActionPreview, AiActionResult } from '../../shared/types/assistant'
 import type { ExtractedDocument, ImportCatalogData, ImportContactData, ImportDuplicate, ImportInvoiceData, ImportVaultData } from '../../shared/types/import'
 import type { RichDoc } from '../../shared/utils/rich'
 import type { SourceFileDate } from '../../shared/utils/source-date'
@@ -850,36 +851,6 @@ export const aiMessages = mysqlTable('ai_messages', {
   model: varchar('model', { length: 60 }),
   createdAt: createdAt(),
 }, t => [index('ai_msg_conv_idx').on(t.conversationId, t.id)])
-
-/** Fila de la vista previa de una operación del asistente: qué registro cambia y cómo */
-export type AiActionRow = {
-  id: number
-  label: string
-  sub?: string | null
-  amount?: number | null
-  before?: string | null
-  after?: string | null
-  url?: string | null
-}
-
-export type AiActionPreview = {
-  /** Qué cambia, en una línea («Galván → Navlag») */
-  change: string | null
-  count: number
-  /** Importe total afectado (con impuestos), si tiene sentido */
-  total: number | null
-  rows: AiActionRow[]
-  warnings: string[]
-  undoable: boolean
-}
-
-export type AiActionResult = {
-  done: number
-  skipped: Array<{ id: number, label: string, reason: string }>
-  /** Enlace para ver lo creado o lo cambiado */
-  url?: string | null
-  message?: string | null
-}
 
 /**
  * Operaciones del asistente sobre los datos. El modelo solo las propone: quedan pendientes con los

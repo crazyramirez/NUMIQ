@@ -1,4 +1,4 @@
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq } from 'drizzle-orm'
 import { z } from 'zod'
 
 const schema = z.object({
@@ -16,7 +16,11 @@ function chatRateLimit(userId: number) {
   recent.set(userId, list)
 }
 
-/** Pregunta al asistente; la respuesta llega por streaming (eventos SSE) */
+/**
+ * Pregunta al asistente; la respuesta llega por streaming (eventos SSE). Si la última respuesta dejó
+ * propuestas pendientes y el usuario contesta «sí» o «no», se confirman o cancelan aquí mismo, sin
+ * pasar por el modelo: la decisión es siempre del usuario.
+ */
 export default defineEventHandler(async (event) => {
   const { company, user, role } = await requireCompany(event, 'advisor')
   if (!aiEnabled()) throw createError({ statusCode: 503, statusMessage: 'La IA no está configurada: añade NUXT_OPENAI_API_KEY en el .env' })
@@ -24,19 +28,39 @@ export default defineEventHandler(async (event) => {
   chatRateLimit(user.id)
   const db = useDb()
   const c = tables.aiConversations
+  const m = tables.aiMessages
+  const actor = { id: user.id, name: user.name, role }
+  const ctx = { company, actor, ip: getRequestIP(event, { xForwardedFor: true }) ?? null }
 
   let conversationId = input.conversationId ?? null
+  let pending: ActionView[] = []
   if (conversationId) {
     const [conv] = await db.select({ id: c.id }).from(c).where(and(eq(c.id, conversationId), eq(c.companyId, company.id), eq(c.userId, user.id)))
     if (!conv) throw createError({ statusCode: 404, statusMessage: 'Conversación no encontrada' })
+    await dropOrphanActions(conversationId)
+    const [last] = await db.select({ id: m.id }).from(m).where(and(eq(m.conversationId, conversationId), eq(m.role, 'assistant'))).orderBy(desc(m.id)).limit(1)
+    if (last) pending = await pendingActions(ctx, conversationId, last.id)
   }
   else {
     const [res] = await db.insert(c).values({ companyId: company.id, userId: user.id, title: conversationTitle(input.message) }).$returningId()
     conversationId = res!.id
   }
-  await db.insert(tables.aiMessages).values({ conversationId, role: 'user', content: input.message })
-  const history = (await db.select({ role: tables.aiMessages.role, content: tables.aiMessages.content }).from(tables.aiMessages)
-    .where(eq(tables.aiMessages.conversationId, conversationId)).orderBy(asc(tables.aiMessages.id))).slice(-20)
+  const decision = pending.length && role !== 'advisor' ? (isAffirmative(input.message) ? 'confirm' : isNegative(input.message) ? 'cancel' : null) : null
+  await db.insert(m).values({ conversationId, role: 'user', content: input.message })
+
+  // Historial para el modelo, con el estado real de cada propuesta junto a la respuesta que la hizo
+  const id = conversationId
+  const notes = new Map<number, string[]>()
+  if (!decision) {
+    for (const v of await conversationActions(ctx, id)) {
+      if (v.messageId) notes.set(v.messageId, [...(notes.get(v.messageId) ?? []), actionNote(v)])
+    }
+  }
+  const history = decision
+    ? []
+    : (await db.select({ id: m.id, role: m.role, content: m.content }).from(m)
+        .where(eq(m.conversationId, id)).orderBy(asc(m.id))).slice(-20)
+        .map(h => ({ role: h.role, content: notes.has(h.id) ? `${h.content}\n\n${notes.get(h.id)!.join('\n')}` : h.content }))
 
   // Si el usuario cierra la página, se corta la petición a la IA
   const controller = new AbortController()
@@ -45,7 +69,6 @@ export default defineEventHandler(async (event) => {
   })
 
   const encoder = new TextEncoder()
-  const id = conversationId
   const stream = new ReadableStream({
     async start(ctrl) {
       const send = (obj: unknown) => {
@@ -58,15 +81,30 @@ export default defineEventHandler(async (event) => {
       }
       send({ type: 'start', conversationId: id })
       try {
-        const r = await answer(company, { id: user.id, name: user.name, role }, history, e => send(e), controller.signal)
-        const [res] = await db.insert(tables.aiMessages).values({ conversationId: id, role: 'assistant', content: r.text, tools: r.tools, model: r.model }).$returningId()
+        let r: { text: string, tools: string[], model: string | null }
+        if (decision) {
+          const views: ActionView[] = []
+          for (const p of pending) {
+            const v = decision === 'confirm' ? await confirmAction(ctx, p.id) : await cancelAction(ctx, p.id)
+            views.push(v)
+            send({ type: 'action', action: v })
+          }
+          const text = decisionReply(views, decision === 'confirm')
+          send({ type: 'delta', text })
+          r = { text, tools: [], model: null }
+        }
+        else {
+          r = await answer(company, actor, history, e => send(e), controller.signal, id)
+        }
+        const [res] = await db.insert(m).values({ conversationId: id, role: 'assistant', content: r.text, tools: r.tools, model: r.model }).$returningId()
+        await attachActions(id, res!.id)
         await db.update(c).set({ updatedAt: new Date() }).where(eq(c.id, id))
         send({ type: 'done', messageId: res!.id, tools: r.tools })
       }
       catch (err) {
         if ((err as Error).name !== 'AbortError') {
           console.error('[assistant]', err)
-          send({ type: 'error', message: err instanceof AiError ? err.message : 'No se pudo responder. Inténtalo de nuevo.' })
+          send({ type: 'error', message: err instanceof AiError ? err.message : (err as { statusMessage?: string }).statusMessage ?? 'No se pudo responder. Inténtalo de nuevo.' })
         }
       }
       try {

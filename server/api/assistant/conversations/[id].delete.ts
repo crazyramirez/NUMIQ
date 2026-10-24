@@ -8,5 +8,8 @@ export default defineEventHandler(async (event) => {
   const r = await db.delete(c).where(and(eq(c.id, id), eq(c.companyId, company.id), eq(c.userId, user.id)))
   if (!r[0].affectedRows) throw createError({ statusCode: 404, statusMessage: 'Conversación no encontrada' })
   await db.delete(tables.aiMessages).where(eq(tables.aiMessages.conversationId, id))
+  // Las propuestas sin confirmar se anulan; las ejecutadas se quedan como registro
+  const a = tables.aiActions
+  await db.update(a).set({ status: 'cancelled' }).where(and(eq(a.conversationId, id), eq(a.companyId, company.id), eq(a.status, 'pending')))
   return { ok: true }
 })

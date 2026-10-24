@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { AiActionView } from '#shared/types/assistant'
+
 useHead({ title: 'Asistente IA · NUMIQ' })
 
 interface Message {
@@ -6,6 +8,8 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   tools?: string[] | null
+  /** Operaciones propuestas en esta respuesta (tarjetas para confirmar) */
+  actions?: AiActionView[]
   streaming?: boolean
   status?: string | null
   error?: boolean
@@ -43,7 +47,16 @@ const TOOL_NAMES: Record<string, string> = {
   buscar: 'Búsqueda',
   detalle_factura: 'Factura',
   crear_borrador: 'Borrador creado',
-  clasificar_movimientos_banco: 'Movimientos bancarios asignados',
+  banco: 'Banco',
+  listar: 'Registros',
+  operar_facturas: 'Facturas',
+  operar_gastos: 'Gastos',
+  operar_banco: 'Banco',
+  operar_contactos: 'Contactos',
+  operar_productos: 'Productos',
+  crear_contacto: 'Contacto creado',
+  crear_producto: 'Producto creado',
+  crear_gasto: 'Gasto anotado',
 }
 
 const SUGGESTIONS = [
@@ -88,6 +101,20 @@ async function remove(c: Conversation) {
   await refreshList()
 }
 
+// ─── Operaciones propuestas ───
+
+/** Actualiza la tarjeta donde esté (al confirmar escribiendo «sí» es la de una respuesta anterior) */
+function upsertAction(v: AiActionView, fallback?: Message) {
+  for (const m of messages.value) {
+    const i = m.actions?.findIndex(x => x.id === v.id) ?? -1
+    if (i >= 0) {
+      m.actions![i] = v
+      return
+    }
+  }
+  if (fallback) (fallback.actions ??= []).push(v)
+}
+
 // ─── Enviar y recibir en streaming ───
 
 const scroller = ref<HTMLElement>()
@@ -108,7 +135,7 @@ async function send(text?: string) {
   busy.value = true
   stick = true
   messages.value.push({ id: `u${Date.now()}`, role: 'user', content: q })
-  const answer = reactive<Message>({ id: `a${Date.now()}`, role: 'assistant', content: '', tools: [], streaming: true, status: 'Pensando' })
+  const answer = reactive<Message>({ id: `a${Date.now()}`, role: 'assistant', content: '', tools: [], actions: [], streaming: true, status: 'Pensando' })
   messages.value.push(answer)
   await nextTick()
   scrollDown(true)
@@ -135,7 +162,7 @@ async function send(text?: string) {
       while ((i = buffer.indexOf('\n\n')) >= 0) {
         const raw = buffer.slice(0, i).replace(/^data: /, '')
         buffer = buffer.slice(i + 2)
-        const ev = JSON.parse(raw) as { type: string, text?: string, name?: string, label?: string, conversationId?: number, message?: string, messageId?: number }
+        const ev = JSON.parse(raw) as { type: string, text?: string, name?: string, label?: string, conversationId?: number, message?: string, messageId?: number, action?: AiActionView }
         if (ev.type === 'start' && ev.conversationId) {
           if (!conversationId.value) router.replace({ query: { c: String(ev.conversationId) } })
           conversationId.value = ev.conversationId
@@ -143,6 +170,10 @@ async function send(text?: string) {
         else if (ev.type === 'tool') {
           answer.status = ev.label ?? 'Consultando tus datos'
           if (ev.name && !answer.tools!.includes(ev.name)) answer.tools!.push(ev.name)
+        }
+        else if (ev.type === 'action' && ev.action) {
+          upsertAction(ev.action, answer)
+          scrollDown()
         }
         else if (ev.type === 'delta' && ev.text) {
           answer.status = null
@@ -246,8 +277,8 @@ const html = (m: Message) => renderMarkdown(m.content)
           <h1 class="title"><span class="ai-text">Asistente NUMIQ</span></h1>
           <p class="sub">Tu asesor financiero, con tus cifras reales</p>
         </div>
-        <UiButton class="hist-btn" variant="ghost" size="sm" icon="ph:clock-counter-clockwise" @click="historyOpen = true">Historial</UiButton>
-        <UiButton v-if="messages.length" variant="ghost" size="sm" icon="ph:plus" @click="open(null)">Nueva</UiButton>
+        <UiButton class="hist-btn" variant="ghost" size="sm" icon="ph:clock-counter-clockwise" compact @click="historyOpen = true">Historial</UiButton>
+        <UiButton v-if="messages.length" variant="ghost" size="sm" icon="ph:plus" compact @click="open(null)">Nueva</UiButton>
       </header>
 
       <div ref="scroller" class="messages" role="log" aria-live="polite" aria-label="Conversación" @scroll.passive="onScroll">
@@ -260,7 +291,7 @@ const html = (m: Message) => renderMarkdown(m.content)
         <div v-else-if="!messages.length" class="welcome">
           <div class="orb" aria-hidden="true"><Icon name="ph:sparkle-fill" /></div>
           <h2 class="w-t">Hola{{ firstName ? `, ${firstName}` : '' }}. ¿En qué te ayudo?</h2>
-          <p class="w-s">Pregúntame por tus ventas, gastos, cobros o impuestos: miro tus datos de NUMIQ y te respondo con cifras exactas y consejos prácticos.</p>
+          <p class="w-s">Pregúntame por tus ventas, gastos, cobros o impuestos: miro tus datos de NUMIQ y te respondo con cifras exactas y consejos prácticos. También hago cambios por ti, como reasignar facturas, clasificar el banco o borrar gastos, siempre con tu confirmación.</p>
           <div v-if="ai.configured" class="sugs">
             <button v-for="s in SUGGESTIONS" :key="s.text" type="button" class="sug" @click="send(s.text)">
               <Icon :name="s.icon" class="sug-ic" aria-hidden="true" />
@@ -278,6 +309,7 @@ const html = (m: Message) => renderMarkdown(m.content)
               <template v-else>
                 <p v-if="m.status" class="status"><span class="dots" aria-hidden="true"><i /><i /><i /></span>{{ m.status }}…</p>
                 <div v-if="m.content" class="md" :class="{ typing: m.streaming }" @click="onContentClick" v-html="html(m)" />
+                <AssistantActionCard v-for="a in m.actions ?? []" :key="a.id" :action="a" @update="upsertAction" />
                 <div v-if="!m.streaming && m.content && !m.error" class="meta">
                   <span v-if="m.tools?.length" class="used"><Icon name="ph:database" aria-hidden="true" /> {{ m.tools.map(t => TOOL_NAMES[t] ?? t).join(' · ') }}</span>
                   <button type="button" class="copy" aria-label="Copiar respuesta" @click="copy(m)"><Icon name="ph:copy" /></button>
@@ -291,11 +323,11 @@ const html = (m: Message) => renderMarkdown(m.content)
       <form class="composer" @submit.prevent="send()">
         <div class="box">
           <label for="ask" class="sr-only">Escribe tu pregunta</label>
-          <textarea id="ask" ref="input" v-model="draft" rows="1" :placeholder="ai.configured ? 'Pregunta lo que quieras sobre tu negocio…' : 'Asistente no disponible'" :disabled="!ai.configured" @keydown="onKey" />
+          <textarea id="ask" ref="input" v-model="draft" rows="1" :placeholder="ai.configured ? 'Pregunta o pide un cambio…' : 'Asistente no disponible'" :disabled="!ai.configured" @keydown="onKey" />
           <UiButton v-if="busy" variant="secondary" square icon="ph:stop-fill" aria-label="Detener" @click="stop" />
           <UiButton v-else type="submit" variant="ai" square icon="ph:paper-plane-right-fill" aria-label="Enviar" :disabled="!draft.trim() || !ai.configured" />
         </div>
-        <p class="disclaimer">Usa tus datos de NUMIQ. Los impuestos son estimaciones: confírmalos con tu asesor antes de presentar.</p>
+        <p class="disclaimer">Usa tus datos de NUMIQ. Los cambios solo se aplican cuando los confirmas. Los impuestos son estimaciones: confírmalos con tu asesor.</p>
       </form>
     </section>
 
@@ -860,6 +892,14 @@ textarea {
 
   .w-t {
     font-size: var(--text-xl);
+  }
+
+  .chat-head {
+    padding: var(--s-3) var(--s-3) var(--s-3) var(--s-4);
+  }
+
+  .sub {
+    display: none;
   }
 }
 </style>
