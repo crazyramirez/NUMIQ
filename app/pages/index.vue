@@ -2,7 +2,6 @@
 useHead({ title: 'Inicio · NUMIQ' })
 
 const { me, companyName } = useMe()
-const readOnly = computed(() => me.value?.company?.role === 'advisor')
 // Lo que ya es una tarea de «Hoy» no se repite como recomendación del asesor
 const TASK_INSIGHTS = /^(overdue|drafts|bank:)/
 // «Aparta X para impuestos» ya lo cuenta «Tu dinero libre» cuando hay banco
@@ -104,7 +103,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 
     <div v-else-if="data" class="layout">
       <!-- Hoy: lo que hay que hacer, con su botón -->
-      <DashboardToday class="rise" :tasks="data.tasks" :read-only="readOnly" @done="refresh()" />
+      <DashboardToday class="rise" :tasks="data.tasks" />
 
       <!-- Tu dinero libre: banco − Hacienda − pagos pendientes -->
       <DashboardMoney v-if="data.money" class="rise" style="--i: 1" :money="data.money" />

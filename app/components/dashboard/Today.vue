@@ -9,55 +9,12 @@ interface Task {
   tone: 'danger' | 'warning' | 'info' | 'brand'
   title: string
   detail: string | null
-  action: { label: string, to?: string, kind?: 'remind' }
-  secondary?: { label: string, to: string }
+  action: { label: string, to: string }
 }
 
-defineProps<{ tasks: Task[], readOnly?: boolean }>()
-const emit = defineEmits<{ done: [] }>()
+defineProps<{ tasks: Task[] }>()
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
-
-const toast = useToast()
-const { confirm } = useConfirm()
-const busy = ref<string | null>(null)
-
-// Recordar a todos los vencidos: primero cuántos saldrían, luego confirmar
-async function remindAll() {
-  busy.value = 'overdue'
-  try {
-    const plan = await $fetch<{ count: number, amount: number, noEmail: number, recent: number }>('/api/reminders/overdue')
-    if (!plan.count) {
-      toast.info('Nada que recordar ahora', plan.recent ? 'A las vencidas ya les llegó un aviso hace menos de 4 días.' : 'Las facturas vencidas no tienen email del cliente.')
-      return
-    }
-    const left = [
-      plan.recent ? `${plural(plan.recent, 'ya recibió', 'ya recibieron')} un aviso hace menos de 4 días` : null,
-      plan.noEmail ? `${plural(plan.noEmail, 'no tiene', 'no tienen')} email del cliente` : null,
-    ].filter(Boolean)
-    const ok = await confirm({
-      title: `¿Enviar ${plural(plan.count, 'recordatorio', 'recordatorios')} de pago?`,
-      body: `Cada cliente recibirá un email amable con su factura adjunta: ${eur(plan.amount)} en total.${left.length ? `\n\nSe quedan fuera: ${left.join(' y ')}.` : ''}`,
-      confirmLabel: plan.count === 1 ? 'Enviar recordatorio' : 'Enviar recordatorios',
-    })
-    if (!ok) return
-    const r = await $fetch<{ sent: number, failed: number }>('/api/reminders/overdue', { method: 'POST' })
-    if (r.sent) toast.success(`${plural(r.sent, 'recordatorio enviado', 'recordatorios enviados')}`, r.failed ? `${r.failed} no se ${r.failed === 1 ? 'pudo' : 'pudieron'} enviar.` : 'Te avisamos en Inicio cuando cobres.')
-    else toast.error('No se pudo enviar ningún recordatorio', 'Revisa el correo en Ajustes y vuelve a intentarlo.')
-    emit('done')
-  }
-  catch (err) {
-    toast.error('No se pudieron enviar los recordatorios', errorMessage(err))
-  }
-  finally {
-    busy.value = null
-  }
-}
-
-function run(t: Task) {
-  if (t.action.kind === 'remind') remindAll()
-  else if (t.action.to) navigateTo(t.action.to)
-}
 </script>
 
 <template>
@@ -71,27 +28,22 @@ function run(t: Task) {
     </header>
 
     <ul v-if="tasks.length" class="tasks">
-      <li v-for="t in tasks" :key="t.key" class="task" :class="[t.tone, { wide: t.action.kind === 'remind' }]">
+      <li v-for="t in tasks" :key="t.key" class="task" :class="t.tone">
         <span class="t-ic" aria-hidden="true"><Icon :name="t.icon" /></span>
         <div class="t-main">
           <p class="t-title">{{ t.title }}</p>
           <p v-if="t.detail" class="t-detail">{{ t.detail }}</p>
         </div>
-        <div class="t-acts">
-          <UiButton v-if="t.secondary" size="sm" variant="ghost" :to="t.secondary.to">{{ t.secondary.label }}</UiButton>
-          <UiButton
-            v-if="!(readOnly && t.action.kind === 'remind')"
-            size="sm"
-            :variant="t.tone === 'danger' ? 'primary' : 'secondary'"
-            :icon="t.action.kind === 'remind' ? 'ph:paper-plane-tilt' : undefined"
-            :icon-right="t.action.kind === 'remind' ? undefined : 'ph:arrow-right'"
-            :loading="busy === t.key"
-            :compact="t.action.kind !== 'remind'"
-            @click="run(t)"
-          >
-            {{ t.action.label }}
-          </UiButton>
-        </div>
+        <UiButton
+          class="t-act"
+          size="sm"
+          :variant="t.tone === 'danger' ? 'primary' : 'secondary'"
+          icon-right="ph:arrow-right"
+          compact
+          :to="t.action.to"
+        >
+          {{ t.action.label }}
+        </UiButton>
       </li>
     </ul>
 
@@ -228,11 +180,8 @@ function run(t: Task) {
   color: var(--text-3);
 }
 
-.t-acts {
-  display: flex;
+.t-act {
   flex: none;
-  align-items: center;
-  gap: 4px;
 }
 
 .calm {
@@ -265,7 +214,6 @@ function run(t: Task) {
   color: var(--text-3);
 }
 
-/* Estrecha: el botón baja debajo del texto, a todo el ancho de la columna */
 @container today (max-width: 600px) {
   .today-h {
     padding: var(--s-4) var(--s-4) var(--s-3);
@@ -273,22 +221,6 @@ function run(t: Task) {
 
   .task {
     padding: 14px var(--s-4);
-  }
-
-  /* Las tareas de enlace se quedan en una línea con su flecha; «Recordar a todos» lleva sus botones debajo */
-  .task.wide {
-    flex-wrap: wrap;
-    align-items: flex-start;
-  }
-
-  .task.wide .t-main {
-    flex-basis: calc(100% - 50px);
-  }
-
-  .task.wide .t-acts {
-    width: 100%;
-    justify-content: flex-end;
-    padding-left: 50px;
   }
 }
 </style>

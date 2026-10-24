@@ -6,9 +6,7 @@ export interface TodayTask {
   tone: 'danger' | 'warning' | 'info' | 'brand'
   title: string
   detail: string | null
-  /** Acción principal: un enlace o «remind» (recordar a todos los vencidos de una vez) */
-  action: { label: string, to?: string, kind?: 'remind' }
-  secondary?: { label: string, to: string }
+  action: { label: string, to: string }
 }
 
 type Company = typeof tables.companies.$inferSelect
@@ -52,8 +50,7 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
       tone: 'danger',
       title: `${plural(recv.overdueCount, 'factura vencida', 'facturas vencidas')} sin cobrar`,
       detail: `${eurText0(recv.overdueAmount)} fuera de plazo`,
-      action: mailEnabled() ? { label: 'Recordar a todos', kind: 'remind' } : { label: 'Ver', to: '/facturas?estado=overdue&anio=todos' },
-      secondary: mailEnabled() ? { label: 'Ver', to: '/facturas?estado=overdue&anio=todos' } : undefined,
+      action: { label: 'Ver', to: '/facturas?estado=overdue&anio=todos' },
     })
   }
 

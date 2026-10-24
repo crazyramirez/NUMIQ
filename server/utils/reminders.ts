@@ -146,24 +146,6 @@ export async function sendDueReminders(company: Company, site: string, opts: { u
   return sendReminders(company, ready, site, opts.userId ?? null)
 }
 
-/**
- * «Recordar a todos los vencidos»: a quién se puede escribir ya, sin esperar al calendario de avisos.
- * Se salta las facturas sin email y las que ya recibieron un aviso hace menos de 4 días.
- */
-export async function overdueReminderPlan(company: Company, today = toISODate(new Date())) {
-  const queue = await reminderQueue(company, today)
-  const recentCut = addDays(today, -MIN_GAP_DAYS)
-  const noEmail = queue.filter(i => !i.email)
-  const recent = queue.filter(i => i.email && i.lastAt && i.lastAt > recentCut)
-  const ready = queue.filter(i => i.email && !(i.lastAt && i.lastAt > recentCut)).slice(0, MAX_PER_RUN)
-  return {
-    ready,
-    amount: round2(ready.reduce((sum, i) => sum + i.pending, 0)),
-    noEmail: noEmail.length,
-    recent: recent.length,
-  }
-}
-
 /** Envía un recordatorio a cada factura de la lista (con el mensaje de la empresa o el de NUMIQ) */
 export async function sendReminders(company: Company, ready: ReminderItem[], site: string, userId: number | null) {
   const s = reminderSettings(company)
