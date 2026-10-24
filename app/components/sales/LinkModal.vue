@@ -134,6 +134,7 @@ async function unlink(c: LinkCandidate) {
     :title="isQuote ? 'Vincular a una factura' : 'Vincular a un presupuesto'"
     :subtitle="isQuote ? 'Facturas emitidas que pueden corresponder a este presupuesto' : 'Presupuestos de los que puede salir esta factura'"
     size="lg"
+    no-touch-keyboard
   >
     <div class="lk">
       <UiInput v-model="q" icon="ph:magnifying-glass" :placeholder="isQuote ? 'Número, cliente o concepto' : 'Número, cliente o concepto del presupuesto'" :aria-label="`Buscar ${other.one}`" autofocus />

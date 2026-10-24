@@ -587,10 +587,12 @@ const R_CODES = [
         <UiButton variant="ghost" square icon="ph:arrow-left" aria-label="Volver" @click="goBack" />
         <div class="grow ed-title">
           <h1>{{ title }}</h1>
-          <p class="muted">
-            <template v-if="doc?.number">{{ doc.number }}</template>
-            <template v-else-if="nextNumber">Se numerará como <span class="mono">{{ nextNumber }}</span> al {{ isQuote ? 'guardar' : 'emitir' }}</template>
-            <span v-if="dirty" class="unsaved">· Sin guardar</span>
+          <p class="muted ed-sub">
+            <span class="ed-sub-t">
+              <template v-if="doc?.number">{{ doc.number }}</template>
+              <template v-else-if="nextNumber"><span class="ed-sub-long">Se numerará como </span><span class="mono">{{ nextNumber }}</span> al {{ isQuote ? 'guardar' : 'emitir' }}</template>
+            </span>
+            <span v-if="dirty" class="unsaved"><span class="unsaved-dot" aria-hidden="true" />Sin guardar</span>
           </p>
         </div>
         <div class="ed-actions">
@@ -796,13 +798,15 @@ const R_CODES = [
                     <span v-if="!l.irpfApplies" class="l-tag warn">Sin retención</span>
                   </div>
                 </div>
-                <SalesNumCell v-model="l.quantity" label="Cantidad" :decimals="3" />
-                <SalesNumCell :model-value="shownPrice(l)" label="Precio unitario" :decimals="4" placeholder="0,00" suffix="€" @update:model-value="setPrice(l, $event)" />
-                <SalesNumCell v-model="l.discountPct" label="Descuento" suffix="%" class="l-dto" />
-                <select v-model.number="l.vatRate" class="cell r" aria-label="IVA" @change="onVatChange(l)">
-                  <option v-for="r in VAT_RATES" :key="r" :value="r">{{ r }} %</option>
-                </select>
-                <span class="l-amount num">{{ eur(lineAmounts({ ...l, quantity: l.quantity ?? 0, unitPrice: l.unitPrice ?? 0 }).base) }}</span>
+                <SalesNumCell v-model="l.quantity" label="Cantidad" :decimals="3" class="l-qty" data-label="Cantidad" />
+                <SalesNumCell :model-value="shownPrice(l)" label="Precio unitario" :decimals="4" placeholder="0,00" suffix="€" class="l-price" :data-label="pricesWithVat ? 'Precio c/IVA' : 'Precio'" @update:model-value="setPrice(l, $event)" />
+                <SalesNumCell v-model="l.discountPct" label="Descuento" suffix="%" class="l-dto" data-label="Dto." />
+                <span class="l-vat" data-label="IVA">
+                  <select v-model.number="l.vatRate" class="cell r" aria-label="IVA" @change="onVatChange(l)">
+                    <option v-for="r in VAT_RATES" :key="r" :value="r">{{ r }} %</option>
+                  </select>
+                </span>
+                <span class="l-amount num" data-label="Importe">{{ eur(lineAmounts({ ...l, quantity: l.quantity ?? 0, unitPrice: l.unitPrice ?? 0 }).base) }}</span>
                 <UiMenu :items="lineMenu(l, i)" :width="230" class="l-menu">
                   <template #default="{ toggle }">
                     <button type="button" class="l-btn" aria-label="Opciones de la línea" @click="toggle"><Icon name="ph:dots-three-vertical-bold" /></button>
@@ -940,9 +944,34 @@ const R_CODES = [
   font-size: var(--text-sm);
 }
 
+.ed-sub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.ed-sub-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .unsaved {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
   color: var(--warning);
   font-weight: 550;
+}
+
+.unsaved-dot {
+  width: 6px;
+  height: 6px;
+  background: currentcolor;
+  border-radius: 50%;
 }
 
 .ed-actions {
@@ -1233,8 +1262,18 @@ const R_CODES = [
 }
 
 .l-row select.cell {
+  width: 100%;
   text-align: right;
   text-align-last: right;
+}
+
+.l-vat {
+  display: block;
+}
+
+/* Etiquetas de cada cifra: solo en el móvil, donde no hay cabecera de columnas */
+.l-row > [data-label]::before {
+  display: none;
 }
 
 .l-amount {
@@ -1622,6 +1661,21 @@ const R_CODES = [
     flex-basis: calc(100% - 32px);
   }
 
+  .repeat-s {
+    display: -webkit-box;
+    white-space: normal;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  .ed-sub-long {
+    display: none;
+  }
+
+  .ed-title h1 {
+    font-size: var(--text-lg);
+  }
+
   .repeat > :last-child {
     width: 100%;
   }
@@ -1694,7 +1748,7 @@ const R_CODES = [
   .l-head > :nth-child(4),
   .l-row > .l-dto { grid-area: dto; }
   .l-head > :nth-child(5),
-  .l-row > select { grid-area: vat; }
+  .l-row > .l-vat { grid-area: vat; }
   .l-head > :nth-child(6),
   .l-amount { grid-area: amount; }
   .l-desc { grid-area: desc; }
@@ -1706,20 +1760,115 @@ const R_CODES = [
   }
 }
 
-/* Móvil: cada línea como una tarjeta, cifras en dos filas y sin cabecera */
-@container lines (max-width: 420px) {
+/* Móvil: cada línea es una tarjeta con sus cifras etiquetadas y el importe al pie */
+@container lines (max-width: 480px) {
   .l-head {
     display: none;
   }
 
   .l-row {
-    grid-template-columns: 1fr 1fr 1fr 30px;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) 34px;
     grid-template-areas:
       'desc desc desc menu'
       'qty price vat vat'
       'dto amount amount amount';
-    row-gap: 8px;
-    padding: 12px 0;
+    gap: 12px 8px;
+    margin-bottom: 10px;
+    padding: 12px;
+    background: #fff;
+    border: 1px solid var(--p-line);
+    border-radius: 12px;
+    box-shadow: 0 1px 2px rgb(16 24 40 / 0.04);
+  }
+
+  .l-row > [data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 4px;
+    font-family: var(--font-sans);
+    font-size: 10.5px;
+    font-weight: 650;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: left;
+    color: var(--p-text-3);
+  }
+
+  .l-row :deep(.numcell .cell),
+  .l-row select.cell {
+    height: 42px;
+    font-size: 16px;
+    background: var(--p-soft);
+    border: 1px solid transparent;
+    border-radius: 9px;
+  }
+
+  /* La etiqueta va dentro de la celda: el «€» se centra en el campo, no en el conjunto */
+  .l-row :deep(.numcell .sfx) {
+    top: auto;
+    bottom: 21px;
+    transform: translateY(50%);
+  }
+
+  .l-row :deep(.numcell .cell:focus),
+  .l-row select.cell:focus {
+    background: #fff;
+    border-color: var(--p-accent);
+  }
+
+  /* El concepto, como un campo de verdad: lo primero que se rellena */
+  .l-desc :deep(.desc) {
+    min-height: 44px;
+    padding: 10px 12px;
+    font-size: 16px;
+    background: var(--p-soft);
+    border: 1px solid transparent;
+    border-radius: 9px;
+  }
+
+  .l-desc :deep(.desc:focus) {
+    background: #fff;
+    border-color: var(--p-accent);
+  }
+
+  .l-menu {
+    align-self: start;
+  }
+
+  .l-btn {
+    width: 34px;
+    height: 44px;
+    opacity: 1;
+  }
+
+  /* Pie: descuento a la izquierda (pequeño) e importe de la línea a la derecha */
+  .l-dto {
+    max-width: 96px;
+  }
+
+  .l-amount {
+    align-self: end;
+    padding: 0 2px 9px;
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--p-text);
+  }
+
+  .l-amount::before {
+    text-align: right !important;
+    margin-bottom: 2px !important;
+  }
+
+  .l-add {
+    padding-top: 4px;
+  }
+
+  .add-btn {
+    justify-content: center;
+    width: 100%;
+    height: 46px;
+    border: 1.5px dashed color-mix(in srgb, var(--p-accent) 40%, transparent);
+    border-radius: 12px;
   }
 }
 

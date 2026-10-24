@@ -11,6 +11,8 @@ const props = withDefaults(defineProps<{
   side?: boolean
   /** Impide cerrar por fuera (formularios con cambios) */
   persistent?: boolean
+  /** En pantallas táctiles, no enfocar un campo al abrir (el teclado taparía lo que hay que ver primero) */
+  noTouchKeyboard?: boolean
 }>(), { size: 'md' })
 
 const open = defineModel<boolean>({ default: false })
@@ -49,6 +51,10 @@ let watcher: MutationObserver | null = null
 function focusFirst() {
   const p = panel.value
   if (!p) return
+  if (props.noTouchKeyboard && window.matchMedia('(hover: none)').matches) {
+    p.focus()
+    return
+  }
   const target = p.querySelector<HTMLElement>('[autofocus]') ?? p.querySelector<HTMLElement>(`.body :is(${FOCUSABLE})`)
   ;(target ?? p).focus()
   // Formularios que cargan sus datos: cuando aparece el campo con autofocus, se le pasa el foco
@@ -68,7 +74,29 @@ function stopWatching() {
   watcher = null
 }
 
+// Teclado del móvil: el navegador no encoge la pantalla, solo la parte visible. El fondo se ajusta a esa
+// parte para que la hoja inferior quede siempre encima del teclado
+const keyboard = ref<{ top: number, height: number } | null>(null)
+function syncViewport() {
+  const v = window.visualViewport
+  keyboard.value = v && window.innerHeight - v.height > 80 ? { top: v.offsetTop, height: v.height } : null
+}
+function watchViewport(on: boolean) {
+  const v = window.visualViewport
+  if (!v) return
+  const method = on ? 'addEventListener' : 'removeEventListener'
+  v[method]('resize', syncViewport)
+  v[method]('scroll', syncViewport)
+  if (on) syncViewport()
+  else keyboard.value = null
+}
+const overlayStyle = computed(() => ({
+  '--depth': depth.value,
+  ...(keyboard.value ? { top: `${keyboard.value.top}px`, bottom: 'auto', height: `${keyboard.value.height}px`, '--visible-h': `${keyboard.value.height}px` } : {}),
+}))
+
 watch(open, async (v) => {
+  watchViewport(v)
   if (v) {
     lastFocus = document.activeElement as HTMLElement
     depth.value = modalStack.push(self)
@@ -86,6 +114,7 @@ watch(open, async (v) => {
 onMounted(() => window.addEventListener('keydown', onKey))
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey)
+  watchViewport(false)
   stopWatching()
   release()
 })
@@ -98,7 +127,7 @@ const modalStack: symbol[] = []
 <template>
   <Teleport to="body">
     <Transition :name="side ? 'sheet' : 'dialog'">
-      <div v-if="open" class="overlay" :class="{ side }" :style="{ '--depth': depth }" @mousedown.self="close">
+      <div v-if="open" class="overlay" :class="{ side, kb: !!keyboard }" :style="overlayStyle" @mousedown.self="close">
         <div ref="panel" class="panel" :class="`w-${size}`" role="dialog" aria-modal="true" :aria-label="title" tabindex="-1">
           <header v-if="title || $slots.head" class="head">
             <div class="grow">
@@ -257,8 +286,15 @@ const modalStack: symbol[] = []
 
   .overlay:not(.side) .panel {
     max-height: 92dvh;
+    transition: max-height 0.15s;
     border-radius: var(--r-2xl) var(--r-2xl) 0 0;
     padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Con el teclado abierto: la hoja ocupa lo visible y su pie queda pegado al teclado */
+  .overlay.kb:not(.side) .panel {
+    max-height: calc(var(--visible-h) - 8px);
+    padding-bottom: 0;
   }
 
   .side {
