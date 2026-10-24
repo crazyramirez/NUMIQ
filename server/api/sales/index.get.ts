@@ -81,38 +81,18 @@ export default defineEventHandler(async (event) => {
     .orderBy(sql`${s.status} = 'draft' DESC`, desc(s.issueDate), desc(s.sequence), desc(s.id))
     .limit(p.limit)
 
-  const docIds = rows.map(r => r.id)
-  const [invoiceLinks, lines] = await Promise.all([
+  const [invoiceLinks, concepts] = await Promise.all([
     loadQuoteInvoices(company.id, rows.filter(r => r.kind === 'quote' || r.kind === 'proforma').map(r => r.id)),
-    docIds.length
-      ? useDb().select({
-          documentId: tables.salesDocumentLines.documentId,
-          description: tables.salesDocumentLines.description,
-        })
-        .from(tables.salesDocumentLines)
-        .where(inArray(tables.salesDocumentLines.documentId, docIds))
-        .orderBy(tables.salesDocumentLines.position)
-      : Promise.resolve([]),
+    salesConcepts(rows),
   ])
 
-  const linesByDoc = new Map<number, string[]>()
-  for (const l of lines) {
-    const list = linesByDoc.get(l.documentId) ?? []
-    const desc = l.description?.trim()
-    if (desc) list.push(desc)
-    linesByDoc.set(l.documentId, list)
-  }
-
-  return rows.map(({ contactLogo, description, ...r }) => {
-    const plainDesc = richToPlain(description)?.replace(/\s+/g, ' ').trim() || null
-    const docLines = linesByDoc.get(r.id) ?? []
-    const linesSummary = docLines.length ? docLines.join(' · ') : null
-    const conceptPreview = plainDesc || linesSummary || null
+  return rows.map(({ contactLogo, description: _description, ...r }) => {
+    const { conceptPreview, descriptionText, linesSummary } = concepts.get(r.id)!
 
     return {
       ...r,
       conceptPreview,
-      descriptionText: plainDesc,
+      descriptionText,
       linesSummary,
       invoices: invoiceLinks.get(r.id) ?? [],
       contactLogoUrl: contactLogoUrl(r.contactId, contactLogo),

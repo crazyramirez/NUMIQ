@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   const [documents, expenses, [salesCountRes], [invoicesCountRes], [quotesCountRes], [expensesCountRes]] = await Promise.all([
     db.select({
       id: s.id, kind: s.kind, status: s.status, number: s.number, issueDate: s.issueDate, dueDate: s.dueDate,
-      taxBase: s.taxBase, total: s.total, paidTotal: s.paidTotal,
+      taxBase: s.taxBase, total: s.total, paidTotal: s.paidTotal, description: s.description,
     }).from(s).where(and(eq(s.companyId, company.id), eq(s.contactId, id))).orderBy(desc(s.issueDate), desc(s.id)).limit(100),
     db.select({ id: e.id, number: e.number, issueDate: e.issueDate, description: e.description, total: e.total, status: e.status })
       .from(e).where(and(eq(e.companyId, company.id), eq(e.supplierId, id))).orderBy(desc(e.issueDate)).limit(100),
@@ -23,9 +23,12 @@ export default defineEventHandler(async (event) => {
     db.select({ count: sql<number>`count(*)` }).from(e).where(and(eq(e.companyId, company.id), eq(e.supplierId, id))),
   ])
 
+  // Concepto de cada documento, como en el listado de facturas
+  const concepts = await salesConcepts(documents)
+
   return {
     ...contactView(contact),
-    documents,
+    documents: documents.map(({ description: _description, ...d }) => ({ ...d, conceptPreview: concepts.get(d.id)?.conceptPreview ?? null })),
     expenses,
     salesCount: Number(salesCountRes?.count ?? 0),
     invoicesCount: Number(invoicesCountRes?.count ?? 0),

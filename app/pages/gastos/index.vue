@@ -214,11 +214,6 @@ function clearFilters() {
 const { selected, selectedSet, selecting, allSelected, toggle, toggleAll, clear: stopSelecting } = useSelection(rows)
 const selectedTotal = computed(() => rows.value.reduce((s, e) => s + (selectedSet.value.has(e.id) ? e.total : 0), 0))
 
-function onCard(e: ExpenseRow) {
-  if (selecting.value) toggle(e.id)
-  else openEdit(e.id)
-}
-
 // ─── Deducible / categoría en bloque, con deshacer ───
 
 const applying = ref(false)
@@ -542,34 +537,24 @@ function savePartial() {
 
         <ul class="cards mobile">
           <li v-for="e in rows" :key="e.id">
-            <button
-              type="button"
-              class="card-row"
-              :class="{ sel: selectedSet.has(e.id) }"
-              :aria-pressed="selecting ? selectedSet.has(e.id) : undefined"
-              @click="onCard(e)"
-            >
-              <span v-if="selecting" class="tick" :class="{ on: selectedSet.has(e.id) }" aria-hidden="true">
-                <Icon v-if="selectedSet.has(e.id)" name="ph:check-bold" />
-              </span>
-              <span v-else class="cat-ic lg" :style="{ '--c': e.categoryColor ?? 'var(--text-4)' }" aria-hidden="true">
-                <Icon :name="e.categoryIcon || 'ph:wallet'" />
-              </span>
-              <span class="grow">
-                <span class="strong truncate block">{{ e.supplierName || e.description || 'Gasto' }}</span>
-                <span class="sub truncate block">
-                  {{ fdate(e.issueDate) }}{{ e.categoryName ? ` · ${e.categoryName}` : '' }}
+            <UiListRow :selecting="selecting" :selected="selectedSet.has(e.id)" @toggle="toggle(e.id)" @open="openEdit(e.id)">
+              <template #lead>
+                <span class="cat-ic lg" :style="{ '--c': e.categoryColor ?? 'var(--text-4)' }" aria-hidden="true">
+                  <Icon :name="e.categoryIcon || 'ph:wallet'" />
                 </span>
+              </template>
+              <template #title>{{ e.supplierName || e.description || 'Gasto' }}</template>
+              <template v-if="e.supplierName && e.description" #sub>{{ e.description }}</template>
+              <template #info>{{ fdate(e.issueDate) }}{{ e.categoryName ? ` · ${e.categoryName}` : '' }}</template>
+              <template #status>
+                <UiBadge :tone="statusOf(e).tone" size="sm" dot>{{ statusOf(e).label }}</UiBadge>
                 <span v-if="levelOf(e) !== 'full'" class="ded-mini" :class="levelOf(e)">
                   <Icon :name="levelOf(e) === 'partial' ? 'ph:circle-half-fill' : 'ph:prohibit'" aria-hidden="true" />
                   {{ deductibleLabel(e.deductiblePct, e.vatDeductiblePct, e.vatTotal !== 0) }}
                 </span>
-              </span>
-              <span class="amt">
-                <span class="num strong block">{{ eur(e.total) }}</span>
-                <UiBadge :tone="statusOf(e).tone" size="sm" dot>{{ statusOf(e).label }}</UiBadge>
-              </span>
-            </button>
+              </template>
+              <template #amount>{{ eur(e.total) }}</template>
+            </UiListRow>
           </li>
         </ul>
       </template>
@@ -827,8 +812,7 @@ input[type='checkbox'] {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-top: 4px;
-  padding: 1px 7px;
+  padding: 2px 8px;
   font-size: var(--text-2xs);
   font-weight: 600;
   border-radius: var(--r-full);
@@ -847,29 +831,6 @@ input[type='checkbox'] {
 .ded-mini.none {
   color: var(--text-3);
   background: var(--surface-sunken);
-}
-
-.tick {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 36px;
-  height: 36px;
-  font-size: 16px;
-  color: var(--on-brand);
-  background: var(--surface);
-  border: 1.5px solid var(--border-strong);
-  border-radius: 10px;
-  transition: background var(--t-fast), border-color var(--t-fast);
-}
-
-.tick.on {
-  background: var(--brand);
-  border-color: var(--brand);
-}
-
-.card-row.sel {
-  background: color-mix(in srgb, var(--brand) 6%, transparent);
 }
 
 /* ─── Modal «En parte» ─── */
@@ -1003,43 +964,8 @@ input[type='checkbox'] {
   padding: 0;
 }
 
-.card-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 12px var(--s-4);
-  text-align: left;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.card-row:active {
-  background: var(--surface-hover);
-}
-
-.cards li:last-child .card-row {
-  border-bottom: 0;
-}
-
 .block {
   display: block;
-}
-
-.card-row .strong {
-  font-weight: 580;
-}
-
-.card-row .sub {
-  font-size: var(--text-xs);
-  color: var(--text-3);
-}
-
-.amt {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-  flex-shrink: 0;
 }
 
 @media (max-width: 1279px) {

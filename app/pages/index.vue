@@ -260,7 +260,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
                 <UiAvatar :name="c.name" :size="32" :src="c.logoUrl" contain />
                 <div class="grow">
                   <div class="client-line">
-                    <span class="truncate client-name">{{ c.name }}</span>
+                    <span class="client-name">{{ c.name }}</span>
                     <span class="num client-amount">{{ eur(c.amount, false) }}</span>
                   </div>
                   <div class="share-track" :title="`${pct(total12 ? (c.amount / total12) * 100 : 0)} de tu facturación`">
@@ -287,7 +287,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
           <template #actions>
             <UiButton size="sm" variant="ghost" icon-right="ph:arrow-right" to="/facturas">Todas</UiButton>
           </template>
-          <ul v-if="data.recent.length" class="recent">
+          <ul v-if="data.recent.length" class="recent desk">
             <li v-for="r in data.recent" :key="r.id">
               <NuxtLink :to="`/facturas/${r.id}`" class="recent-row">
                 <span class="doc-ic" aria-hidden="true"><Icon :name="r.status === 'draft' ? 'ph:file-dashed' : 'ph:receipt'" /></span>
@@ -302,6 +302,25 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
                   <UiBadge :tone="salesStatus(r.kind, r.status, r.overdue).tone" size="sm" dot>{{ salesStatus(r.kind, r.status, r.overdue).label }}</UiBadge>
                 </div>
               </NuxtLink>
+            </li>
+          </ul>
+          <!-- Móvil: nombre y concepto enteros; debajo, nº, fecha, estado e importe -->
+          <ul v-if="data.recent.length" class="recent mob">
+            <li v-for="r in data.recent" :key="r.id">
+              <UiListRow :to="`/facturas/${r.id}`">
+                <template #lead>
+                  <span class="doc-ic" aria-hidden="true"><Icon :name="r.status === 'draft' ? 'ph:file-dashed' : 'ph:receipt'" /></span>
+                </template>
+                <template #title>{{ r.contactName ?? 'Sin cliente' }}</template>
+                <template v-if="r.conceptPreview" #sub>{{ r.conceptPreview }}</template>
+                <template #info>
+                  <template v-if="r.number"><span class="mono">{{ r.number }}</span> · </template>{{ fdate(r.issueDate) }}
+                </template>
+                <template #status>
+                  <UiBadge :tone="salesStatus(r.kind, r.status, r.overdue).tone" size="sm" dot>{{ salesStatus(r.kind, r.status, r.overdue).label }}</UiBadge>
+                </template>
+                <template #amount>{{ eur(r.total) }}</template>
+              </UiListRow>
             </li>
           </ul>
           <UiEmpty v-else compact icon="ph:receipt" title="Tu primera factura te espera" text="Crea una factura en menos de un minuto: cliente, concepto y listo.">
@@ -796,17 +815,22 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 
 .client-line {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 6px;
 }
 
+/* Nombre entero: si no cabe, baja a otra línea en vez de cortarse */
 .client-name {
+  min-width: 0;
   font-size: var(--text-sm);
   font-weight: 560;
+  overflow-wrap: anywhere;
 }
 
 .client-amount {
+  flex: none;
   font-size: var(--text-sm);
   font-weight: 600;
 }
@@ -834,8 +858,17 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 /* ─── Actividad ─── */
 
 .recent {
+  margin: 0;
+  padding: 0;
   list-style: none;
+}
+
+.recent.desk {
   padding: 0 var(--s-2) var(--s-2);
+}
+
+.recent.mob {
+  display: none;
 }
 
 .recent-row {
@@ -849,19 +882,6 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 
 .recent-row:hover {
   background: var(--surface-hover);
-}
-
-.doc-ic {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  flex-shrink: 0;
-  font-size: 17px;
-  color: var(--text-3);
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--r-md);
 }
 
 .recent-name {
@@ -882,6 +902,19 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 
 .recent-amount {
   font-weight: 620;
+}
+
+.doc-ic {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  font-size: 17px;
+  color: var(--text-3);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
 }
 
 /* ─── Responsive ─── */
@@ -908,6 +941,14 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 }
 
 @media (max-width: 767px) {
+  .recent.desk {
+    display: none;
+  }
+
+  .recent.mob {
+    display: block;
+  }
+
   .page-actions {
     width: 100%;
   }

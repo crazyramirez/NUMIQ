@@ -14,6 +14,7 @@ interface DocRow {
   taxBase: number
   total: number
   paidTotal: number
+  conceptPreview: string | null
 }
 
 interface ExpenseRow {
@@ -301,7 +302,25 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
                 {{ tab === 'facturas' ? 'Crear factura' : 'Crear presupuesto' }}
               </UiButton>
             </UiEmpty>
-            <div v-else class="table-wrap">
+            <!-- Móvil: concepto entero; debajo, nº, fecha, estado e importe -->
+            <ul v-if="(tab === 'facturas' ? invoices : quotes).length" class="mob-list">
+              <li v-for="d in (tab === 'facturas' ? invoices : quotes)" :key="d.id">
+                <UiListRow :to="docPath(d)">
+                  <template #title>{{ d.conceptPreview || d.number || 'Borrador' }}</template>
+                  <template #info>
+                    <template v-if="d.number"><span class="mono">{{ d.number }}</span> · </template>{{ fdate(d.issueDate) }}
+                  </template>
+                  <template #status>
+                    <UiBadge :tone="docStatus(d).tone" size="sm" dot>{{ docStatus(d).label }}</UiBadge>
+                  </template>
+                  <template #amount>
+                    {{ eur(tab === 'facturas' ? d.total : d.taxBase) }}
+                    <small v-if="tab !== 'facturas'">base imponible</small>
+                  </template>
+                </UiListRow>
+              </li>
+            </ul>
+            <div v-if="(tab === 'facturas' ? invoices : quotes).length" class="table-wrap desk-table">
               <table class="table">
                 <thead>
                   <tr>
@@ -336,7 +355,21 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
             <UiEmpty v-if="!expenses.length" compact icon="ph:wallet" title="Sin gastos todavía" text="Registra sus facturas para controlar lo que te cuesta.">
               <UiButton variant="soft" icon="ph:plus-bold" :to="`/gastos?nuevo=1&proveedor=${c.id}`">Registrar gasto</UiButton>
             </UiEmpty>
-            <div v-else class="table-wrap">
+            <ul v-if="expenses.length" class="mob-list">
+              <li v-for="e in expenses" :key="e.id">
+                <UiListRow :to="`/gastos?ver=${e.id}`">
+                  <template #title>{{ e.description || 'Gasto' }}</template>
+                  <template #info>
+                    <template v-if="e.number"><span class="mono">{{ e.number }}</span> · </template>{{ fdate(e.issueDate) }}
+                  </template>
+                  <template #status>
+                    <UiBadge :tone="expenseStatus(e).tone" size="sm" dot>{{ expenseStatus(e).label }}</UiBadge>
+                  </template>
+                  <template #amount>{{ eur(e.total) }}</template>
+                </UiListRow>
+              </li>
+            </ul>
+            <div v-if="expenses.length" class="table-wrap desk-table">
               <table class="table">
                 <thead>
                   <tr>
@@ -423,6 +456,13 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
 </template>
 
 <style scoped>
+.mob-list {
+  display: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .back {
   display: inline-flex;
   align-items: center;
@@ -587,6 +627,14 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
   .kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--s-3);
+  }
+
+  .desk-table {
+    display: none;
+  }
+
+  .mob-list {
+    display: block;
   }
 
   /* La tarjeta que queda sola en la última fila ocupa las dos columnas */

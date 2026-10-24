@@ -120,7 +120,6 @@ function rowMenu(r: ContactRow): MenuItem[] {
 
 // ─── Selección: eliminar muchos de una vez ───
 
-const NuxtLink = resolveComponent('NuxtLink')
 const { selected, selectedSet, selectedRows, selecting, allSelected, toggle: pick, toggleAll, clear } = useSelection(rows)
 const busy = ref(false)
 const noun = (n: number) => (isClient.value ? (n === 1 ? 'cliente' : 'clientes') : (n === 1 ? 'proveedor' : 'proveedores'))
@@ -309,37 +308,28 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
 
         <ul class="cards mobile">
           <li v-for="r in rows" :key="r.id">
-            <div class="card-item-wrap" :class="{ sel: selectedSet.has(r.id) }">
-              <!-- En modo selección la fila marca en lugar de abrir -->
-              <component
-                :is="selecting ? 'button' : NuxtLink"
-                :to="selecting ? undefined : `${base}/${r.id}`"
-                :type="selecting ? 'button' : undefined"
-                :aria-pressed="selecting ? selectedSet.has(r.id) : undefined"
-                class="card-row"
-                @click="selecting && pick(r.id)"
-              >
-                <span v-if="selecting" class="tick" :class="{ on: selectedSet.has(r.id) }" aria-hidden="true">
-                  <Icon v-if="selectedSet.has(r.id)" name="ph:check-bold" />
-                </span>
-                <UiAvatar v-else :name="r.name" :size="38" :square="r.kind === 'company'" :src="r.logoUrl" contain />
-                <div class="grow">
-                  <p class="strong truncate">{{ r.name }}</p>
-                  <p class="sub">{{ [r.nif, r.city].filter(Boolean).join(' · ') || 'Sin NIF' }}</p>
-                </div>
-                <div class="amt">
-                  <p class="num strong">{{ eur(isClient ? r.billed12m : r.spent12m, false) }}</p>
-                  <p v-if="isClient && r.pending > 0" class="sub pending num">{{ eur(r.pending, false) }} pend.</p>
-                </div>
-              </component>
-              <div class="m-menu" @click.stop @keydown.stop>
+            <UiListRow :to="`${base}/${r.id}`" :selecting="selecting" :selected="selectedSet.has(r.id)" @toggle="pick(r.id)">
+              <template #lead>
+                <UiAvatar :name="r.name" :size="38" :square="r.kind === 'company'" :src="r.logoUrl" contain />
+              </template>
+              <template #title>{{ r.name }}</template>
+              <template #sub>{{ [r.nif, r.city].filter(Boolean).join(' · ') || 'Sin NIF' }}</template>
+              <template #info>{{ r.lastActivity ? `Última actividad ${relDays(r.lastActivity)}` : 'Sin actividad reciente' }}</template>
+              <template v-if="isClient && r.pending > 0" #status>
+                <UiBadge tone="warning" size="sm" dot>{{ eur(r.pending, false) }} pendiente</UiBadge>
+              </template>
+              <template #amount>
+                {{ eur(isClient ? r.billed12m : r.spent12m, false) }}
+                <small>{{ isClient ? 'facturado 12 m' : 'gastado 12 m' }}</small>
+              </template>
+              <template #menu>
                 <UiMenu :items="rowMenu(r)" :width="190">
                   <template #default="{ toggle }">
                     <UiButton variant="ghost" size="sm" square icon="ph:dots-three-bold" :aria-label="`Acciones de ${r.name}`" @click="toggle" />
                   </template>
                 </UiMenu>
-              </div>
-            </div>
+              </template>
+            </UiListRow>
           </li>
         </ul>
       </template>
@@ -365,22 +355,6 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
   width: 50px;
   text-align: right;
   padding-right: var(--s-3);
-}
-
-.card-item-wrap {
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-}
-
-.card-item-wrap .card-row {
-  flex: 1;
-  min-width: 0;
-}
-
-.m-menu {
-  flex-shrink: 0;
-  padding-right: var(--s-2);
 }
 
 .stats {
@@ -480,37 +454,6 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
   padding: 0;
 }
 
-.card-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 13px var(--s-4);
-  border-bottom: 1px solid var(--border-subtle);
-  transition: background var(--t-fast);
-}
-
-.card-row:active {
-  background: var(--surface-hover);
-}
-
-.cards li:last-child .card-row {
-  border-bottom: 0;
-}
-
-.card-row .sub {
-  font-size: var(--text-xs);
-  color: var(--text-3);
-}
-
-.card-row .strong {
-  font-weight: 580;
-}
-
-.amt {
-  text-align: right;
-  flex-shrink: 0;
-}
-
 /* ─── Selección ─── */
 
 .pick {
@@ -528,37 +471,12 @@ input[type='checkbox'] {
   cursor: pointer;
 }
 
-.table tbody tr.sel,
-.card-item-wrap.sel {
+.table tbody tr.sel {
   background: color-mix(in srgb, var(--brand) 6%, transparent);
 }
 
 .table tbody tr.sel:hover {
   background: color-mix(in srgb, var(--brand) 9%, transparent);
-}
-
-button.card-row {
-  width: 100%;
-  text-align: left;
-}
-
-.tick {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 38px;
-  height: 38px;
-  font-size: 16px;
-  color: var(--on-brand);
-  background: var(--surface);
-  border: 1.5px solid var(--border-strong);
-  border-radius: 10px;
-  transition: background var(--t-fast), border-color var(--t-fast);
-}
-
-.tick.on {
-  background: var(--brand);
-  border-color: var(--brand);
 }
 
 .sel-toggle {

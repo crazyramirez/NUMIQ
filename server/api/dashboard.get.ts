@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
   const c = tables.contacts
   const recent = await useDb().select({
     id: s.id, kind: s.kind, status: s.status, number: s.number, issueDate: s.issueDate, dueDate: s.dueDate,
-    total: s.total, paidTotal: s.paidTotal,
+    total: s.total, paidTotal: s.paidTotal, description: s.description,
     contactName: sql<string | null>`COALESCE(${c.name}, JSON_UNQUOTE(JSON_EXTRACT(${s.customer}, '$.name')))`,
   }).from(s).leftJoin(c, eq(c.id, s.contactId))
     .where(and(eq(s.companyId, company.id), inArray(s.kind, ['invoice', 'rectifying'])))
@@ -46,6 +46,9 @@ export default defineEventHandler(async (event) => {
   const logos = topIds.length
     ? new Map((await useDb().select({ id: c.id, logoPath: c.logoPath }).from(c).where(and(eq(c.companyId, company.id), inArray(c.id, topIds)))).map(r => [r.id, r.logoPath]))
     : new Map<number, string | null>()
+
+  // Concepto de cada factura reciente, como en el listado
+  const concepts = await salesConcepts(recent)
 
   const insights = await computeInsights(company, { quarter, year, vat303, irpf130, receivables: recv, monthly, top, ytd })
 
@@ -64,7 +67,7 @@ export default defineEventHandler(async (event) => {
     monthly,
     topClients: top.map(t => ({ ...t, logoUrl: contactLogoUrl(t.id, t.id ? logos.get(t.id) : null) })),
     expensesByCategory: byCategory,
-    recent: recent.map(r => ({ ...r, overdue: isOpenStatus(r.status) && !!r.dueDate && r.dueDate < today })),
+    recent: recent.map(({ description: _description, ...r }) => ({ ...r, conceptPreview: concepts.get(r.id)?.conceptPreview ?? null, overdue: isOpenStatus(r.status) && !!r.dueDate && r.dueDate < today })),
     deadlines: upcomingDeadlines(now, company.kind, 4),
     insights,
   }

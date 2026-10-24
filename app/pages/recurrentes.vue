@@ -400,7 +400,8 @@ const IDEAS = Object.freeze([
         <UiButton @click="filter = 'all'">Ver todos</UiButton>
       </UiEmpty>
 
-      <ul v-else class="list">
+      <template v-else>
+      <ul class="list">
         <li v-for="(r, i) in shown" :key="r.id" class="item rise" :class="{ off: r.status !== 'active' }" :style="{ '--i': Math.min(i, 8) }">
           <button type="button" class="it-main" @click="openEdit(r.id)">
             <span class="it-ic" :class="r.kind" aria-hidden="true">
@@ -452,6 +453,46 @@ const IDEAS = Object.freeze([
           </div>
         </li>
       </ul>
+
+      <!-- Móvil: nombre y concepto enteros; debajo, próxima fecha, estado e importe -->
+      <ul class="mlist">
+        <li v-for="r in shown" :key="r.id" :class="{ off: r.status !== 'active' }">
+          <UiListRow @open="openEdit(r.id)">
+            <template #lead>
+              <span class="it-ic" :class="r.kind" aria-hidden="true">
+                <Icon :name="r.kind === 'invoice' ? 'ph:receipt' : (r.category?.icon || 'ph:wallet')" />
+              </span>
+            </template>
+            <template #title>{{ r.name }}</template>
+            <template #sub>{{ subtitleOf(r) }} · {{ frequencyLabel(r.frequency, r.interval) }}</template>
+            <template v-if="r.lastError" #note>
+              <span class="it-err"><Icon name="ph:warning-circle-fill" aria-hidden="true" /> {{ r.lastError }}</span>
+            </template>
+            <template #info>
+              <template v-if="r.status === 'finished'">Terminó{{ r.endDate ? ` el ${fdate(r.endDate)}` : '' }}</template>
+              <template v-else>
+                Próxima {{ fdate(r.nextDate) }} · <span class="rel" :class="{ late: r.nextDate < today }">{{ r.status === 'paused' ? 'en pausa' : relDays(r.nextDate) }}</span>
+              </template>
+            </template>
+            <template #status>
+              <UiBadge :tone="statusOf(r).tone" size="sm" dot>{{ statusOf(r).label }}</UiBadge>
+              <span class="it-mode"><Icon :name="modeOf(r).icon" aria-hidden="true" /> {{ modeOf(r).label }}</span>
+            </template>
+            <template #amount>
+              {{ eur(r.total) }}
+              <small v-if="Math.abs(monthlyOf(r) - r.total) > 0.005">{{ eur(monthlyOf(r), false) }}/mes</small>
+            </template>
+            <template #menu>
+              <UiMenu :items="menuOf(r)" :width="230">
+                <template #default="{ toggle }">
+                  <UiButton size="sm" variant="ghost" square icon="ph:dots-three-bold" :aria-label="`Más acciones de ${r.name}`" @click="toggle" />
+                </template>
+              </UiMenu>
+            </template>
+          </UiListRow>
+        </li>
+      </ul>
+      </template>
     </UiCard>
 
     <section v-if="!firstLoad && !rows.length" class="ideas rise" style="--i: 3" aria-label="Ideas para empezar">
@@ -692,6 +733,22 @@ const IDEAS = Object.freeze([
   opacity: 0.55;
 }
 
+.mlist {
+  display: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mlist li.off .it-ic,
+.mlist li.off :deep(.lrow-amount) {
+  opacity: 0.55;
+}
+
+.mlist .it-err {
+  margin-top: 0;
+}
+
 .it-main {
   display: grid;
   grid-template-columns: 40px minmax(0, 1fr) 140px 130px 120px;
@@ -885,61 +942,12 @@ const IDEAS = Object.freeze([
     padding: var(--s-3) var(--s-4);
   }
 
-  .item {
-    align-items: flex-start;
-    padding-right: var(--s-2);
-  }
-
-  .it-main {
-    grid-template-columns: 38px minmax(0, 1fr) auto;
-    grid-template-areas:
-      'ic main amount'
-      'ic next next';
-    gap: 4px var(--s-3);
-    padding: 12px 0 12px var(--s-4);
-  }
-
-  .it-ic {
-    grid-area: ic;
-    align-self: start;
-  }
-
-  .it-main > .grow {
-    grid-area: main;
-  }
-
-  .it-amount {
-    grid-area: amount;
-    align-self: start;
-  }
-
-  .it-next {
-    grid-area: next;
-    flex-direction: row;
-    align-items: baseline;
-    gap: 6px;
-    font-size: var(--text-xs);
-  }
-
-  .it-act {
-    padding-top: 8px;
-  }
-
-  .it-act .pause,
-  .it-act .spacer {
+  .list {
     display: none;
   }
 
-  .it-name {
-    flex-wrap: wrap;
-    row-gap: 2px;
-  }
-
-  .it-name .truncate {
-    white-space: normal;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+  .mlist {
+    display: block;
   }
 }
 </style>

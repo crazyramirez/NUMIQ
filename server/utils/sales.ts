@@ -234,6 +234,31 @@ export function isOpenStatus(status: string) {
 }
 
 /** Facturas emitidas desde presupuestos: una consulta para todo el listado y siempre de la empresa. */
+/**
+ * Concepto corto de cada documento para las listas: su descripción en texto plano o, si no tiene,
+ * sus líneas unidas con « · ».
+ */
+export async function salesConcepts(docs: Array<{ id: number, description: Parameters<typeof richToPlain>[0] }>) {
+  const ids = docs.map(d => d.id)
+  const lines = ids.length
+    ? await useDb().select({ documentId: tables.salesDocumentLines.documentId, description: tables.salesDocumentLines.description })
+      .from(tables.salesDocumentLines)
+      .where(inArray(tables.salesDocumentLines.documentId, ids))
+      .orderBy(tables.salesDocumentLines.position)
+    : []
+  const linesByDoc = new Map<number, string[]>()
+  for (const l of lines) {
+    const desc = l.description?.trim()
+    if (desc) linesByDoc.set(l.documentId, [...(linesByDoc.get(l.documentId) ?? []), desc])
+  }
+  return new Map(docs.map((d) => {
+    const descriptionText = richToPlain(d.description)?.replace(/\s+/g, ' ').trim() || null
+    const docLines = linesByDoc.get(d.id) ?? []
+    const linesSummary = docLines.length ? docLines.join(' · ') : null
+    return [d.id, { descriptionText, linesSummary, conceptPreview: descriptionText || linesSummary || null }]
+  }))
+}
+
 export async function loadQuoteInvoices(companyId: number, quoteIds: number[]) {
   const result = new Map<number, SalesInvoiceLink[]>()
   if (!quoteIds.length) return result

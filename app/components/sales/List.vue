@@ -158,7 +158,6 @@ function rowMenu(r: Row): MenuItem[] {
 
 // ─── Selección: eliminar muchos de una vez ───
 
-const NuxtLink = resolveComponent('NuxtLink')
 const list = computed(() => rows.value ?? [])
 const { selected, selectedSet, selectedRows, selecting, allSelected, toggle: pick, toggleAll, clear } = useSelection(list)
 const busy = ref(false)
@@ -354,44 +353,41 @@ const bulkActions = computed<BulkAction[]>(() => [
 
         <ul class="mobile">
           <li v-for="r in rows" :key="r.id">
-            <div class="m-card-wrap" :class="{ sel: selectedSet.has(r.id) }">
-              <!-- En modo selección la fila marca en lugar de abrir -->
-              <component
-                :is="selecting ? 'button' : NuxtLink"
-                :to="selecting ? undefined : `${base}/${r.id}`"
-                :type="selecting ? 'button' : undefined"
-                :aria-pressed="selecting ? selectedSet.has(r.id) : undefined"
-                class="m-row"
-                @click="selecting && pick(r.id)"
-              >
-                <span v-if="selecting" class="tick" :class="{ on: selectedSet.has(r.id) }" aria-hidden="true">
-                  <Icon v-if="selectedSet.has(r.id)" name="ph:check-bold" />
-                </span>
-                <UiAvatar v-else :name="r.contactName ?? '—'" :size="36" :src="r.contactLogoUrl" contain />
-                <div class="grow min0">
-                  <p class="truncate strong">{{ r.contactName ?? 'Sin cliente' }}</p>
-                  <p v-if="r.conceptPreview" class="doc-desc" :title="r.conceptPreview">
-                    {{ r.conceptPreview }}
-                  </p>
-                  <p class="muted small"><span class="num">{{ r.number ?? 'Borrador' }}</span> · {{ fdate(r.issueDate) }}</p>
-                </div>
-                <div class="m-right">
-                  <p class="num strong">{{ eur(amountOf(r)) }}</p>
-                  <p v-if="isQuote" class="muted small">base imponible</p>
-                  <UiBadge :tone="salesStatus(r.kind, r.status, r.overdue).tone" size="sm">{{ salesStatus(r.kind, r.status, r.overdue).label }}</UiBadge>
-                </div>
-              </component>
-              <div class="m-row-menu" @click.stop @keydown.stop>
+            <UiListRow
+              :to="`${base}/${r.id}`"
+              :selecting="selecting"
+              :selected="selectedSet.has(r.id)"
+              @toggle="pick(r.id)"
+            >
+              <template #lead>
+                <UiAvatar :name="r.contactName ?? '—'" :size="38" :src="r.contactLogoUrl" contain />
+              </template>
+              <template #title>{{ r.contactName ?? 'Sin cliente' }}</template>
+              <template v-if="r.conceptPreview" #sub>{{ r.conceptPreview }}</template>
+              <template #info>
+                <template v-if="r.number"><span class="mono">{{ r.number }}</span> · </template>{{ fdate(r.issueDate) }}
+              </template>
+              <template #status>
+                <UiBadge :tone="salesStatus(r.kind, r.status, r.overdue).tone" size="sm" dot>{{ salesStatus(r.kind, r.status, r.overdue).label }}</UiBadge>
+              </template>
+              <template #amount>
+                {{ eur(amountOf(r)) }}
+                <small v-if="isQuote">base imponible</small>
+                <small v-else-if="r.status === 'partial'">pend. {{ eur(r.total - r.paidTotal) }}</small>
+              </template>
+              <template #menu>
                 <UiMenu :items="rowMenu(r)" :width="190">
                   <template #default="{ toggle }">
                     <UiButton variant="ghost" size="sm" square icon="ph:dots-three-bold" :aria-label="`Acciones de ${r.number ?? 'borrador'}`" @click="toggle" />
                   </template>
                 </UiMenu>
-              </div>
-            </div>
-            <div v-if="isQuote && r.invoices.length" class="m-invoices">
-              <SalesInvoiceLinks :invoices="r.invoices" />
-            </div>
+              </template>
+              <template v-if="isQuote && r.invoices.length" #after>
+                <div class="m-invoices">
+                  <SalesInvoiceLinks :invoices="r.invoices" />
+                </div>
+              </template>
+            </UiListRow>
           </li>
         </ul>
       </template>
@@ -434,11 +430,7 @@ const bulkActions = computed<BulkAction[]>(() => [
   font-weight: 520;
 }
 
-.s-label small {
-  color: var(--text-4);
-}
-
-.stat strong {
+.s-label.stat strong {
   font-size: var(--text-2xl);
   font-weight: 680;
   letter-spacing: -0.03em;
@@ -558,12 +550,6 @@ const bulkActions = computed<BulkAction[]>(() => [
   word-break: break-word;
 }
 
-.m-row .doc-desc {
-  padding-left: 0;
-  font-size: 12px;
-  margin: 1px 0;
-}
-
 .late {
   color: var(--danger);
   font-weight: 560;
@@ -580,22 +566,6 @@ const bulkActions = computed<BulkAction[]>(() => [
   align-items: center;
   justify-content: flex-end;
   gap: var(--s-1);
-}
-
-.m-card-wrap {
-  display: flex;
-  align-items: center;
-  gap: var(--s-1);
-}
-
-.m-card-wrap .m-row {
-  flex: 1;
-  min-width: 0;
-}
-
-.m-row-menu {
-  flex-shrink: 0;
-  padding-right: var(--s-2);
 }
 
 .quick {
@@ -630,33 +600,10 @@ tr:hover .quick,
   list-style: none;
 }
 
-.m-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px var(--s-4);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.mobile li:last-child .m-row {
-  border-bottom: 0;
-}
-
-.m-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 4px;
-}
-
 .m-invoices {
   display: flex;
   justify-content: flex-end;
   padding: 0 var(--s-4) 12px;
-}
-
-.min0 {
-  min-width: 0;
 }
 
 .small {
@@ -680,37 +627,12 @@ input[type='checkbox'] {
   cursor: pointer;
 }
 
-.table tbody tr.sel,
-.m-card-wrap.sel {
+.table tbody tr.sel {
   background: color-mix(in srgb, var(--brand) 6%, transparent);
 }
 
 .table tbody tr.sel:hover {
   background: color-mix(in srgb, var(--brand) 9%, transparent);
-}
-
-button.m-row {
-  width: 100%;
-  text-align: left;
-}
-
-.tick {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 36px;
-  height: 36px;
-  font-size: 16px;
-  color: var(--on-brand);
-  background: var(--surface);
-  border: 1.5px solid var(--border-strong);
-  border-radius: 10px;
-  transition: background var(--t-fast), border-color var(--t-fast);
-}
-
-.tick.on {
-  background: var(--brand);
-  border-color: var(--brand);
 }
 
 .sel-toggle {

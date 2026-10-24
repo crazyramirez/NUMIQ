@@ -367,6 +367,39 @@ const bulkActions = computed<BulkAction[]>(() => [
             </UiMenu>
           </li>
         </ul>
+
+        <!-- Móvil: nombre y descripción enteros; debajo, uso y precio -->
+        <ul class="mlist">
+          <li v-for="i in filtered" :key="i.id">
+            <UiListRow :selecting="sel.selecting.value" :selected="sel.selectedSet.value.has(i.id)" @toggle="sel.toggle(i.id)" @open="openEdit(i.id)">
+              <template #lead>
+                <span class="ic" :class="[i.kind, { pic: i.imageUrl }]" aria-hidden="true">
+                  <img v-if="i.imageUrl" :src="i.imageUrl" alt="" loading="lazy">
+                  <Icon v-else :name="i.kind === 'service' ? 'ph:handshake' : 'ph:package'" />
+                </span>
+              </template>
+              <template #title>{{ i.name }}</template>
+              <template #sub>
+                <span v-if="i.categoryId && catById.get(i.categoryId)" class="cat-tag" :style="{ '--c': catById.get(i.categoryId)!.color ?? 'var(--text-4)' }">
+                  <span class="dot" aria-hidden="true" />{{ catById.get(i.categoryId)!.name }}
+                </span>
+                <template v-if="i.sku"><span class="mono">{{ i.sku }}</span> · </template>{{ i.description || (i.kind === 'service' ? 'Servicio' : 'Producto') }}
+              </template>
+              <template #info>{{ i.uses ? `${i.uses} ${i.uses === 1 ? 'vez' : 'veces'} · ${eur(i.revenue, false)} en 12 m` : 'Sin uso reciente' }}</template>
+              <template #amount>
+                {{ eur(withVat(i)) }}
+                <small v-if="i.unit">por {{ i.unit }}</small>
+              </template>
+              <template #menu>
+                <UiMenu :items="rowMenu(i)" :width="190">
+                  <template #default="{ toggle }">
+                    <UiButton variant="ghost" size="sm" square icon="ph:dots-three-bold" :aria-label="`Acciones de ${i.name}`" @click="toggle" />
+                  </template>
+                </UiMenu>
+              </template>
+            </UiListRow>
+          </li>
+        </ul>
       </template>
     </UiCard>
 
@@ -697,6 +730,13 @@ input[type='checkbox'] {
   white-space: nowrap;
 }
 
+.mlist {
+  display: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .desc {
   font-size: var(--text-xs);
   color: var(--text-3);
@@ -788,14 +828,12 @@ input[type='checkbox'] {
   }
 
   .list-head,
-  .pick {
+  .list {
     display: none;
   }
 
-  .row {
-    grid-template-columns: minmax(0, 1fr) auto 32px;
-    gap: var(--s-3);
-    padding: 12px var(--s-4);
+  .mlist {
+    display: block;
   }
 
   /* Categorías en una sola fila que se desliza */
@@ -812,15 +850,6 @@ input[type='checkbox'] {
 
   .chip {
     flex: none;
-  }
-
-  .ic {
-    width: 34px;
-    height: 34px;
-  }
-
-  .pv {
-    display: none;
   }
 
   .stats {
