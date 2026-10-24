@@ -100,7 +100,7 @@ export const NAV: readonly NavArea[][] = Object.freeze([
   ],
 ])
 
-export const SETTINGS_NAV: NavItem = { label: 'Ajustes', to: '/ajustes', icon: 'ph:gear-six', keywords: 'empresa configuración series certificado' }
+export const SETTINGS_NAV: NavItem = { label: 'Ajustes', to: '/ajustes', icon: 'ph:gear-six', keywords: 'empresa configuración series' }
 
 /** Todas las pantallas a las que se puede ir (paleta de comandos) */
 export const ALL_NAV: NavItem[] = (() => {

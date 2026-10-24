@@ -5,7 +5,7 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const { confirm } = useConfirm()
-const { refresh: refreshMe, verifactu } = useMe()
+const { refresh: refreshMe } = useMe()
 
 const SECTIONS = [
   { id: 'empresa', label: 'Empresa', icon: 'ph:buildings' },
@@ -16,7 +16,6 @@ const SECTIONS = [
   { id: 'gestoria', label: 'Gestoría', icon: 'ph:briefcase' },
   { id: 'equipo', label: 'Equipo', icon: 'ph:users-three' },
   { id: 'cuenta', label: 'Tu cuenta', icon: 'ph:user-circle' },
-  { id: 'certificado', label: 'Certificado digital', icon: 'ph:certificate' },
   { id: 'copia', label: 'Copia de seguridad', icon: 'ph:cloud-arrow-down' },
 ] as const
 type SectionId = typeof SECTIONS[number]['id']
@@ -597,36 +596,14 @@ function onDesignSaved(accent: string) {
           <SettingsTeamPanel v-if="section === 'equipo'" class="rise" style="--i: 2" />
           <SettingsAccountPanel v-if="section === 'cuenta'" class="rise" style="--i: 2" />
 
-          <!-- ─── Certificado ─── -->
+          <!-- ─── Certificado digital (desactivado por ahora: solo lo usaría VeriFactu) ───
           <div v-show="section === 'certificado'" class="stack gap-4">
             <UiCard class="rise" style="--i: 2">
-              <div class="vf-head">
-                <span class="vf-badge cert" aria-hidden="true"><Icon name="ph:certificate-fill" /></span>
-                <div class="grow">
-                  <h2 class="section-title">Certificado digital y Cl@ve</h2>
-                  <p class="muted vf-sub">Para presentar modelos{{ verifactu ? ' y enviar registros VeriFactu' : '' }} a la AEAT en tu nombre, de forma segura.</p>
-                </div>
-              </div>
+              ... cabecera «Certificado digital y Cl@ve» ...
               <SettingsCertificatePanel v-if="section === 'certificado'" :can-edit="canEdit" />
             </UiCard>
-            <div class="features rise" style="--i: 3">
-              <div class="feature card">
-                <Icon name="ph:lock-key" class="f-ic" aria-hidden="true" />
-                <h3>Custodia cifrada</h3>
-                <p>Tu certificado se guarda cifrado y nunca se descarga al navegador.</p>
-              </div>
-              <div class="feature card">
-                <Icon name="ph:identification-badge" class="f-ic" aria-hidden="true" />
-                <h3>Cl@ve y DNI electrónico</h3>
-                <p>Al presentar un modelo, NUMIQ te lleva al formulario oficial de la Sede con las casillas calculadas: te identificas con Cl@ve, DNIe o certificado y firmas allí.</p>
-              </div>
-              <div class="feature card">
-                <Icon name="ph:receipt-x" class="f-ic" aria-hidden="true" />
-                <h3>Justificantes con CSV</h3>
-                <p>Cada presentación queda archivada con su justificante y código seguro de verificación.</p>
-              </div>
-            </div>
           </div>
+          ─── -->
         </template>
       </div>
     </div>

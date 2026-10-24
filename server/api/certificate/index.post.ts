@@ -3,6 +3,9 @@ import { eq } from 'drizzle-orm'
 /** Sube el certificado (.p12/.pfx) con su contraseña: se valida, se cifra y sustituye al anterior */
 export default defineEventHandler(async (event) => {
   const { company, user } = await requireCompany(event, 'admin')
+  // Desactivado por ahora: solo lo usaría VeriFactu, también desactivado
+  const CERTIFICATE_ACTIVE = false
+  if (!CERTIFICATE_ACTIVE) throw createError({ statusCode: 403, statusMessage: 'El certificado digital está desactivado por ahora' })
   const parts = (await readMultipartFormData(event)) ?? []
   const file = parts.find(p => p.name === 'file' && p.data?.length)
   const password = parts.find(p => p.name === 'password')?.data.toString('utf8') ?? ''
