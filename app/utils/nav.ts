@@ -88,12 +88,12 @@ export const NAV: readonly NavArea[][] = Object.freeze([
     {
       key: 'documentos',
       label: 'Documentos',
-      to: '/documentos/archivo',
+      to: '/documentos',
       icon: 'ph:folder-simple',
       keywords: 'documentos archivo importar subir',
       tabs: [
-        { label: 'Archivo', to: '/documentos/archivo', icon: 'ph:folder-simple', keywords: 'archivo trimestre pedidos albaranes contratos documentos' },
         { label: 'Importar', to: '/documentos', icon: 'ph:upload-simple', keywords: 'importar subir zip excel otro programa migrar' },
+        { label: 'Archivo', to: '/documentos/archivo', icon: 'ph:folder-simple', keywords: 'archivo trimestre pedidos albaranes contratos documentos' },
       ],
     },
     { key: 'asistente', label: 'Asistente IA', to: '/asistente', icon: 'ph:sparkle', keywords: 'ia chat preguntar consejo asesor' },
