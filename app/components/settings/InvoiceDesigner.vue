@@ -785,7 +785,7 @@ function insertToken(kind: 'invoice' | 'quote', token: string) {
 .save-bar {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--s-5) + env(safe-area-inset-bottom));
+  bottom: calc(var(--s-5) + var(--bnav) + env(safe-area-inset-bottom));
   z-index: var(--z-sticky);
   display: flex;
   align-items: center;

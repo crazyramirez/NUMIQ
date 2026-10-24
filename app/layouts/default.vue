@@ -4,6 +4,10 @@ const route = useRoute()
 const router = useRouter()
 const { open: openScan } = useScan()
 
+// Barra inferior del móvil en todas las pantallas salvo los editores (tienen su propia barra de guardar)
+const bottomNav = computed(() => !/^\/(facturas|presupuestos)\/(nueva|nuevo|\d+\/editar)$/.test(route.path))
+useHead({ htmlAttrs: { class: computed(() => (bottomNav.value ? 'bnav' : '')) } })
+
 // ?escanear=1 en cualquier página abre el escaneo rápido (paleta, menú Nuevo, enlaces)
 watch(() => route.query.escanear, (v) => {
   if (!v) return
@@ -20,12 +24,14 @@ watch(() => route.query.escanear, (v) => {
     <div class="main-col">
       <AppTopbar />
       <main id="main" tabindex="-1">
+        <AppAreaTabs />
         <slot />
       </main>
     </div>
     <AppCommandPalette />
     <AppScanModal />
     <AppScrollTop />
+    <AppBottomNav v-if="bottomNav" />
   </div>
 </template>
 

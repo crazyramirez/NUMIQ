@@ -10,6 +10,8 @@ const route = useRoute()
 watch(() => route.fullPath, () => (navOpen.value = false))
 
 const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path === to || route.path.startsWith(`${to}/`))
+// Área de la pantalla actual: Ventas sigue marcada en Presupuestos, Impuestos en Gestoría…
+const activeArea = computed(() => areaOf(route.path).area?.key ?? null)
 
 const companyItems = computed<MenuItem[]>(() => [
   { heading: 'Tus empresas' },
@@ -74,19 +76,18 @@ const userItems = computed<MenuItem[]>(() => [
       </UiMenu>
 
       <nav class="nav">
-        <div v-for="(section, si) in NAV" :key="si" class="section">
-          <p v-if="section.title && !mini" class="section-title-s">{{ section.title }}</p>
-          <hr v-else-if="section.title" class="divider sep">
+        <div v-for="(group, gi) in NAV" :key="gi" class="section">
+          <hr v-if="gi > 0" class="divider sep">
           <NuxtLink
-            v-for="item in section.items"
-            :key="item.to"
+            v-for="item in group"
+            :key="item.key"
             :to="item.to"
             class="item"
-            :class="{ active: isActive(item.to), ai: item.to === '/asistente' }"
+            :class="{ active: activeArea === item.key, ai: item.key === 'asistente' }"
             :title="mini ? item.label : undefined"
-            :aria-current="isActive(item.to) ? 'page' : undefined"
+            :aria-current="activeArea === item.key ? 'page' : undefined"
           >
-            <Icon :name="isActive(item.to) ? `${item.icon}-fill` : item.icon" class="ic" aria-hidden="true" />
+            <Icon :name="activeArea === item.key ? `${item.icon}-fill` : item.icon" class="ic" aria-hidden="true" />
             <span v-if="!mini" class="grow truncate">{{ item.label }}</span>
             <span v-if="!mini && item.soon" class="soon">Pronto</span>
           </NuxtLink>
@@ -225,19 +226,6 @@ const userItems = computed<MenuItem[]>(() => [
   overflow-y: auto;
   margin: 14px -4px 0;
   padding: 0 4px;
-}
-
-.section + .section {
-  margin-top: 14px;
-}
-
-.section-title-s {
-  padding: 0 10px 6px;
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-4);
 }
 
 .sep {

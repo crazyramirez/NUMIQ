@@ -23,7 +23,7 @@ const icons = { success: 'ph:check-circle-fill', error: 'ph:warning-circle-fill'
 .toasts {
   position: fixed;
   right: var(--s-5);
-  bottom: calc(var(--s-5) + env(safe-area-inset-bottom));
+  bottom: calc(var(--s-5) + var(--bnav) + env(safe-area-inset-bottom));
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;

@@ -76,7 +76,7 @@ const cols = computed(() => Math.min(4, props.actions.length + (showAll.value ? 
 <style scoped>
 .bulk-dock {
   position: sticky;
-  bottom: calc(var(--s-5) + env(safe-area-inset-bottom));
+  bottom: calc(var(--s-5) + var(--bnav) + env(safe-area-inset-bottom));
   z-index: var(--z-sticky);
   display: flex;
   justify-content: center;
@@ -233,7 +233,7 @@ const cols = computed(() => Math.min(4, props.actions.length + (showAll.value ? 
 /* Móvil: a lo ancho, el resumen arriba y las acciones en rejilla debajo */
 @media (max-width: 767px) {
   .bulk-dock {
-    bottom: calc(var(--s-3) + env(safe-area-inset-bottom));
+    bottom: calc(var(--s-3) + var(--bnav) + env(safe-area-inset-bottom));
   }
 
   .bulk {

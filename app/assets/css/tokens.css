@@ -63,6 +63,9 @@
   --sidebar-w: 248px;
   --sidebar-w-collapsed: 68px;
   --topbar-h: 60px;
+  /* Barra inferior del móvil: --bnav vale su altura solo cuando está a la vista (html.bnav) */
+  --bnav-h: 64px;
+  --bnav: 0px;
   --content-max: 1360px;
 
   /* ─── Colores · claro ─── */

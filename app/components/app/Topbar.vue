@@ -16,6 +16,8 @@ const createItems: MenuItem[] = CREATE_ACTIONS.map(a => ({ label: a.label, icon:
 <template>
   <header class="topbar">
     <UiButton class="burger" variant="ghost" square icon="ph:list" aria-label="Abrir menú" @click="navOpen = true" />
+    <!-- Móvil: la marca a la izquierda; crear y «Más» están en la barra inferior -->
+    <NuxtLink to="/" class="m-brand" aria-label="NUMIQ, inicio"><AppLogo :size="30" :wordmark="false" /></NuxtLink>
 
     <button type="button" class="search" @click="palette = true">
       <Icon name="ph:magnifying-glass" class="s-ic" aria-hidden="true" />
@@ -28,9 +30,6 @@ const createItems: MenuItem[] = CREATE_ACTIONS.map(a => ({ label: a.label, icon:
       <UiBadge v-if="readOnly" tone="ai" icon="ph:eye" class="ro">Modo consulta</UiBadge>
       <UiButton v-if="!readOnly" class="scan-btn" variant="secondary" icon="ph:scan" aria-label="Escanear factura o ticket" title="Escanear factura o ticket" @click="openScan()">
         Escanear
-      </UiButton>
-      <UiButton class="ai-btn" variant="secondary" icon="ph:sparkle-fill" to="/asistente">
-        <span class="ai-text">Preguntar a la IA</span>
       </UiButton>
       <UiMenu v-if="!readOnly" :items="createItems" :width="236">
         <template #default="{ toggle }">
@@ -109,8 +108,9 @@ const createItems: MenuItem[] = CREATE_ACTIONS.map(a => ({ label: a.label, icon:
   margin-left: auto;
 }
 
-.ai-btn :deep(.btn-icon) {
-  color: var(--ai-1);
+.m-brand {
+  display: none;
+  flex: none;
 }
 
 @media (max-width: 1023px) {
@@ -140,14 +140,13 @@ const createItems: MenuItem[] = CREATE_ACTIONS.map(a => ({ label: a.label, icon:
 
 @media (max-width: 767px) {
   .keys,
-  .ai-btn,
-  .new-btn :deep(.btn-label) {
+  .burger,
+  .right > :not(.ro) {
     display: none;
   }
 
-  .new-btn {
-    width: 38px;
-    padding-inline: 0;
+  .m-brand {
+    display: inline-flex;
   }
 
   .search {
