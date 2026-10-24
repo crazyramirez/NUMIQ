@@ -419,7 +419,7 @@ const hasActivity = computed(() => !!data.value && (data.value.pnl.income !== 0 
       <!-- Pendiente de cobro -->
       <UiCard v-if="aging" class="rise" style="--i: 14" icon="ph:hourglass-medium" title="Pendiente de cobro" :subtitle="`Antigüedad de la deuda de tus clientes a ${fdate(data.period.today)}`">
         <template #actions>
-          <UiButton size="sm" variant="ghost" icon-right="ph:arrow-right" to="/facturas?estado=open">Ver facturas</UiButton>
+          <UiButton size="sm" variant="ghost" icon-right="ph:arrow-right" to="/facturas?estado=open&anio=todos">Ver facturas</UiButton>
         </template>
         <div v-if="aging.total > 0" class="aging">
           <div class="aging-head">

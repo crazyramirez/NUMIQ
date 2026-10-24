@@ -55,8 +55,8 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
       tone: 'danger',
       title: `${plural(recv.overdueCount, 'factura vencida', 'facturas vencidas')} sin cobrar`,
       detail: `${eurText0(recv.overdueAmount)} fuera de plazo`,
-      action: mailEnabled() ? { label: 'Recordar a todos', kind: 'remind' } : { label: 'Ver', to: '/facturas?estado=overdue' },
-      secondary: mailEnabled() ? { label: 'Ver', to: '/facturas?estado=overdue' } : undefined,
+      action: mailEnabled() ? { label: 'Recordar a todos', kind: 'remind' } : { label: 'Ver', to: '/facturas?estado=overdue&anio=todos' },
+      secondary: mailEnabled() ? { label: 'Ver', to: '/facturas?estado=overdue&anio=todos' } : undefined,
     })
   }
 
@@ -106,7 +106,7 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
         tone: 'warning',
         title: `${plural(toApprove!.n, 'gasto del equipo espera', 'gastos del equipo esperan')} tu aprobación`,
         detail: `${eurText0(toApprove!.amount)} · no cuentan en impuestos hasta que los apruebes`,
-        action: { label: 'Revisar', to: '/gastos?aprobacion=pending&periodo=all' },
+        action: { label: 'Revisar', to: '/gastos?aprobacion=pending&anio=todos' },
       })
     }
   }
@@ -118,7 +118,7 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
       tone: 'warning',
       title: `${plural(unpaid!.n, 'gasto vencido', 'gastos vencidos')} sin pagar`,
       detail: `${eurText0(unpaid!.amount)} pendientes`,
-      action: { label: 'Ver', to: '/gastos?estado=pending&periodo=all' },
+      action: { label: 'Ver', to: '/gastos?estado=pending&anio=todos' },
     })
   }
 
@@ -141,7 +141,7 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
       tone: 'brand',
       title: `${plural(review.expenses, 'gasto leído', 'gastos leídos')} por la IA por revisar`,
       detail: 'Comprueba importes y categoría; un toque y listo',
-      action: { label: 'Revisar', to: '/gastos?estado=review&periodo=all' },
+      action: { label: 'Revisar', to: '/gastos?estado=review&anio=todos' },
     })
   }
 
@@ -163,7 +163,7 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
       tone: 'brand',
       title: `${plural(drafts!.n, 'borrador de factura', 'borradores de factura')} sin emitir`,
       detail: 'Lo que no se emite no se cobra',
-      action: { label: 'Ver', to: '/facturas?estado=draft' },
+      action: { label: 'Ver', to: '/facturas?estado=draft&anio=todos' },
     })
   }
 
@@ -174,7 +174,7 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
       tone: 'brand',
       title: `${plural(quotes!.n, 'presupuesto espera', 'presupuestos esperan')} respuesta`,
       detail: quotes!.n === 1 ? 'Enviado hace más de una semana' : 'Enviados hace más de una semana',
-      action: { label: 'Ver', to: '/presupuestos?estado=open' },
+      action: { label: 'Ver', to: '/presupuestos?estado=open&anio=todos' },
     })
   }
 
@@ -185,7 +185,7 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
       tone: 'info',
       title: `${plural(noFile!.n, 'gasto', 'gastos')} del trimestre sin justificante`,
       detail: 'Sube la foto o el PDF: Hacienda puede pedirlo',
-      action: { label: 'Ver', to: '/gastos?justificante=no&periodo=q' },
+      action: { label: 'Ver', to: `/gastos?justificante=no&anio=${now.getFullYear()}&t=${quarterOf(now)}` },
     })
   }
 

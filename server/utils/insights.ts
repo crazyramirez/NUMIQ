@@ -37,7 +37,7 @@ export async function computeInsights(company: typeof tables.companies.$inferSel
       title: `${ctx.receivables.overdueCount} ${ctx.receivables.overdueCount === 1 ? 'factura vencida' : 'facturas vencidas'} sin cobrar`,
       body: `Tienes ${eur(ctx.receivables.overdueAmount)} pendientes fuera de plazo. Un recordatorio amable a tiempo cobra antes: la mayoría de impagos se resuelven en la primera semana.`,
       actionLabel: 'Ver vencidas',
-      actionUrl: '/facturas?estado=overdue',
+      actionUrl: '/facturas?estado=overdue&anio=todos',
     })
   }
 
@@ -108,7 +108,7 @@ export async function computeInsights(company: typeof tables.companies.$inferSel
   const [drafts] = await db.select({ n: sql<number>`COUNT(*)`.mapWith(Number) }).from(tables.salesDocuments)
     .where(and(eq(tables.salesDocuments.companyId, company.id), eq(tables.salesDocuments.kind, 'invoice'), eq(tables.salesDocuments.status, 'draft'), lt(tables.salesDocuments.createdAt, threeDaysAgo)))
   if (drafts!.n > 0) {
-    out.push({ key: 'drafts', severity: 'info', icon: 'ph:file-dashed', title: `${drafts!.n} ${drafts!.n === 1 ? 'borrador de factura' : 'borradores de factura'} sin emitir`, body: 'Lo que no se emite no se cobra. Revísalos y emítelos o descártalos.', actionLabel: 'Ver borradores', actionUrl: '/facturas?estado=draft' })
+    out.push({ key: 'drafts', severity: 'info', icon: 'ph:file-dashed', title: `${drafts!.n} ${drafts!.n === 1 ? 'borrador de factura' : 'borradores de factura'} sin emitir`, body: 'Lo que no se emite no se cobra. Revísalos y emítelos o descártalos.', actionLabel: 'Ver borradores', actionUrl: '/facturas?estado=draft&anio=todos' })
   }
 
   // Movimientos del banco sin conciliar

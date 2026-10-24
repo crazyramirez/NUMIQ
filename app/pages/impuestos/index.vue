@@ -3,7 +3,8 @@ useHead({ title: 'Impuestos · NUMIQ' })
 const { verifactu } = useMe()
 
 const currentYear = new Date().getFullYear()
-const year = ref(currentYear)
+// Año en la URL (?anio=2025): al volver desde un modelo o un enlace se sigue en el mismo ejercicio
+const year = useQueryState('anio', currentYear, { parse: r => (Number.isInteger(Number(r)) && Number(r) >= 2000 && Number(r) <= currentYear ? Number(r) : undefined) })
 const { data, status, error, refresh } = await useFetch('/api/taxes', { query: { year }, lazy: true })
 
 const open = ref(new Set<string>())

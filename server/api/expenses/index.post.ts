@@ -12,7 +12,7 @@ export default defineEventHandler(async (event) => {
     void notifyCompany(company.id, {
       title: `${user.name.split(' ')[0]} ha registrado un gasto`,
       body: `${row?.supplier?.name ?? row?.description ?? 'Gasto'} · ${eurText(row?.total ?? 0)}: apruébalo o recházalo`,
-      url: '/gastos?aprobacion=pending&periodo=all',
+      url: '/gastos?aprobacion=pending&anio=todos',
       tag: 'approvals',
     })
   }

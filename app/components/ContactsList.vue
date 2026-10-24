@@ -2,7 +2,7 @@
 import type { BulkAction } from '~/components/ui/BulkBar.vue'
 import type { MenuItem } from '~/components/ui/Menu.vue'
 
-/** Listado de clientes o proveedores con búsqueda y actividad de los últimos 12 meses */
+/** Listado de clientes o proveedores con búsqueda y lo facturado o gastado en el periodo (por defecto, el año en curso) */
 const props = defineProps<{ role: 'client' | 'supplier' }>()
 
 interface ContactRow {
@@ -17,9 +17,9 @@ interface ContactRow {
   isClient: boolean
   isSupplier: boolean
   logoUrl: string | null
-  billed12m: number
+  billed: number
   pending: number
-  spent12m: number
+  spent: number
   lastActivity: string | null
 }
 
@@ -33,20 +33,22 @@ const base = computed(() => (isClient.value ? '/clientes' : '/proveedores'))
 // Búsqueda y página en la URL: al volver atrás desde una ficha, el listado sigue igual
 const q = useQueryState('q', '', { debounce: 250 })
 const qDebounced = refDebounced(q, 250)
+const { period, range, label } = usePeriodQuery()
 const { data, status, refresh } = useFetch<ContactRow[]>('/api/contacts', {
   key: `contacts-${props.role}`,
-  query: computed(() => ({ role: props.role, q: qDebounced.value.trim() || undefined })),
+  query: computed(() => ({ role: props.role, q: qDebounced.value.trim() || undefined, from: range.value.from, to: range.value.to })),
   lazy: true,
 })
 
 const rows = computed(() => data.value ?? [])
 const firstLoad = computed(() => status.value === 'pending' && !data.value)
 
+const amountOf = (r: ContactRow) => (isClient.value ? r.billed : r.spent)
 const totals = computed(() => ({
   count: rows.value.length,
-  amount: rows.value.reduce((s, r) => s + (isClient.value ? r.billed12m : r.spent12m), 0),
+  amount: rows.value.reduce((s, r) => s + amountOf(r), 0),
   pending: rows.value.reduce((s, r) => s + r.pending, 0),
-  active: rows.value.filter(r => r.lastActivity && daysUntil(r.lastActivity) > -90).length,
+  active: rows.value.filter(r => amountOf(r) !== 0).length,
 }))
 
 // Alta: botón o ?nuevo=1 (paleta de comandos, menú Nuevo)
@@ -165,8 +167,8 @@ const bulkActions = computed<BulkAction[]>(() => [
 ])
 
 const t = computed(() => isClient.value
-  ? { title: 'Clientes', sub: 'Quién te compra, cuánto te factura y quién te debe.', add: 'Nuevo cliente', amount: 'Facturado 12 m', emptyTitle: 'Aún no tienes clientes', emptyText: 'Añade tu primer cliente con su NIF y podrás facturarle en segundos.' }
-  : { title: 'Proveedores', sub: 'A quién compras y cuánto gastas con cada uno.', add: 'Nuevo proveedor', amount: 'Gastado 12 m', emptyTitle: 'Aún no tienes proveedores', emptyText: 'Se crean solos al registrar gastos, o puedes añadirlos ahora.' })
+  ? { title: 'Clientes', sub: 'Quién te compra, cuánto te factura y quién te debe.', add: 'Nuevo cliente', amount: 'Facturado', emptyTitle: 'Aún no tienes clientes', emptyText: 'Añade tu primer cliente con su NIF y podrás facturarle en segundos.' }
+  : { title: 'Proveedores', sub: 'A quién compras y cuánto gastas con cada uno.', add: 'Nuevo proveedor', amount: 'Gastado', emptyTitle: 'Aún no tienes proveedores', emptyText: 'Se crean solos al registrar gastos, o puedes añadirlos ahora.' })
 
 useHead({ title: () => `${t.value.title} · NUMIQ` })
 </script>
@@ -184,21 +186,25 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
       </div>
     </header>
 
+    <div class="period-row">
+      <UiPeriod v-model="period" />
+    </div>
+
     <section class="stats rise" :aria-label="`Resumen de ${t.title.toLowerCase()}`">
       <div class="stat">
         <p class="eyebrow">{{ isClient ? 'Clientes' : 'Proveedores' }}</p>
         <p class="v num">{{ totals.count }}</p>
-        <p class="s">{{ totals.active }} con actividad en 90 días</p>
+        <p class="s">{{ totals.active }} con {{ isClient ? 'facturas' : 'gastos' }} {{ periodPhrase(period) }}</p>
       </div>
       <div class="stat">
-        <p class="eyebrow">{{ t.amount }}</p>
+        <p class="eyebrow">{{ t.amount }} {{ periodPhrase(period) }}</p>
         <p class="v num">{{ eur(totals.amount, false) }}</p>
         <p class="s">Importe total</p>
       </div>
       <div v-if="isClient" class="stat">
         <p class="eyebrow">Pendiente de cobro</p>
         <p class="v num" :class="{ warn: totals.pending > 0 }">{{ eur(totals.pending) }}</p>
-        <p class="s">Facturas emitidas sin cobrar</p>
+        <p class="s">Facturas sin cobrar de cualquier fecha</p>
       </div>
     </section>
 
@@ -258,7 +264,7 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
                 <th>Nombre</th>
                 <th class="c-city">Población</th>
                 <th>Contacto</th>
-                <th class="r">{{ t.amount }}</th>
+                <th class="r">{{ t.amount }} {{ label }}</th>
                 <th v-if="isClient" class="r">Pendiente</th>
                 <th class="r c-last">Última actividad</th>
                 <th class="act-col"><span class="sr-only">Acciones</span></th>
@@ -297,7 +303,7 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
                   <span class="truncate contact-l">{{ r.email || r.phone || '—' }}</span>
                   <span v-if="r.email && r.phone" class="sub">{{ r.phone }}</span>
                 </td>
-                <td class="r num strong">{{ eur(isClient ? r.billed12m : r.spent12m) }}</td>
+                <td class="r num strong" :class="{ zero: !amountOf(r) }">{{ eur(amountOf(r)) }}</td>
                 <td v-if="isClient" class="r num">
                   <span v-if="r.pending > 0" class="pending">{{ eur(r.pending) }}</span>
                   <span v-else class="muted">—</span>
@@ -328,8 +334,8 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
                 <UiBadge tone="warning" size="sm" dot>{{ eur(r.pending, false) }} pendiente</UiBadge>
               </template>
               <template #amount>
-                {{ eur(isClient ? r.billed12m : r.spent12m, false) }}
-                <small>{{ isClient ? 'facturado 12 m' : 'gastado 12 m' }}</small>
+                {{ eur(amountOf(r), false) }}
+                <small>{{ isClient ? 'facturado' : 'gastado' }} {{ periodPhrase(period) }}</small>
               </template>
               <template #menu>
                 <UiMenu :items="rowMenu(r)" :width="190">
@@ -373,6 +379,12 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
   width: 50px;
   text-align: right;
   padding-right: var(--s-3);
+}
+
+/* Sin facturas o gastos en el periodo: el 0 no compite con las cifras */
+td.zero {
+  color: var(--text-4);
+  font-weight: 500;
 }
 
 .stats {

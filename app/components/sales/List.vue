@@ -33,21 +33,11 @@ const base = computed(() => (isQuote.value ? '/presupuestos' : '/facturas'))
 // Búsqueda y filtros en la URL: al volver atrás desde un documento, el listado sigue igual
 const status = useQueryState('estado', 'all')
 const q = useQueryState('q', '', { debounce: 250 })
-const period = useQueryState('periodo', 'all')
 const debouncedQ = refDebounced(q, 250)
+// Por defecto, el año en curso: ‹ 2026 › cambia de año, trimestre o mes
+const { period, range, isAll } = usePeriodQuery()
 
-const range = computed(() => {
-  const now = new Date()
-  const y = now.getFullYear()
-  const qn = quarterOf(now)
-  if (period.value === 'quarter') return quarterRange(y, qn)
-  if (period.value === 'prev-quarter') return qn === 1 ? quarterRange(y - 1, 4) : quarterRange(y, (qn - 1) as Quarter)
-  if (period.value === 'year') return { from: `${y}-01-01`, to: `${y}-12-31` }
-  if (period.value === 'prev-year') return { from: `${y - 1}-01-01`, to: `${y - 1}-12-31` }
-  return { from: undefined, to: undefined }
-})
-
-const { data: rows, status: loadState, refresh } = useFetch<Row[]>('/api/sales', {
+const { data: rows, status: loadState, refresh: refreshList } = useFetch<Row[]>('/api/sales', {
   query: computed(() => ({ kind: props.kind, status: status.value, q: debouncedQ.value || undefined, from: range.value.from, to: range.value.to })),
   lazy: true,
 })
@@ -58,6 +48,32 @@ const { data: all, refresh: refreshCounts } = useFetch<Row[]>('/api/sales', {
   lazy: true,
   key: `sales-counts-${props.kind}`,
 })
+
+// Lo pendiente de otros periodos no se pierde de vista: aviso con enlace a todos los años
+const { data: openAll, refresh: refreshOpen } = useFetch<Row[]>('/api/sales', {
+  query: computed(() => ({ kind: props.kind, status: 'open' })),
+  lazy: true,
+  server: false,
+  key: `sales-open-${props.kind}`,
+})
+const elsewhere = computed(() => {
+  const { from, to } = range.value
+  if (!from || !to || !['all', 'open', 'overdue'].includes(status.value)) return null
+  const r = (openAll.value ?? []).filter(x => x.issueDate < from || x.issueDate > to)
+  if (!r.length) return null
+  const n = r.length
+  return {
+    text: isQuote.value
+      ? `${n} ${n === 1 ? 'presupuesto de otro periodo sigue' : 'presupuestos de otros periodos siguen'} pendiente${n === 1 ? '' : 's'} de respuesta`
+      : `${n} ${n === 1 ? 'factura de otro periodo sigue' : 'facturas de otros periodos siguen'} pendiente${n === 1 ? '' : 's'} de cobro`,
+    amount: r.reduce((s, x) => s + (isQuote.value ? x.taxBase : x.total - x.paidTotal), 0),
+  }
+})
+function showElsewhere() {
+  period.value = { year: null, quarter: null, month: null }
+  status.value = 'open'
+}
+const refresh = () => Promise.all([refreshList(), refreshCounts(), refreshOpen()])
 
 const counts = computed(() => {
   const r = all.value ?? []
@@ -87,14 +103,6 @@ const tabs = computed(() => isQuote.value
       { value: 'overdue', label: 'Vencidas', count: counts.value.overdue },
       { value: 'paid', label: 'Cobradas', count: counts.value.paid },
     ])
-
-const PERIODS = [
-  { value: 'all', label: 'Siempre' },
-  { value: 'quarter', label: 'Este trimestre' },
-  { value: 'prev-quarter', label: 'Trimestre anterior' },
-  { value: 'year', label: 'Este año' },
-  { value: 'prev-year', label: 'Año anterior' },
-]
 
 // Presupuestos y proformas: base imponible (rotulada como tal); facturas: total con impuestos
 const amountOf = (x: { taxBase: number, total: number }) => (isQuote.value ? x.taxBase : x.total)
@@ -203,7 +211,7 @@ async function deleteBulk() {
   }
   finally {
     busy.value = false
-    await Promise.all([refresh(), refreshCounts()])
+    await refresh()
   }
 }
 
@@ -232,7 +240,7 @@ async function runStatus(body: Record<string, unknown>, ok: (n: number) => strin
   }
   finally {
     busy.value = false
-    await Promise.all([refresh(), refreshCounts()])
+    await refresh()
   }
 }
 
@@ -320,9 +328,13 @@ const bulkActions = computed<BulkAction[]>(() => [
       </div>
     </header>
 
+    <div class="period-row">
+      <UiPeriod v-model="period" />
+    </div>
+
     <div class="stats">
       <div class="stat card rise" style="--i: 0">
-        <span class="s-label">{{ isQuote ? 'Presupuestado' : 'Total facturado' }}</span>
+        <span class="s-label">{{ isQuote ? 'Presupuestado' : 'Facturado' }} {{ periodPhrase(period) }}</span>
         <strong class="num">{{ eur(isQuote ? summary.base : summary.total) }}</strong>
         <span class="s-sub">{{ summary.count }} {{ isQuote ? 'presupuestos · base imponible' : 'documentos · importe total' }}</span>
       </div>
@@ -348,6 +360,8 @@ const bulkActions = computed<BulkAction[]>(() => [
       </div>
     </div>
 
+    <UiPeriodNote v-if="elsewhere" :text="elsewhere.text" :amount="elsewhere.amount" action="Ver todas" @show="showElsewhere" />
+
     <div class="toolbar">
       <UiSegmented v-model="status" :options="tabs" label="Estado" />
       <div class="tools-right">
@@ -356,9 +370,6 @@ const bulkActions = computed<BulkAction[]>(() => [
           <input v-model="q" type="search" placeholder="Número, cliente, NIF…" aria-label="Buscar">
           <UiClear />
         </div>
-        <select v-model="period" class="control period" aria-label="Periodo">
-          <option v-for="p in PERIODS" :key="p.value" :value="p.value">{{ p.label }}</option>
-        </select>
       </div>
       <UiButton
         v-if="list.length"
@@ -379,10 +390,11 @@ const bulkActions = computed<BulkAction[]>(() => [
       <UiEmpty
         v-else-if="!rows?.length"
         :icon="isQuote ? 'ph:file-text' : 'ph:receipt'"
-        :title="q || status !== 'all' || period !== 'all' ? 'Nada con estos filtros' : isQuote ? 'Aún no hay presupuestos' : 'Emite tu primera factura'"
-        :text="q || status !== 'all' || period !== 'all' ? 'Prueba con otra búsqueda o cambia el periodo.' : isQuote ? 'Envía ofertas profesionales y conviértelas en factura cuando el cliente acepte.' : 'En menos de un minuto: elige cliente, añade conceptos de tu catálogo y emite. Los impuestos se calculan solos.'"
+        :title="q || status !== 'all' ? 'Nada con estos filtros' : !isAll ? `${isQuote ? 'Sin presupuestos' : 'Sin facturas'} ${periodPhrase(period)}` : isQuote ? 'Aún no hay presupuestos' : 'Emite tu primera factura'"
+        :text="q || status !== 'all' ? 'Prueba con otra búsqueda, otro estado o cambia el periodo.' : !isAll ? 'Elige otro periodo arriba o mira todos los años.' : isQuote ? 'Envía ofertas profesionales y conviértelas en factura cuando el cliente acepte.' : 'En menos de un minuto: elige cliente, añade conceptos de tu catálogo y emite. Los impuestos se calculan solos.'"
       >
-        <UiButton v-if="!(q || status !== 'all' || period !== 'all')" variant="primary" icon="ph:plus-bold" :to="`${base}/${isQuote ? 'nuevo' : 'nueva'}`">{{ isQuote ? 'Crear presupuesto' : 'Crear factura' }}</UiButton>
+        <UiButton v-if="!q && status === 'all' && !isAll" icon="ph:infinity" @click="period = { year: null, quarter: null, month: null }">Ver todos los años</UiButton>
+        <UiButton v-if="!(q || status !== 'all')" variant="primary" icon="ph:plus-bold" :to="`${base}/${isQuote ? 'nuevo' : 'nueva'}`">{{ isQuote ? 'Crear presupuesto' : 'Crear factura' }}</UiButton>
       </UiEmpty>
 
       <template v-else>
@@ -616,10 +628,6 @@ const bulkActions = computed<BulkAction[]>(() => [
   outline: none;
   background: none;
   color: var(--text);
-}
-
-.period {
-  width: auto;
 }
 
 .list {
@@ -856,13 +864,12 @@ input[type='checkbox'] {
 }
 
 @media (max-width: 767px) {
-  /* Buscador y periodo a todo el ancho, uno debajo del otro (como en Gastos): el texto de ayuda se lee entero */
+  /* Buscador a todo el ancho: el texto de ayuda se lee entero */
   .tools-right {
     flex-wrap: wrap;
   }
 
-  .search,
-  .period {
+  .search {
     flex: 1 1 100%;
   }
 

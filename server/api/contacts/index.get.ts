@@ -1,15 +1,18 @@
-import { and, eq, inArray, isNull, like, notInArray, or, sql, sum } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNull, like, lte, notInArray, or, sql, sum } from 'drizzle-orm'
 import { z } from 'zod'
 
 const query = z.object({
   role: z.enum(['client', 'supplier']).optional(),
   q: z.string().trim().max(100).optional(),
+  /** Periodo de las cifras (facturado, gastado); sin él, todos los años */
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   limit: z.coerce.number().int().min(1).max(10_000).default(5000),
 })
 
 export default defineEventHandler(async (event) => {
   const { company } = await requireCompany(event, 'advisor')
-  const { role, q, limit } = readQueryInput(event, query)
+  const { role, q, from, to, limit } = readQueryInput(event, query)
   const db = useDb()
   const c = tables.contacts
   const term = q ? `%${q}%` : null
@@ -27,32 +30,39 @@ export default defineEventHandler(async (event) => {
   const ids = rows.map(r => r.id)
   if (!ids.length) return []
 
-  // Facturado y pendiente de cobro (clientes) / gastado (proveedores) en los últimos 12 meses, por importe total de cada factura (con impuestos)
-  const since = new Date()
-  since.setFullYear(since.getFullYear() - 1)
-  const sinceIso = toISODate(since)
+  // Facturado (clientes) / gastado (proveedores) en el periodo, por importe total de cada factura (con impuestos).
+  // Lo pendiente de cobro y la última actividad son de siempre: una deuda de otro año sigue siendo deuda.
   const s = tables.salesDocuments
-  const sales = await db.select({
-    contactId: s.contactId,
-    billed: sum(s.total).mapWith(Number),
-    pending: sql<number>`SUM(CASE WHEN ${s.status} IN ('issued','sent','partial') THEN ${s.total} - ${s.paidTotal} ELSE 0 END)`.mapWith(Number),
-    last: sql<string>`MAX(${s.issueDate})`,
-  }).from(s)
-    .where(and(eq(s.companyId, company.id), inArray(s.contactId, ids), inArray(s.kind, ['invoice', 'rectifying']), notInArray(s.status, ['draft', 'cancelled']), sql`${s.issueDate} >= ${sinceIso}`))
-    .groupBy(s.contactId)
   const e = tables.expenses
-  const spent = await db.select({ supplierId: e.supplierId, spent: sum(e.total).mapWith(Number), last: sql<string>`MAX(${e.issueDate})` }).from(e)
-    .where(and(eq(e.companyId, company.id), inArray(e.supplierId, ids), sql`${e.issueDate} >= ${sinceIso}`))
-    .groupBy(e.supplierId)
+  const inPeriod = (col: typeof s.issueDate | typeof e.issueDate) => [from ? gte(col, from) : undefined, to ? lte(col, to) : undefined]
+  const salesBase = and(eq(s.companyId, company.id), inArray(s.contactId, ids), inArray(s.kind, ['invoice', 'rectifying']), notInArray(s.status, ['draft', 'cancelled']))
+  const [sales, salesEver, spent, spentEver] = await Promise.all([
+    db.select({ contactId: s.contactId, billed: sum(s.total).mapWith(Number) }).from(s)
+      .where(and(salesBase, ...inPeriod(s.issueDate)))
+      .groupBy(s.contactId),
+    db.select({
+      contactId: s.contactId,
+      pending: sql<number>`SUM(CASE WHEN ${s.status} IN ('issued','sent','partial') THEN ${s.total} - ${s.paidTotal} ELSE 0 END)`.mapWith(Number),
+      last: sql<string>`MAX(${s.issueDate})`,
+    }).from(s).where(salesBase).groupBy(s.contactId),
+    db.select({ supplierId: e.supplierId, spent: sum(e.total).mapWith(Number) }).from(e)
+      .where(and(eq(e.companyId, company.id), inArray(e.supplierId, ids), ...inPeriod(e.issueDate)))
+      .groupBy(e.supplierId),
+    db.select({ supplierId: e.supplierId, last: sql<string>`MAX(${e.issueDate})` }).from(e)
+      .where(and(eq(e.companyId, company.id), inArray(e.supplierId, ids)))
+      .groupBy(e.supplierId),
+  ])
 
-  const salesBy = new Map(sales.map(r => [r.contactId, r]))
-  const spentBy = new Map(spent.map(r => [r.supplierId, r]))
+  const billedBy = new Map(sales.map(r => [r.contactId, r.billed]))
+  const salesEverBy = new Map(salesEver.map(r => [r.contactId, r]))
+  const spentBy = new Map(spent.map(r => [r.supplierId, r.spent]))
+  const spentEverBy = new Map(spentEver.map(r => [r.supplierId, r.last]))
   return rows.map(r => ({
     ...contactView(r),
-    billed12m: salesBy.get(r.id)?.billed ?? 0,
-    pending: salesBy.get(r.id)?.pending ?? 0,
-    spent12m: spentBy.get(r.id)?.spent ?? 0,
-    lastActivity: [salesBy.get(r.id)?.last, spentBy.get(r.id)?.last].filter(Boolean).sort().at(-1) ?? null,
+    billed: billedBy.get(r.id) ?? 0,
+    pending: salesEverBy.get(r.id)?.pending ?? 0,
+    spent: spentBy.get(r.id) ?? 0,
+    lastActivity: [salesEverBy.get(r.id)?.last, spentEverBy.get(r.id)].filter(Boolean).sort().at(-1) ?? null,
   }))
-    .sort((a, b) => (role === 'supplier' ? b.spent12m - a.spent12m : b.billed12m - a.billed12m) || a.name.localeCompare(b.name))
+    .sort((a, b) => (role === 'supplier' ? b.spent - a.spent : b.billed - a.billed) || a.name.localeCompare(b.name))
 })

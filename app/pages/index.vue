@@ -123,7 +123,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
           </div>
         </article>
 
-        <NuxtLink to="/facturas?estado=open" class="card kpi kpi-link rise" :style="{ '--i': 3 }">
+        <NuxtLink to="/facturas?estado=open&anio=todos" class="card kpi kpi-link rise" :style="{ '--i': 3 }">
           <div class="kpi-top">
             <span class="kpi-label">Pendiente de cobro</span>
             <span class="kpi-ic receivable" aria-hidden="true"><Icon name="ph:hourglass-medium" /></span>
@@ -140,7 +140,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
           </div>
         </NuxtLink>
 
-        <NuxtLink to="/gastos?estado=pending&periodo=all" class="card kpi kpi-link rise" :style="{ '--i': 4 }">
+        <NuxtLink to="/gastos?estado=pending&anio=todos" class="card kpi kpi-link rise" :style="{ '--i': 4 }">
           <div class="kpi-top">
             <span class="kpi-label">Pendiente de pago</span>
             <span class="kpi-ic payable" aria-hidden="true"><Icon name="ph:clock-countdown" /></span>

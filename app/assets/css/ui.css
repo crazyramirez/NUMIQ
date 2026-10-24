@@ -43,6 +43,12 @@
   flex-wrap: wrap;
 }
 
+/* Selector de periodo (‹ 2026 ›) bajo la cabecera: manda sobre las cifras y el listado de la página */
+.period-row {
+  display: flex;
+  margin: calc(var(--s-2) * -1) 0 var(--s-4);
+}
+
 .section-title {
   font-size: var(--text-md);
   font-weight: 620;

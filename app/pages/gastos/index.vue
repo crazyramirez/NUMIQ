@@ -48,38 +48,15 @@ const { open: openScan } = useScan()
 
 // ─── Filtros ───
 
-// Filtros en la URL: ?estado= y ?periodo= abren la lista ya filtrada (p. ej. «Pendiente de pago» desde Inicio)
+// Filtros en la URL: ?estado= y ?anio= abren la lista ya filtrada (p. ej. «Pendiente de pago» desde Inicio)
 // y al volver atrás desde un gasto o una factura el listado sigue igual
 const status = useQueryState('estado', 'all', { allowed: ['all', 'pending', 'paid', 'review'] })
-const period = useQueryState('periodo', 'y', { allowed: ['q', 'pq', 'y', 'py', 'all'] })
+// Por defecto, el año en curso: ‹ 2026 › cambia de año, trimestre o mes
+const { period, range, isAll } = usePeriodQuery()
 const categoryId = useQueryState<number | null>('categoria', null, { parse: r => Number(r) || undefined })
 const deductible = useQueryState<'all' | 'full' | 'partial' | 'none'>('deducible', 'all', { allowed: ['all', 'full', 'partial', 'none'] })
 const q = useQueryState('q', '', { debounce: 250 })
 const qDebounced = refDebounced(q, 250)
-
-const now = new Date()
-const year = now.getFullYear()
-const currentQ = quarterOf(now)
-const prevQ = (currentQ === 1 ? 4 : currentQ - 1) as Quarter
-const prevQYear = currentQ === 1 ? year - 1 : year
-
-const range = computed<{ from?: string, to?: string }>(() => {
-  switch (period.value) {
-    case 'q': return quarterRange(year, currentQ)
-    case 'pq': return quarterRange(prevQYear, prevQ)
-    case 'y': return { from: `${year}-01-01`, to: `${year}-12-31` }
-    case 'py': return { from: `${year - 1}-01-01`, to: `${year - 1}-12-31` }
-    default: return {}
-  }
-})
-
-const periodOptions = [
-  { value: 'q', label: `Este trimestre (${currentQ}T)` },
-  { value: 'pq', label: `Trimestre anterior (${prevQ}T${prevQYear !== year ? ` ${prevQYear}` : ''})` },
-  { value: 'y', label: `Este año (${year})` },
-  { value: 'py', label: `Año pasado (${year - 1})` },
-  { value: 'all', label: 'Todo' },
-]
 
 const statusOptions = [
   { value: 'all', label: 'Todos' },
@@ -106,7 +83,7 @@ const approvalFilter = useQueryState<'pending' | 'rejected' | null>('aprobacion'
 const { me } = useMe()
 const canApprove = computed(() => ['owner', 'admin'].includes(me.value?.company?.role ?? ''))
 
-const { data, status: fetchStatus, refresh } = useFetch<ExpenseRow[]>('/api/expenses', {
+const { data, status: fetchStatus, refresh: refreshList } = useFetch<ExpenseRow[]>('/api/expenses', {
   key: 'expenses',
   query: computed(() => ({
     status: status.value,
@@ -133,6 +110,31 @@ const rows = computed(() => (data.value ?? []).filter(e => (!noFile.value || (!e
   && (!reviewFilter.value || kindsOf(e).has(reviewFilter.value))))
 const firstLoad = computed(() => fetchStatus.value === 'pending' && !data.value)
 const filtersActive = computed(() => status.value !== 'all' || !!q.value.trim() || categoryId.value != null || deductible.value !== 'all' || noFile.value || !!approvalFilter.value)
+
+// Lo pendiente de pago (o por revisar) de otros periodos no se pierde de vista: aviso con enlace a todos los años
+const outstanding = computed(() => (status.value === 'review' ? 'review' : 'pending'))
+const { data: outstandingAll, refresh: refreshOutstanding } = useFetch<ExpenseRow[]>('/api/expenses', {
+  key: 'expenses-outstanding',
+  query: computed(() => ({ status: outstanding.value, limit: 1000 })),
+  lazy: true,
+  server: false,
+})
+const elsewhere = computed(() => {
+  const { from, to } = range.value
+  if (!from || !to || !['all', 'pending', 'review'].includes(status.value) || approvalFilter.value) return null
+  const r = (outstandingAll.value ?? []).filter(e => e.issueDate < from || e.issueDate > to)
+  if (!r.length) return null
+  const n = r.length
+  const one = n === 1
+  return outstanding.value === 'review'
+    ? { text: `${n} ${one ? 'gasto de otro periodo está' : 'gastos de otros periodos están'} por revisar`, amount: null }
+    : { text: `${n} ${one ? 'gasto de otro periodo sigue' : 'gastos de otros periodos siguen'} pendiente${one ? '' : 's'} de pago`, amount: r.reduce((s, e) => s + e.total - (e.paidTotal ?? 0), 0) }
+})
+function showElsewhere() {
+  period.value = { year: null, quarter: null, month: null }
+  status.value = outstanding.value
+}
+const refresh = () => Promise.all([refreshList(), refreshOutstanding()])
 
 // Cuántos esperan aprobación (aviso arriba para quien puede aprobar)
 const { data: pendingApproval, refresh: refreshPending } = useFetch<ExpenseRow[]>('/api/expenses', {
@@ -556,15 +558,19 @@ function savePartial() {
       </div>
     </header>
 
-    <button v-if="toApprove && approvalFilter !== 'pending'" type="button" class="approve-banner rise" @click="approvalFilter = 'pending'; period = 'all'">
+    <button v-if="toApprove && approvalFilter !== 'pending'" type="button" class="approve-banner rise" @click="approvalFilter = 'pending'; period = { year: null, quarter: null, month: null }">
       <Icon name="ph:check-square-offset" class="ab-ic" aria-hidden="true" />
       <span class="grow"><strong>{{ toApprove }} {{ toApprove === 1 ? 'gasto del equipo espera' : 'gastos del equipo esperan' }} tu aprobación</strong><span class="ab-s">No cuentan en impuestos hasta que los apruebes</span></span>
       <span class="ab-go">Revisar <Icon name="ph:arrow-right" aria-hidden="true" /></span>
     </button>
 
+    <div class="period-row">
+      <UiPeriod v-model="period" />
+    </div>
+
     <section class="summary rise" aria-label="Resumen de gastos filtrados">
       <div class="sum main">
-        <p class="eyebrow">Total gastado</p>
+        <p class="eyebrow">Gastado {{ periodPhrase(period) }}</p>
         <p class="v num">{{ eur(summary.total) }}</p>
         <p class="s">{{ summary.count }} {{ summary.count === 1 ? 'gasto' : 'gastos' }} · importe total</p>
       </div>
@@ -626,6 +632,8 @@ function savePartial() {
       </ul>
     </section>
 
+    <UiPeriodNote v-if="elsewhere" :text="elsewhere.text" :amount="elsewhere.amount" action="Ver todos" @show="showElsewhere" />
+
     <UiCard padding="none" class="rise" style="--i: 1">
       <div class="toolbar">
         <UiSegmented v-model="status" :options="statusOptions" label="Estado" />
@@ -633,7 +641,6 @@ function savePartial() {
           <UiInput v-model="q" icon="ph:magnifying-glass" placeholder="Proveedor, concepto o nº" aria-label="Buscar gastos" type="search" class="search" />
           <UiSelect v-model="categoryId" :options="categoryOptions" aria-label="Categoría" class="cat" />
           <UiSelect v-model="deductible" :options="deductibleOptions" aria-label="Deducibilidad" class="ded-filter" />
-          <UiSelect v-model="period" :options="periodOptions" aria-label="Periodo" class="period" />
           <button v-if="approvalFilter" type="button" class="nofile-chip" @click="approvalFilter = null">
             <Icon name="ph:check-square-offset" aria-hidden="true" /> {{ approvalFilter === 'pending' ? 'Por aprobar' : 'Rechazados' }} <Icon name="ph:x-bold" class="x" aria-label="Quitar filtro" />
           </button>
@@ -669,9 +676,10 @@ function savePartial() {
       <UiEmpty
         v-else-if="!rows.length && !filtersActive"
         icon="ph:wallet"
-        title="Sin gastos en este periodo"
+        :title="isAll ? 'Aún no hay gastos' : `Sin gastos ${periodPhrase(period)}`"
         text="Registra facturas de proveedores, tickets y cuotas: cada gasto deducible reduce lo que pagas de IVA e IRPF."
       >
+        <UiButton v-if="!isAll" icon="ph:infinity" @click="period = { year: null, quarter: null, month: null }">Ver todos los años</UiButton>
         <UiButton variant="primary" icon="ph:plus-bold" @click="openNew">Añadir gasto</UiButton>
         <UiButton icon="ph:scan" @click="openScan('received')">Escanear con IA</UiButton>
       </UiEmpty>
@@ -977,10 +985,6 @@ function savePartial() {
 
 .cat {
   width: 200px;
-}
-
-.period {
-  width: 210px;
 }
 
 .ded-filter {
@@ -1514,8 +1518,7 @@ input[type='checkbox'] {
 
   .search,
   .cat,
-  .ded-filter,
-  .period {
+  .ded-filter {
     width: 100%;
     flex-basis: 100%;
   }

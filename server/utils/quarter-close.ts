@@ -64,7 +64,7 @@ export async function quarterClose(company: Company, year: number, q: Quarter) {
       why: 'Lo que no se emite no cuenta en el IVA ni en el IRPF',
       state: n(drafts) ? 'todo' : 'done',
       detail: n(drafts) ? `${plural(n(drafts), 'borrador', 'borradores')} del trimestre sin emitir` : `${plural(n(salesN), 'factura emitida', 'facturas emitidas')}`,
-      action: n(drafts) ? { label: 'Ver borradores', to: '/facturas?estado=draft' } : undefined,
+      action: n(drafts) ? { label: 'Ver borradores', to: '/facturas?estado=draft&anio=todos' } : undefined,
     },
     {
       key: 'review',
@@ -72,7 +72,7 @@ export async function quarterClose(company: Company, year: number, q: Quarter) {
       why: 'Los que leyó la IA conviene mirarlos antes de declarar',
       state: n(unreviewed) ? 'todo' : 'done',
       detail: n(unreviewed) ? `${plural(n(unreviewed), 'gasto', 'gastos')} por revisar` : `${plural(n(expN), 'gasto registrado', 'gastos registrados')}`,
-      action: n(unreviewed) ? { label: 'Revisar', to: '/gastos?estado=review&periodo=all' } : undefined,
+      action: n(unreviewed) ? { label: 'Revisar', to: '/gastos?estado=review&anio=todos' } : undefined,
     },
     {
       key: 'files',
@@ -80,7 +80,7 @@ export async function quarterClose(company: Company, year: number, q: Quarter) {
       why: 'Para deducir un gasto, Hacienda puede pedir la factura',
       state: n(noFile) ? 'warn' : 'done',
       detail: n(noFile) ? `${plural(n(noFile), 'gasto', 'gastos')} sin foto ni PDF` : 'Todos los gastos tienen su documento',
-      action: n(noFile) ? { label: 'Ver cuáles', to: '/gastos?justificante=no&periodo=all' } : undefined,
+      action: n(noFile) ? { label: 'Ver cuáles', to: '/gastos?justificante=no&anio=todos' } : undefined,
     },
     {
       key: 'bank',
