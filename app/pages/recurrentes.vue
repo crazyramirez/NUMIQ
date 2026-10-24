@@ -316,12 +316,12 @@ const IDEAS = Object.freeze([
       <div class="kpi">
         <p class="eyebrow">Ingresos recurrentes</p>
         <p class="v num">{{ eur(mrr) }}<span class="per">/mes</span></p>
-        <p class="s">{{ plural(live.filter(r => r.kind === 'invoice').length, 'activa', 'activas') }} · con impuestos</p>
+        <p class="s">{{ plural(live.filter(r => r.kind === 'invoice').length, 'activa', 'activas') }} · importe total</p>
       </div>
       <div class="kpi">
         <p class="eyebrow">Gastos fijos</p>
         <p class="v num">{{ eur(fixed) }}<span class="per">/mes</span></p>
-        <p class="s">{{ plural(live.filter(r => r.kind === 'expense').length, 'activo', 'activos') }} · con impuestos</p>
+        <p class="s">{{ plural(live.filter(r => r.kind === 'expense').length, 'activo', 'activos') }} · importe total</p>
       </div>
       <div class="kpi">
         <p class="eyebrow">Margen recurrente</p>

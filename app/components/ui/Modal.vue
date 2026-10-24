@@ -110,7 +110,7 @@ const modalStack: symbol[] = []
             <UiButton class="x" variant="ghost" size="sm" square icon="ph:x" aria-label="Cerrar" @click="open = false" />
           </header>
           <div class="body"><slot /></div>
-          <footer v-if="$slots.footer" class="foot"><slot name="footer" /></footer>
+          <footer v-if="$slots.footer" class="foot ui-modal-foot"><slot name="footer" /></footer>
         </div>
       </div>
     </Transition>
@@ -275,6 +275,32 @@ const modalStack: symbol[] = []
 
   .dialog-enter-from .panel {
     transform: translateY(40px);
+  }
+}
+</style>
+
+<style>
+/*
+ * Pie en el móvil: si además de Cancelar y la acción principal hay otras (Eliminar, Hacer
+ * recurrente…), esas van en una fila encima y las dos últimas abajo, sin salirse por la izquierda.
+ * Sin scoped: los botones vienen por el slot y el :has() mira a los hijos del pie.
+ */
+@media (max-width: 640px) {
+  .ui-modal-foot {
+    flex-wrap: wrap;
+    padding-inline: var(--s-4);
+  }
+
+  .ui-modal-foot:has(> :not(.spacer) ~ :nth-last-child(2))::after {
+    content: '';
+    flex-basis: 100%;
+    order: 1;
+  }
+
+  .ui-modal-foot:has(> :not(.spacer) ~ :nth-last-child(2)) > :nth-last-child(-n + 2) {
+    order: 2;
+    flex: 1 1 auto;
+    margin-top: var(--s-2);
   }
 }
 </style>

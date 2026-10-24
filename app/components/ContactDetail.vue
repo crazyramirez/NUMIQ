@@ -250,12 +250,12 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
           <div class="kpi rise" style="--i: 2">
             <p class="eyebrow">Este año</p>
             <p class="v num">{{ eur(kpis.billedYear) }}</p>
-            <p class="s">Con impuestos, desde el 1 de enero</p>
+            <p class="s">Importe total desde el 1 de enero</p>
           </div>
           <div class="kpi rise" style="--i: 3">
             <p class="eyebrow">Pendiente de cobro</p>
             <p class="v num" :class="{ warn: kpis.pending > 0 }">{{ eur(kpis.pending) }}</p>
-            <p class="s">{{ kpis.pending > 0 ? 'IVA incluido, menos retenciones' : 'Todo cobrado' }}</p>
+            <p class="s">{{ kpis.pending > 0 ? 'Importe total' : 'Todo cobrado' }}</p>
           </div>
           <div class="kpi rise" style="--i: 4" :class="{ alert: kpis.overdueCount }">
             <p class="eyebrow">Vencido</p>
@@ -272,7 +272,7 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
           <div class="kpi rise" style="--i: 2">
             <p class="eyebrow">Este año</p>
             <p class="v num">{{ eur(kpis.spentYear) }}</p>
-            <p class="s">Con impuestos, desde el 1 de enero</p>
+            <p class="s">Importe total desde el 1 de enero</p>
           </div>
           <div class="kpi rise" style="--i: 3">
             <p class="eyebrow">Pendiente de pago</p>

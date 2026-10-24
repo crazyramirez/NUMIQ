@@ -402,15 +402,15 @@ const hasActivity = computed(() => !!data.value && (data.value.pnl.income !== 0 
 
       <!-- Rankings -->
       <div class="row-3">
-        <UiCard class="rise" style="--i: 11" icon="ph:crown-simple" title="Principales clientes" subtitle="Base imponible del periodo y total con impuestos">
+        <UiCard class="rise" style="--i: 11" icon="ph:crown-simple" title="Principales clientes" subtitle="Base imponible e importe total">
           <ReportsRankList v-if="data.topClients.length" :rows="data.topClients" :total="data.pnl.income" kind="client" />
           <UiEmpty v-else compact icon="ph:users" title="Sin facturación" text="No hay facturas emitidas en este periodo." />
         </UiCard>
-        <UiCard class="rise" style="--i: 12" icon="ph:storefront" title="Principales proveedores" subtitle="Base imponible del periodo y total con impuestos">
+        <UiCard class="rise" style="--i: 12" icon="ph:storefront" title="Principales proveedores" subtitle="Base imponible e importe total">
           <ReportsRankList v-if="data.topSuppliers.length" :rows="data.topSuppliers" :total="data.pnl.expenses" kind="supplier" />
           <UiEmpty v-else compact icon="ph:storefront" title="Sin gastos" text="No hay gastos registrados en este periodo." />
         </UiCard>
-        <UiCard class="rise" style="--i: 13" icon="ph:chart-pie-slice" title="Gastos por categoría" subtitle="Base imponible y total con impuestos">
+        <UiCard class="rise" style="--i: 13" icon="ph:chart-pie-slice" title="Gastos por categoría" subtitle="Base imponible e importe total">
           <ChartsCategoryBars v-if="data.expensesByCategory.length" :rows="data.expensesByCategory" :max="7" show-total />
           <UiEmpty v-else compact icon="ph:wallet" title="Sin gastos" text="Registra tus gastos para verlos por categoría." />
         </UiCard>

@@ -382,7 +382,7 @@ function savePartial() {
       <div class="sum main">
         <p class="eyebrow">Total gastado</p>
         <p class="v num">{{ eur(summary.total) }}</p>
-        <p class="s">{{ summary.count }} {{ summary.count === 1 ? 'gasto' : 'gastos' }} · con impuestos</p>
+        <p class="s">{{ summary.count }} {{ summary.count === 1 ? 'gasto' : 'gastos' }} · importe total</p>
       </div>
       <div class="sum">
         <!-- Cifra fiscal: va sobre la base imponible y lo dice -->

@@ -1484,6 +1484,15 @@ async function remove() {
     grid-template-columns: 1fr;
   }
 
+  /* Aviso de escaneo: el botón baja a su propia fila para que el texto no quede en una columna estrecha */
+  .ai-fill {
+    flex-wrap: wrap;
+  }
+
+  .ai-fill > :deep(.btn) {
+    width: 100%;
+  }
+
   .gross-helper-card {
     flex-direction: column;
     align-items: stretch;

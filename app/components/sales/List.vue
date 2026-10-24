@@ -224,7 +224,7 @@ const bulkActions = computed<BulkAction[]>(() => [
       <div class="stat card rise" style="--i: 0">
         <span class="s-label">{{ isQuote ? 'Presupuestado' : 'Total facturado' }}</span>
         <strong class="num">{{ eur(isQuote ? summary.base : summary.total) }}</strong>
-        <span class="s-sub">{{ summary.count }} {{ isQuote ? 'presupuestos · base imponible' : 'documentos · con impuestos' }}</span>
+        <span class="s-sub">{{ summary.count }} {{ isQuote ? 'presupuestos · base imponible' : 'documentos · importe total' }}</span>
       </div>
       <div v-if="!isQuote" class="stat card rise" style="--i: 1">
         <span class="s-label">Pendiente de cobro</span>

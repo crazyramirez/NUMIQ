@@ -27,7 +27,7 @@ const link = (r: Row) => (r.id ? `/${props.kind === 'client' ? 'clientes' : 'pro
           <div class="track" :title="`${pct(share(r), 1)} del total · ${r.count} ${kind === 'client' ? 'factura' : 'gasto'}${r.count === 1 ? '' : 's'}`">
             <span class="fill" :style="{ width: `${Math.max(3, (Math.abs(r.amount) / top) * 100)}%` }" />
           </div>
-          <p v-if="r.total != null" class="meta num">{{ eur(r.total, false) }} con impuestos · {{ r.count }} {{ kind === 'client' ? 'factura' : 'gasto' }}{{ r.count === 1 ? '' : 's' }}</p>
+          <p v-if="r.total != null" class="meta num">Importe total {{ eur(r.total, false) }} · {{ r.count }} {{ kind === 'client' ? 'factura' : 'gasto' }}{{ r.count === 1 ? '' : 's' }}</p>
         </div>
         <span class="share num">{{ pct(share(r)) }}</span>
       </NuxtLink>

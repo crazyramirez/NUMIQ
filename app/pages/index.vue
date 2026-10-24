@@ -32,8 +32,8 @@ const kpis = computed(() => {
   const k = data.value?.kpis
   if (!k) return []
   return [
-    { key: 'income', label: 'Facturado este trimestre', icon: 'ph:arrow-circle-up-right', value: k.income.value, delta: delta(k.income.value, k.income.previous), invert: false, note: 'Total de las facturas, con impuestos' },
-    { key: 'expenses', label: 'Gastos este trimestre', icon: 'ph:arrow-circle-down-left', value: k.expenses.value, delta: delta(k.expenses.value, k.expenses.previous), invert: true, note: 'Total de los gastos, con impuestos' },
+    { key: 'income', label: 'Facturado este trimestre', icon: 'ph:arrow-circle-up-right', value: k.income.value, delta: delta(k.income.value, k.income.previous), invert: false, note: 'Importe total' },
+    { key: 'expenses', label: 'Gastos este trimestre', icon: 'ph:arrow-circle-down-left', value: k.expenses.value, delta: delta(k.expenses.value, k.expenses.previous), invert: true, note: 'Importe total' },
   ]
 })
 
@@ -145,7 +145,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 
       <!-- Gráfico + Asesor IA -->
       <div class="row-main">
-        <UiCard class="rise chart-card" style="--i: 5" title="Ingresos y gastos" subtitle="Últimos 12 meses · con impuestos">
+        <UiCard class="rise chart-card" style="--i: 5" title="Ingresos y gastos" subtitle="Últimos 12 meses · importe total">
           <template #actions>
             <UiButton size="sm" variant="ghost" icon-right="ph:arrow-right" to="/informes">Informes</UiButton>
           </template>
@@ -253,7 +253,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
           </ul>
         </UiCard>
 
-        <UiCard class="rise" style="--i: 9" icon="ph:crown-simple" title="Mejores clientes" subtitle="Facturación de los últimos 12 meses, con impuestos">
+        <UiCard class="rise" style="--i: 9" icon="ph:crown-simple" title="Mejores clientes" subtitle="Últimos 12 meses · importe total">
           <ul v-if="data.topClients.length" class="clients">
             <li v-for="c in data.topClients" :key="c.id ?? c.name">
               <NuxtLink :to="c.id ? `/clientes/${c.id}` : '/clientes'" class="client">
@@ -279,7 +279,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 
       <!-- Categorías · Actividad -->
       <div class="row-2">
-        <UiCard class="rise" style="--i: 10" icon="ph:chart-bar-horizontal" title="Gastos por categoría" :subtitle="`${quarterLabel} · con impuestos`">
+        <UiCard class="rise" style="--i: 10" icon="ph:chart-bar-horizontal" title="Gastos por categoría" :subtitle="`${quarterLabel} · importe total`">
           <ChartsCategoryBars :rows="data.expensesByCategory" />
         </UiCard>
 

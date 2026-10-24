@@ -32,7 +32,7 @@ const top = computed(() => list.value[0]?.amount || 1)
         <div class="track" :title="`${r.name}: ${eur(r.amount)} (${pct(r.amount / total * 100)})`">
           <span class="fill" :style="{ width: `${Math.max(2, (r.amount / top) * 100)}%` }" />
         </div>
-        <p v-if="showTotal && r.total != null" class="meta num">{{ eur(r.total, false) }} con impuestos</p>
+        <p v-if="showTotal && r.total != null" class="meta num">Importe total {{ eur(r.total, false) }}</p>
       </div>
       <span class="share num">{{ pct((r.amount / total) * 100) }}</span>
     </li>
