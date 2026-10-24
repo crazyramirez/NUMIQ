@@ -41,9 +41,9 @@ export async function sendSalesEmail(company: Company, userId: number | null, id
     title: input.subject,
     lines: input.message.split(/\n{2,}/),
     details,
-    // Página pública: ver y descargar, aceptar el presupuesto o consultar cómo pagar
-    action: doc.publicToken && site
-      ? { label: isQuote && input.kind === 'document' ? 'Ver y aceptar el presupuesto' : `Ver ${label.toLowerCase()}`, url: `${site.replace(/\/+$/, '')}/p/${doc.publicToken}` }
+    // Página pública: ver y descargar o consultar cómo pagar. El presupuesto va en el PDF adjunto (se responde por email)
+    action: doc.publicToken && site && !(isQuote && input.attachPdf)
+      ? { label: `Ver ${label.toLowerCase()}`, url: `${site.replace(/\/+$/, '')}/p/${doc.publicToken}` }
       : null,
     footer: [company.legalName, `NIF ${company.nif}`, company.email].filter(Boolean).join(' · '),
   })

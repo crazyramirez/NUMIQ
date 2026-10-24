@@ -103,8 +103,8 @@ const tabs = computed(() => isQuote.value
 
 // Presupuestos y proformas: base imponible (rotulada como tal); facturas: total con impuestos
 const amountOf = (x: { taxBase: number, total: number }) => (isQuote.value ? x.taxBase : x.total)
-// «Vista»: el cliente abrió el enlace y aún no está cobrada ni cerrada (cuando más útil es saberlo)
-const seen = (r: Row) => !!r.viewedAt && !['paid', 'cancelled', 'invoiced', 'rejected', 'accepted', 'draft'].includes(r.status)
+// «Vista»: el cliente abrió el enlace de la factura y aún no está cobrada ni cerrada (cuando más útil es saberlo)
+const seen = (r: Row) => !isQuote.value && !!r.viewedAt && !['paid', 'cancelled', 'invoiced', 'rejected', 'accepted', 'draft'].includes(r.status)
 
 const summary = computed(() => {
   const r = (all.value ?? []).filter(x => x.status !== 'draft' && x.status !== 'cancelled')

@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import type { PaperDoc } from '~/components/sales/Paper.vue'
 
-/** Vista pública de un documento para el cliente: ver, descargar, aceptar el presupuesto o pagar la factura */
+/** Vista pública de un documento para el cliente: ver y descargar el presupuesto, o ver y pagar la factura */
 definePageMeta({ layout: 'blank' })
 
-type QuoteState = 'open' | 'accepted' | 'rejected' | 'invoiced' | 'cancelled'
 interface PublicDoc {
   doc: PaperDoc & { total: number }
   company: {
@@ -14,7 +13,6 @@ interface PublicDoc {
   design: InvoiceDesign
   logoUrl: string | null
   pdfUrl: string
-  quote: { state: QuoteState, respondedAt: string | null, responseName: string | null, responseNote: string | null } | null
   payment: { paid: boolean, pending: number, paidTotal: number, dueDate: string | null, method: string | null, iban: string | null, cancelled: boolean, online?: { link: string | null, linkLabel: string | null, bizum: string | null } } | null
 }
 
@@ -40,65 +38,6 @@ const ibanText = computed(() => pay.value?.iban?.replace(/\s/g, '').replace(/(.{
 const website = computed(() => {
   const w = data.value?.company.website
   return w ? (/^https?:\/\//i.test(w) ? w : `https://${w}`) : null
-})
-
-// ─── Respuesta al presupuesto ───
-const mode = ref<'idle' | 'accept' | 'reject'>('idle')
-const form = reactive({ name: '', note: '' })
-const errors = reactive<Record<string, string | null>>({ name: null, note: null })
-const sending = ref(false)
-const failure = ref<string | null>(null)
-const answered = ref(false)
-const formEl = ref<HTMLElement | null>(null)
-
-function start(m: 'accept' | 'reject') {
-  mode.value = m
-  failure.value = null
-  nextTick(() => formEl.value?.querySelector('input')?.focus())
-}
-
-async function respond() {
-  errors.name = null
-  errors.note = null
-  failure.value = null
-  if (form.name.trim().length < 2) {
-    errors.name = 'Escribe tu nombre'
-    return
-  }
-  sending.value = true
-  try {
-    const r = await $fetch<{ state: QuoteState, respondedAt: string, responseName: string, responseNote: string | null }>(`/api/public/doc/${token}/respond`, {
-      method: 'POST',
-      body: { decision: mode.value === 'accept' ? 'accept' : 'reject', name: form.name, note: form.note },
-    })
-    if (data.value) data.value.quote = { state: r.state, respondedAt: r.respondedAt, responseName: r.responseName, responseNote: r.responseNote }
-    answered.value = true
-    mode.value = 'idle'
-  }
-  catch (err) {
-    const field = errorField(err)
-    if (field && field in errors) errors[field] = errorMessage(err)
-    else failure.value = errorMessage(err)
-  }
-  finally {
-    sending.value = false
-  }
-}
-
-const STATE: Record<QuoteState, { icon: string, tone: string, title: string }> = {
-  open: { icon: 'ph:hourglass-medium', tone: 'info', title: 'Pendiente de respuesta' },
-  accepted: { icon: 'ph:check-circle-fill', tone: 'success', title: 'Presupuesto aceptado' },
-  rejected: { icon: 'ph:x-circle-fill', tone: 'neutral', title: 'Presupuesto rechazado' },
-  invoiced: { icon: 'ph:check-circle-fill', tone: 'success', title: 'Presupuesto aceptado y facturado' },
-  cancelled: { icon: 'ph:prohibit-fill', tone: 'neutral', title: 'Presupuesto anulado' },
-}
-
-const stateDetail = computed(() => {
-  const q = data.value?.quote
-  if (!q) return ''
-  if (answered.value) return q.state === 'accepted' ? `Hemos avisado a ${brand.value}: se pondrá en contacto contigo para ponerse en marcha.` : `Hemos trasladado tu respuesta a ${brand.value}. ¡Gracias por avisar!`
-  if ((q.state === 'accepted' || q.state === 'rejected') && q.responseName) return `Por ${q.responseName}${q.respondedAt ? ` el ${fdate(q.respondedAt)}` : ''}.`
-  return ''
 })
 
 // ─── Copiar datos de pago ───
@@ -145,55 +84,14 @@ async function copy(key: string, text: string) {
               {{ data.doc.kind === 'quote' ? 'Emitido' : 'Emitida' }} el {{ fdate(data.doc.issueDate) }}<template v-if="data.doc.customer?.name"> para <strong>{{ data.doc.customer.name }}</strong></template>
             </p>
 
-            <!-- Presupuesto: aceptar o rechazar -->
-            <template v-if="data.quote">
-              <template v-if="data.quote.state === 'open'">
-                <div v-if="mode === 'idle'" class="resp">
-                  <p v-if="data.doc.dueDate" class="due">
-                    <Icon name="ph:calendar-blank" aria-hidden="true" />
-                    Válido hasta el {{ fdate(data.doc.dueDate) }} · {{ relDays(data.doc.dueDate) }}
-                  </p>
-                  <UiButton variant="primary" size="lg" block icon="ph:check-bold" class="accept" @click="start('accept')">Aceptar presupuesto</UiButton>
-                  <UiButton variant="ghost" block @click="start('reject')">No me interesa</UiButton>
-                </div>
-                <form v-else ref="formEl" class="resp-form" novalidate @submit.prevent="respond">
-                  <p class="resp-t">{{ mode === 'accept' ? 'Confirma la aceptación' : '¿Nos cuentas el motivo?' }}</p>
-                  <p class="resp-s">
-                    {{ mode === 'accept' ? `${brand} recibirá tu aceptación al momento.` : 'Es opcional, pero ayuda mucho a mejorar la propuesta.' }}
-                  </p>
-                  <UiInput v-model="form.name" label="Tu nombre" autocomplete="name" required :error="errors.name" />
-                  <UiTextarea
-                    v-model="form.note"
-                    :label="mode === 'accept' ? 'Comentario (opcional)' : 'Motivo (opcional)'"
-                    :placeholder="mode === 'accept' ? 'Ej. Podemos empezar la semana que viene' : 'Ej. Se sale de nuestro presupuesto'"
-                    rows="3"
-                    maxlength="1000"
-                    :error="errors.note"
-                  />
-                  <p v-if="failure" class="fail" role="alert"><Icon name="ph:warning-circle-fill" aria-hidden="true" /> {{ failure }}</p>
-                  <div class="resp-actions">
-                    <UiButton variant="ghost" :disabled="sending" @click="mode = 'idle'">Volver</UiButton>
-                    <UiButton type="submit" :variant="mode === 'accept' ? 'primary' : 'danger'" class="grow" :class="{ accept: mode === 'accept' }" :loading="sending">
-                      {{ mode === 'accept' ? 'Aceptar presupuesto' : 'Rechazar presupuesto' }}
-                    </UiButton>
-                  </div>
-                  <p v-if="mode === 'accept'" class="fine">
-                    Al aceptar confirmas el presupuesto {{ data.doc.number }} por {{ eur(data.doc.total) }} con las condiciones indicadas en el documento.
-                  </p>
-                </form>
-              </template>
-              <div v-else class="state" :class="[`t-${STATE[data.quote.state].tone}`, { pop: answered }]" role="status">
-                <span class="state-ic" aria-hidden="true"><Icon :name="STATE[data.quote.state].icon" /></span>
-                <div class="min0">
-                  <p class="state-t">{{ answered && data.quote.state === 'accepted' ? '¡Hecho! Presupuesto aceptado' : STATE[data.quote.state].title }}</p>
-                  <p v-if="stateDetail" class="state-s">{{ stateDetail }}</p>
-                  <p v-if="data.quote.responseNote && !answered" class="state-note">«{{ data.quote.responseNote }}»</p>
-                </div>
-              </div>
-            </template>
+            <!-- Presupuesto: su validez (se acepta por email, no desde aquí) -->
+            <p v-if="!pay && data.doc.dueDate" class="due">
+              <Icon name="ph:calendar-blank" aria-hidden="true" />
+              Válido hasta el {{ fdate(data.doc.dueDate) }}
+            </p>
 
             <!-- Factura: estado del pago -->
-            <template v-else-if="pay">
+            <template v-if="pay">
               <div v-if="pay.cancelled" class="state t-neutral">
                 <span class="state-ic" aria-hidden="true"><Icon name="ph:prohibit-fill" /></span>
                 <p class="state-t">Factura anulada</p>
@@ -426,18 +324,6 @@ async function copy(key: string, text: string) {
   color: var(--text-2);
 }
 
-.resp {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-2);
-  margin-top: var(--s-5);
-}
-
-.accept {
-  background: var(--pub-accent);
-  border-color: var(--pub-accent);
-}
-
 .due {
   display: flex;
   align-items: center;
@@ -450,58 +336,9 @@ async function copy(key: string, text: string) {
   border-radius: var(--r-md);
 }
 
-.resp .due {
-  margin-top: 0;
-}
-
 .due.late {
   color: var(--danger);
   background: var(--danger-soft);
-}
-
-.resp-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-3);
-  margin-top: var(--s-5);
-  padding-top: var(--s-5);
-  border-top: 1px solid var(--border-subtle);
-  animation: fade-up 220ms var(--ease-out);
-}
-
-.resp-t {
-  font-size: var(--text-md);
-  font-weight: 650;
-}
-
-.resp-s {
-  margin-top: -6px;
-  font-size: var(--text-sm);
-  color: var(--text-3);
-}
-
-.resp-actions {
-  display: flex;
-  gap: var(--s-2);
-}
-
-.fine {
-  font-size: var(--text-xs);
-  line-height: 1.5;
-  color: var(--text-4);
-}
-
-.fail {
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
-  font-size: var(--text-sm);
-  color: var(--danger);
-}
-
-.fail :deep(svg) {
-  flex: none;
-  margin-top: 2px;
 }
 
 .state {
@@ -535,13 +372,6 @@ async function copy(key: string, text: string) {
   color: var(--text-2);
 }
 
-.state-note {
-  margin-top: 6px;
-  font-size: var(--text-sm);
-  font-style: italic;
-  color: var(--text-3);
-}
-
 .state.t-success {
   background: var(--success-soft);
 }
@@ -550,24 +380,8 @@ async function copy(key: string, text: string) {
   color: var(--success-solid);
 }
 
-.state.t-warning {
-  background: var(--warning-soft);
-}
-
-.state.t-warning .state-ic {
-  color: var(--warning-solid);
-}
-
-.state.t-info .state-ic {
-  color: var(--info-solid);
-}
-
 .state.t-neutral .state-ic {
   color: var(--text-3);
-}
-
-.state.pop .state-ic {
-  animation: pop 520ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .rows {
@@ -786,10 +600,6 @@ async function copy(key: string, text: string) {
   min-width: 0;
 }
 
-.grow {
-  flex: 1;
-}
-
 .show-xs {
   display: none;
 }
@@ -800,20 +610,6 @@ async function copy(key: string, text: string) {
   height: 1px;
   overflow: hidden;
   clip: rect(0 0 0 0);
-}
-
-@keyframes pop {
-  from {
-    transform: scale(0.4);
-    opacity: 0;
-  }
-}
-
-@keyframes fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
 }
 
 @media (max-width: 1080px) {
@@ -851,13 +647,6 @@ async function copy(key: string, text: string) {
 
   .show-xs {
     display: inline;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .state.pop .state-ic,
-  .resp-form {
-    animation: none;
   }
 }
 </style>

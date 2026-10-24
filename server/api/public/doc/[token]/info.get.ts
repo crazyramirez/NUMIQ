@@ -1,6 +1,6 @@
 /**
  * Vista pública de un documento emitido (página /p/:token): la hoja con el diseño de la empresa,
- * el estado del cobro o del presupuesto y los datos para pagar. Sin datos internos (cobros, envíos, notas privadas).
+ * el estado del cobro y los datos para pagar (un presupuesto solo se ve y se descarga). Sin datos internos (cobros, envíos, notas privadas).
  */
 export default defineEventHandler(async (event) => {
   const token = getRouterParam(event, 'token') ?? ''
@@ -9,7 +9,6 @@ export default defineEventHandler(async (event) => {
   await trackPublicView(event, doc)
   setResponseHeaders(event, { 'cache-control': 'private, no-store', 'x-robots-tag': 'noindex' })
 
-  const state = quoteState(doc)
   const isInvoice = doc.kind === 'invoice' || doc.kind === 'rectifying'
   const pending = round2(doc.total - doc.paidTotal)
   const base = `/api/public/doc/${token}`
@@ -57,12 +56,6 @@ export default defineEventHandler(async (event) => {
     design,
     logoUrl: company.logoPath ? `${base}/logo` : null,
     pdfUrl: base,
-    quote: state && {
-      state,
-      respondedAt: doc.respondedAt,
-      responseName: doc.responseName,
-      responseNote: doc.responseNote,
-    },
     payment: isInvoice
       ? {
           paid: doc.status === 'paid' || pending <= 0,

@@ -132,7 +132,7 @@ async function send() {
           <span class="grow truncate">{{ a.originalName }}</span>
           <span class="muted small">{{ sizeLabel(a.size) }}</span>
         </label>
-        <p class="hint">El correo incluye además un enlace seguro para ver el documento online.</p>
+        <p v-if="!(isQuote && form.attachPdf)" class="hint">El correo incluye además un enlace seguro para ver el documento online.</p>
       </div>
     </form>
     <template #footer>

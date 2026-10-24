@@ -21,9 +21,6 @@ type Doc = PaperDoc & {
   publicToken: string | null
   viewedAt: string | null
   viewCount: number
-  respondedAt: string | null
-  responseName: string | null
-  responseNote: string | null
   emails: Array<{ id: number, kind: 'document' | 'reminder', to: string, subject: string, status: 'sent' | 'failed', error: string | null, withPdf: boolean, createdAt: string }>
   attachments: Array<{ id: number, originalName: string, mime: string, size: number, createdAt: string }>
   canEdit?: boolean
@@ -195,7 +192,7 @@ const publicUrl = computed(() => (doc.value?.publicToken && import.meta.client ?
 async function copyLink() {
   if (!publicUrl.value) return
   const ok = await copyToClipboard(publicUrl.value)
-  if (ok) toast.success('Enlace copiado', isQuote.value ? 'Tu cliente podrá verlo y aceptarlo sin registrarse.' : 'Tu cliente podrá verla, descargarla y ver cómo pagar.')
+  if (ok) toast.success('Enlace copiado', 'Tu cliente podrá verla, descargarla y ver cómo pagar.')
   else toast.error('No se pudo copiar el enlace')
 }
 
@@ -204,9 +201,7 @@ function shareWhatsapp() {
   const d = doc.value
   if (!d || !publicUrl.value) return
   const who = d.contact?.name ? `Hola, ${d.contact.name.split(' ')[0]}:` : 'Hola:'
-  const what = isQuote.value
-    ? `te envío el presupuesto ${d.number ?? ''} (${eur(d.taxBase)} + IVA). Puedes verlo y aceptarlo aquí:`
-    : `te envío la factura ${d.number ?? ''} por ${eur(d.total - d.paidTotal)}. Puedes verla, descargarla y pagarla aquí:`
+  const what = `te envío la factura ${d.number ?? ''} por ${eur(d.total - d.paidTotal)}. Puedes verla, descargarla y pagarla aquí:`
   const text = `${who} ${what}\n${publicUrl.value}`
   let phone = (d.contact?.phone ?? '').replace(/[^\d+]/g, '')
   if (/^[67]\d{8}$/.test(phone)) phone = `34${phone}`
@@ -228,7 +223,8 @@ const moreItems = computed<MenuItem[]>(() => {
     { label: 'Ver PDF', icon: 'ph:file-pdf', onClick: () => window.open(pdfUrl.value, '_blank', 'noopener') },
     { label: 'Imprimir', icon: 'ph:printer', onClick: print },
   ]
-  if (d.status !== 'draft' && publicUrl.value) {
+  // Enlace para el cliente: solo facturas (el presupuesto se manda por email con su PDF)
+  if (!isQuote.value && d.status !== 'draft' && publicUrl.value) {
     items.push(
       { label: 'Enviar por WhatsApp', icon: 'ph:whatsapp-logo', onClick: shareWhatsapp },
       { label: 'Copiar enlace para el cliente', icon: 'ph:link-simple', onClick: copyLink },
@@ -345,22 +341,11 @@ const moreItems = computed<MenuItem[]>(() => {
           <div v-if="doc.status === 'paid'" class="st-due ok">
             <Icon name="ph:check-circle-fill" /><span>Cobrada por completo</span>
           </div>
-          <p v-if="doc.status !== 'draft' && (doc.status !== 'paid' || doc.viewedAt)" class="st-seen" :class="{ on: doc.viewedAt }">
+          <p v-if="!isQuote && doc.status !== 'draft' && (doc.status !== 'paid' || doc.viewedAt)" class="st-seen" :class="{ on: doc.viewedAt }">
             <Icon :name="doc.viewedAt ? 'ph:eye-fill' : 'ph:eye-slash'" aria-hidden="true" />
             <span v-if="doc.viewedAt">Visto por el cliente {{ relTime(doc.viewedAt) }}{{ doc.viewCount > 1 ? ` · ${doc.viewCount} visitas` : '' }}</span>
             <span v-else>El cliente aún no lo ha abierto</span>
           </p>
-        </section>
-
-        <section v-if="isQuote && doc.respondedAt" class="card resp" :class="doc.status === 'accepted' || doc.status === 'invoiced' ? 'ok' : 'no'">
-          <div class="resp-top">
-            <span class="resp-ic" aria-hidden="true"><Icon :name="doc.status === 'rejected' ? 'ph:thumbs-down-fill' : 'ph:thumbs-up-fill'" /></span>
-            <div class="grow min0">
-              <p class="strong">{{ doc.status === 'rejected' ? 'Rechazado' : 'Aceptado' }} online por {{ doc.responseName }}</p>
-              <p class="muted small">{{ fdate(doc.respondedAt) }} · desde el enlace del presupuesto</p>
-            </div>
-          </div>
-          <p v-if="doc.responseNote" class="resp-note">«{{ doc.responseNote }}»</p>
         </section>
 
         <section v-if="doc.verifactu" class="card vf">
@@ -786,40 +771,6 @@ const moreItems = computed<MenuItem[]>(() => {
 
 .st-seen.on :deep(svg) {
   color: var(--brand);
-}
-
-.resp-top {
-  display: flex;
-  gap: var(--s-3);
-}
-
-.resp-ic {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--r-md);
-}
-
-.resp.ok .resp-ic {
-  color: var(--success);
-  background: var(--success-soft);
-}
-
-.resp.no .resp-ic {
-  color: var(--text-3);
-  background: var(--surface-sunken);
-}
-
-.resp-note {
-  margin-top: var(--s-3);
-  padding: 10px 12px;
-  font-size: var(--text-sm);
-  font-style: italic;
-  color: var(--text-2);
-  background: var(--surface-sunken);
-  border-radius: var(--r-md);
 }
 
 .imp-top {
