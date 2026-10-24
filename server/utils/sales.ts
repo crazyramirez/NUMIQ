@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { and, desc, eq, inArray, isNotNull, max, ne, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import type { PartySnapshot } from '../db/schema'
-import type { SalesInvoiceLink } from '../../shared/types/sales-links'
+import type { SalesInvoiceLink, SalesSourceLink } from '../../shared/types/sales-links'
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha con formato AAAA-MM-DD')
 
@@ -290,7 +290,7 @@ export async function loadSalesDocument(companyId: number, id: number) {
   const isQuoteFamily = doc.kind === 'quote' || doc.kind === 'proforma'
   const familyKinds = isQuoteFamily ? (['quote', 'proforma'] as const) : (['invoice', 'rectifying'] as const)
 
-  const [lines, payments, contact, verifactu, emails, attachments, owner, invoiceLinks, siblings] = await Promise.all([
+  const [lines, payments, contact, verifactu, emails, attachments, owner, invoiceLinks, siblings, source] = await Promise.all([
     db.select().from(tables.salesDocumentLines).where(eq(tables.salesDocumentLines.documentId, id)).orderBy(tables.salesDocumentLines.position),
     db.select().from(tables.payments).where(eq(tables.payments.salesDocumentId, id)).orderBy(tables.payments.date),
     doc.contactId ? db.select().from(tables.contacts).where(eq(tables.contacts.id, doc.contactId)).then(r => r[0] ?? null) : null,
@@ -318,6 +318,12 @@ export async function loadSalesDocument(companyId: number, id: number) {
         sql`COALESCE(${tables.salesDocuments.sequence}, 0) ASC`,
         tables.salesDocuments.id,
       ),
+    doc.sourceId
+      ? db.select({ id: tables.salesDocuments.id, number: tables.salesDocuments.number, kind: tables.salesDocuments.kind, status: tables.salesDocuments.status })
+        .from(tables.salesDocuments)
+        .where(and(eq(tables.salesDocuments.id, doc.sourceId), eq(tables.salesDocuments.companyId, companyId)))
+        .then(r => r[0] ?? null)
+      : null,
   ])
   const production = owner ? verifactuSettings(owner).environment === 'production' : false
   const idx = siblings.findIndex(s => s.id === id)
@@ -327,6 +333,8 @@ export async function loadSalesDocument(companyId: number, id: number) {
   return {
     ...doc,
     invoices: invoiceLinks.get(id) ?? [],
+    /** Presupuesto del que sale la factura */
+    source: source as SalesSourceLink | null,
     lines,
     payments,
     emails,

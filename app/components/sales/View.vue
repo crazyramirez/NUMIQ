@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { MenuItem } from '~/components/ui/Menu.vue'
 import type { PaperDoc } from './Paper.vue'
-import type { SalesInvoiceLink } from '#shared/types/sales-links'
+import type { LinkCandidate, LinkCandidatesResult, SalesInvoiceLink, SalesSourceLink } from '#shared/types/sales-links'
 
 type Doc = PaperDoc & {
   id: number
@@ -12,6 +12,7 @@ type Doc = PaperDoc & {
   vatTotal: number
   sourceId: number | null
   invoices: SalesInvoiceLink[]
+  source: SalesSourceLink | null
   rectifiesId: number | null
   payments: Array<{ id: number, amount: number, date: string, method: string, notes: string | null }>
   contact: (PaperDoc['contact'] & { id: number, logoUrl?: string | null, phone?: string | null }) | null
@@ -216,6 +217,79 @@ async function copyHash() {
   else toast.error('No se pudo copiar la huella')
 }
 
+// ─── Presupuesto ↔ factura ───
+const linkOpen = ref(false)
+const canLink = computed(() => !!doc.value && doc.value.status !== 'draft' && (isQuote.value || doc.value.kind === 'invoice'))
+const linkedDocs = computed(() => (isQuote.value ? doc.value?.invoices ?? [] : doc.value?.source ? [doc.value.source] : []))
+const suggestion = ref<LinkCandidate | null>(null)
+const DISMISSED_KEY = 'numiq-link-dismissed'
+
+function dismissedLinks(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(DISMISSED_KEY) || '[]')
+  }
+  catch {
+    return []
+  }
+}
+
+/** Al abrir el documento: si hay una pareja muy probable sin vincular, se ofrece */
+async function loadSuggestion() {
+  suggestion.value = null
+  const d = doc.value
+  if (!d || !canLink.value || linkedDocs.value.length || d.status === 'rejected') return
+  try {
+    const r = await $fetch<LinkCandidatesResult>(`/api/sales/${d.id}/link-candidates?auto=1` as string)
+    const best = r.candidates[0]
+    if (best && !dismissedLinks().includes(`${d.id}:${best.id}`)) suggestion.value = best
+  }
+  catch {
+    // Solo es una sugerencia
+  }
+}
+onMounted(loadSuggestion)
+watch(() => props.id, loadSuggestion)
+
+const suggestionWhy = computed(() => {
+  const ok = suggestion.value?.reasons.filter(r => r.tone === 'ok').map(r => r.text.charAt(0).toLowerCase() + r.text.slice(1)) ?? []
+  return ok.length ? new Intl.ListFormat('es', { type: 'conjunction' }).format(ok) : ''
+})
+
+function dismissSuggestion() {
+  const s = suggestion.value
+  if (!s) return
+  try {
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...dismissedLinks(), `${props.id}:${s.id}`].slice(-300)))
+  }
+  catch {
+    // Sin almacenamiento: se descarta solo ahora
+  }
+  suggestion.value = null
+}
+
+async function quickLink() {
+  const s = suggestion.value
+  if (!s) return
+  await act('link', () => post(`/api/sales/${props.id}/link`, { targetId: s.id }), isQuote.value ? `Vinculado a la factura ${s.number ?? ''}` : `Vinculada al presupuesto ${s.number ?? ''}`)
+  await loadSuggestion()
+}
+
+async function unlinkDoc(target: { id: number, number: string | null }) {
+  const ok = await confirm({
+    title: `¿Desvincular ${target.number ?? (isQuote.value ? 'la factura' : 'el presupuesto')}?`,
+    body: 'Los dos documentos se quedan como están: solo dejan de estar relacionados.',
+    confirmLabel: 'Desvincular',
+  })
+  if (!ok) return
+  await act(`unlink-${target.id}`, () => post(`/api/sales/${props.id}/unlink`, { targetId: target.id }), 'Vínculo eliminado')
+  await loadSuggestion()
+}
+
+async function linksChanged() {
+  await refresh()
+  await loadSuggestion()
+}
+
 const moreItems = computed<MenuItem[]>(() => {
   const d = doc.value
   if (!d) return []
@@ -223,6 +297,13 @@ const moreItems = computed<MenuItem[]>(() => {
     { label: 'Ver PDF', icon: 'ph:file-pdf', onClick: () => window.open(pdfUrl.value, '_blank', 'noopener') },
     { label: 'Imprimir', icon: 'ph:printer', onClick: print },
   ]
+  if (canLink.value) {
+    items.push({
+      label: isQuote.value ? 'Vincular a una factura…' : d.source ? 'Cambiar presupuesto vinculado…' : 'Vincular a un presupuesto…',
+      icon: 'ph:link',
+      onClick: () => { linkOpen.value = true },
+    })
+  }
   // Enlace para el cliente: solo facturas (el presupuesto se manda por email con su PDF)
   if (!isQuote.value && d.status !== 'draft' && publicUrl.value) {
     items.push(
@@ -326,7 +407,10 @@ const moreItems = computed<MenuItem[]>(() => {
             <UiBadge :tone="status.tone">{{ status.label }}</UiBadge>
           </div>
           <p class="st-total num">{{ eur(doc.total) }}</p>
-          <p v-if="isQuote && doc.status === 'invoiced' && !doc.invoices.length" class="muted small">No hay una factura vinculada a este presupuesto.</p>
+          <p v-if="isQuote && doc.status === 'invoiced' && !doc.invoices.length" class="muted small">
+            No hay una factura vinculada a este presupuesto.
+            <button type="button" class="link" @click="linkOpen = true">Buscar su factura</button>
+          </p>
           <template v-if="!isQuote && doc.status !== 'draft'">
             <div class="bar" role="progressbar" :aria-valuenow="Math.round(paidPct)" aria-valuemin="0" aria-valuemax="100" aria-label="Cobrado">
               <span :style="{ width: `${paidPct}%` }" />
@@ -346,6 +430,38 @@ const moreItems = computed<MenuItem[]>(() => {
             <span v-if="doc.viewedAt">Visto por el cliente {{ relTime(doc.viewedAt) }}{{ doc.viewCount > 1 ? ` · ${doc.viewCount} visitas` : '' }}</span>
             <span v-else>El cliente aún no lo ha abierto</span>
           </p>
+        </section>
+
+        <section v-if="suggestion" class="card sugg" aria-live="polite">
+          <div class="sg-top">
+            <span class="sg-ic" aria-hidden="true"><Icon name="ph:sparkle-fill" /></span>
+            <p class="strong grow">{{ isQuote ? '¿Ya está facturado?' : '¿Sale de un presupuesto?' }}</p>
+            <UiButton variant="ghost" size="sm" square icon="ph:x" aria-label="Descartar sugerencia" title="No es este" @click="dismissSuggestion" />
+          </div>
+          <p class="sg-text">
+            {{ isQuote ? 'La factura' : 'El presupuesto' }}
+            <NuxtLink :to="`${isQuote ? '/facturas' : '/presupuestos'}/${suggestion.id}`" class="link num">{{ suggestion.number }}</NuxtLink>
+            ({{ eur(suggestion.total) }}, {{ fdate(suggestion.issueDate) }}) encaja{{ suggestionWhy ? `: ${suggestionWhy}` : '' }}.
+          </p>
+          <div class="sg-actions">
+            <UiButton size="sm" variant="primary" icon="ph:link" :loading="busy === 'link'" @click="quickLink">Vincular</UiButton>
+            <UiButton size="sm" variant="ghost" @click="linkOpen = true">Ver otras</UiButton>
+          </div>
+        </section>
+
+        <section v-if="canLink && linkedDocs.length" class="card links">
+          <h2 class="section-title">{{ isQuote ? (linkedDocs.length > 1 ? 'Facturas vinculadas' : 'Factura vinculada') : 'Presupuesto de origen' }}</h2>
+          <ul>
+            <li v-for="l in linkedDocs" :key="l.id">
+              <span class="l-ic" aria-hidden="true"><Icon :name="isQuote ? 'ph:receipt' : 'ph:file-text'" /></span>
+              <NuxtLink :to="`${isQuote ? '/facturas' : '/presupuestos'}/${l.id}`" class="grow min0 l-doc">
+                <p class="strong num truncate">{{ l.number ?? 'Sin número' }}</p>
+                <p class="muted small">{{ salesStatus(isQuote ? 'invoice' : (doc.source?.kind ?? 'quote'), l.status, false).label }}</p>
+              </NuxtLink>
+              <UiButton variant="ghost" size="sm" square icon="ph:link-break" :aria-label="`Desvincular ${l.number ?? ''}`" title="Desvincular" :loading="busy === `unlink-${l.id}`" :disabled="!!busy" @click="unlinkDoc(l)" />
+            </li>
+          </ul>
+          <button v-if="isQuote" type="button" class="link small l-more" @click="linkOpen = true"><Icon name="ph:plus" aria-hidden="true" /> Vincular otra factura</button>
         </section>
 
         <section v-if="doc.verifactu" class="card vf">
@@ -417,6 +533,7 @@ const moreItems = computed<MenuItem[]>(() => {
     </div>
 
     <SalesPaymentModal v-if="!isQuote && (isOpen || doc.status === 'paid')" v-model="paymentOpen" :document-id="doc.id" :remaining="round2(remaining + (editingPayment?.amount ?? 0))" :number="doc.number" :payment="editingPayment" @saved="refresh" />
+    <SalesLinkModal v-if="canLink" v-model="linkOpen" :doc-id="doc.id" :is-quote="isQuote" :number="doc.number" @changed="linksChanged" />
     <SalesSendModal v-if="doc.status !== 'draft'" v-model="sendOpen" :doc="doc" :company-name="company.tradeName || company.legalName" :reminder="sendReminder" @sent="refresh" />
   </div>
 </template>
@@ -669,6 +786,83 @@ const moreItems = computed<MenuItem[]>(() => {
   color: var(--success);
   background: var(--success-soft);
   border-radius: 50%;
+}
+
+.sugg {
+  background: var(--ai-soft), var(--surface);
+  border-color: color-mix(in srgb, var(--ai-text) 25%, var(--border));
+}
+
+.sg-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sg-ic {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  color: #fff;
+  background: var(--ai-grad);
+  border-radius: 50%;
+}
+
+.sg-text {
+  margin-top: var(--s-3);
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.sg-actions {
+  display: flex;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+}
+
+.links ul {
+  margin-top: var(--s-3);
+  padding: 0;
+  list-style: none;
+}
+
+.links li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.links li + li {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.l-ic {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  color: var(--brand-text);
+  background: var(--brand-soft);
+  border-radius: 50%;
+}
+
+.l-doc {
+  color: inherit;
+}
+
+.l-doc:hover .strong {
+  color: var(--brand-text);
+}
+
+.l-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: var(--s-2);
 }
 
 .strong {

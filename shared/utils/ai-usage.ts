@@ -27,6 +27,7 @@ export const AI_TASKS: Record<string, string> = {
   revision_contactos: 'Revisión de contactos importados',
   contacto: 'Ficha de contacto desde archivo',
   justificante: 'Justificantes de presentación',
+  vinculo_presupuesto: 'Vincular presupuestos y facturas',
 }
 
 export const aiTaskLabel = (task: string) => AI_TASKS[task] ?? task.replace(/_/g, ' ')
