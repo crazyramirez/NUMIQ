@@ -295,7 +295,7 @@ const hasActivity = computed(() => !!data.value && (data.value.pnl.income !== 0 
 
       <!-- IVA + retenciones -->
       <div class="row-2">
-        <UiCard class="rise" style="--i: 9" icon="ph:receipt" title="IVA por tipo" subtitle="Repercutido en tus facturas y soportado en tus gastos">
+        <UiCard class="rise vat-card" style="--i: 9" icon="ph:receipt" title="IVA por tipo" subtitle="Repercutido en tus facturas y soportado en tus gastos">
           <div class="vat-grid">
             <div>
               <p class="mini-title">Repercutido</p>
@@ -464,7 +464,9 @@ const hasActivity = computed(() => !!data.value && (data.value.pnl.income !== 0 
   gap: 8px;
 }
 
+/* Rejillas por el ancho real del contenido (la barra lateral resta 248 px) */
 .layout {
+  container: rep / inline-size;
   display: flex;
   flex-direction: column;
   gap: var(--s-5);
@@ -543,8 +545,14 @@ const hasActivity = computed(() => !!data.value && (data.value.pnl.income !== 0 
 
 .kpis {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s-4);
+}
+
+@container rep (min-width: 1000px) {
+  .kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .kpi {
@@ -660,22 +668,41 @@ const hasActivity = computed(() => !!data.value && (data.value.pnl.income !== 0 
 
 /* ─── Filas ─── */
 
-.row-main {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-  gap: var(--s-5);
-}
-
-.row-2 {
-  display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  gap: var(--s-5);
-}
-
+.row-main,
+.row-2,
 .row-3 {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-5);
+}
+
+@container rep (min-width: 640px) {
+  .row-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .row-3 > :last-child {
+    grid-column: span 2;
+  }
+}
+
+/* Lado a lado solo cuando la columna estrecha pasa de ~340 px */
+@container rep (min-width: 1040px) {
+  .row-main {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+
+  .row-2 {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  }
+
+  .row-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .row-3 > :last-child {
+    grid-column: auto;
+  }
 }
 
 .sk-block {
@@ -734,17 +761,45 @@ const hasActivity = computed(() => !!data.value && (data.value.pnl.income !== 0 
 /* ─── Cuenta de resultados ─── */
 
 .pnl-wrap {
+  container: pnl / inline-size;
   border-top: 1px solid var(--border-subtle);
 }
 
+/* Con 12 meses la tabla se desplaza: concepto y total se quedan fijos a los lados */
+.pnl thead th:first-child {
+  left: 0;
+  z-index: 2;
+}
+
+@container pnl (max-width: 860px) {
+  .pnl th,
+  .pnl td {
+    padding-inline: 10px;
+  }
+
+  .pnl thead th:first-child {
+    padding-left: 16px;
+  }
+}
+
+/* En el móvil dos columnas fijas dejarían una rendija: solo se queda fijo el concepto */
+@container pnl (max-width: 520px) {
+  .pnl .total-col {
+    position: static;
+  }
+}
+
 .pnl th[scope='row'] {
-  position: static;
+  position: sticky;
+  top: auto;
+  left: 0;
+  z-index: 1;
   padding: 12px 16px;
   font-size: var(--text-base);
   font-weight: 500;
   color: var(--text);
   text-align: left;
-  background: none;
+  background: var(--surface);
   border-bottom: 1px solid var(--border-subtle);
   white-space: nowrap;
 }
@@ -791,8 +846,16 @@ const hasActivity = computed(() => !!data.value && (data.value.pnl.income !== 0 
 }
 
 .pnl .total-col {
+  position: sticky;
+  right: 0;
   font-weight: 620;
+  background: var(--surface);
   border-left: 1px solid var(--border-subtle);
+}
+
+.pnl thead .total-col {
+  z-index: 2;
+  background: var(--surface-2);
 }
 
 .pnl .dim {
@@ -809,10 +872,21 @@ const hasActivity = computed(() => !!data.value && (data.value.pnl.income !== 0 
 
 /* ─── IVA ─── */
 
+/* Repercutido y soportado en paralelo solo si cada tabla tiene sitio para sus tres columnas */
+.vat-card {
+  container: vat / inline-size;
+}
+
 .vat-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-5);
+}
+
+@container vat (min-width: 600px) {
+  .vat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .mini-title {
@@ -1080,29 +1154,12 @@ const hasActivity = computed(() => !!data.value && (data.value.pnl.income !== 0 
 /* ─── Responsive ─── */
 
 @media (max-width: 1279px) {
-  .kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .row-3 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .row-3 > :last-child {
-    grid-column: span 2;
-  }
-
   .aging-legend {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 1023px) {
-  .row-main,
-  .row-2 {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .cmp {
     width: 100%;
     margin-left: 0;
@@ -1134,25 +1191,23 @@ const hasActivity = computed(() => !!data.value && (data.value.pnl.income !== 0 
     gap: var(--s-3);
   }
 
+  /* Cifras en 2 × 2 compactas, como en Inicio */
   .kpi {
-    padding: var(--s-4);
+    padding: 14px;
     min-height: 0;
   }
 
+  .kpi-label {
+    font-size: var(--text-xs);
+  }
+
+  .kpi-ic {
+    display: none;
+  }
+
   .kpi-value {
-    font-size: var(--text-xl);
-  }
-
-  .row-3 {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .row-3 > :last-child {
-    grid-column: auto;
-  }
-
-  .vat-grid {
-    grid-template-columns: minmax(0, 1fr);
+    margin-top: 6px;
+    font-size: var(--text-lg);
   }
 
   .aging-legend {
@@ -1175,12 +1230,6 @@ const hasActivity = computed(() => !!data.value && (data.value.pnl.income !== 0 
 
   .ac::before {
     content: ' · ';
-  }
-}
-
-@media (max-width: 420px) {
-  .kpis {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

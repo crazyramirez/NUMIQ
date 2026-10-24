@@ -26,6 +26,18 @@ const section = computed<SectionId>({
   set: s => router.replace({ query: { ...route.query, s } }),
 })
 
+// En pestañas (móvil, tableta) la sección activa siempre a la vista, también al entrar por enlace (?s=diseno)
+const snavEl = ref<HTMLElement | null>(null)
+function revealSection(smooth: boolean) {
+  const nav = snavEl.value
+  const el = nav?.querySelector<HTMLElement>('.snav-item.on')
+  if (!nav || !el || nav.scrollWidth <= nav.clientWidth) return
+  const left = el.getBoundingClientRect().left - nav.getBoundingClientRect().left + nav.scrollLeft
+  nav.scrollTo({ left: left - (nav.clientWidth - el.offsetWidth) / 2, behavior: smooth ? 'smooth' : 'auto' })
+}
+watch(section, () => nextTick(() => revealSection(true)))
+onMounted(() => revealSection(false))
+
 const { data: company, status, error, refresh } = await useFetch('/api/companies/current', { lazy: true })
 const { data: series, refresh: refreshSeries } = await useFetch<any[]>('/api/series', { lazy: true })
 const { data: ai } = await useFetch('/api/ai/status', { lazy: true })
@@ -343,7 +355,7 @@ function onDesignSaved(accent: string) {
     </header>
 
     <div class="layout">
-      <nav class="snav rise" style="--i: 1" aria-label="Secciones de ajustes">
+      <nav ref="snavEl" class="snav rise" style="--i: 1" aria-label="Secciones de ajustes">
         <button
           v-for="s in SECTIONS"
           :key="s.id"
@@ -715,6 +727,12 @@ function onDesignSaved(accent: string) {
 </template>
 
 <style scoped>
+/* Menú de secciones a la izquierda solo si el formulario conserva ~750 px; si no, pestañas arriba
+   (con la barra lateral abierta, una tableta en horizontal deja ~870 px de contenido) */
+.settings {
+  container: settings / inline-size;
+}
+
 .layout {
   display: grid;
   grid-template-columns: 228px minmax(0, 1fr);
@@ -753,7 +771,7 @@ function onDesignSaved(accent: string) {
 .snav-item.on {
   color: var(--text);
   font-weight: 600;
-  background: var(--surface);
+  background: var(--nav-active);
   box-shadow: var(--shadow-sm), 0 0 0 1px var(--border-subtle);
 }
 
@@ -1115,18 +1133,24 @@ fieldset {
   }
 }
 
-@media (max-width: 1023px) {
+@container settings (max-width: 999px) {
   .layout {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--s-4);
   }
 
+  /* Pestañas desplazables: el borde se funde para que se note que hay más */
   .snav {
     position: static;
     flex-direction: row;
     overflow-x: auto;
-    padding-bottom: 4px;
+    padding: 2px 32px 4px 2px;
     scrollbar-width: none;
+    mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+  }
+
+  .snav::-webkit-scrollbar {
+    display: none;
   }
 
   .snav-item {

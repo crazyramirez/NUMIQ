@@ -1,10 +1,34 @@
 <script setup lang="ts">
+import { useResizeObserver } from '@vueuse/core'
+
 defineProps<{ options: Array<{ value: string, label: string, count?: number | null }>, label?: string }>()
 const model = defineModel<string>({ required: true })
+
+// Si no caben todas (móvil), el borde se funde hacia donde hay más y la opción activa queda a la vista
+const el = ref<HTMLElement | null>(null)
+const fade = ref({ l: false, r: false })
+function update() {
+  const e = el.value
+  if (!e) return
+  fade.value = { l: e.scrollLeft > 2, r: e.scrollLeft + e.clientWidth < e.scrollWidth - 2 }
+}
+function reveal() {
+  const e = el.value
+  const on = e?.querySelector<HTMLElement>('.opt.on')
+  if (!e || !on || e.scrollWidth <= e.clientWidth) return
+  const left = on.getBoundingClientRect().left - e.getBoundingClientRect().left + e.scrollLeft
+  e.scrollTo({ left: left - (e.clientWidth - on.offsetWidth) / 2, behavior: 'smooth' })
+}
+useResizeObserver(el, update)
+watch(model, () => nextTick(reveal))
+onMounted(() => {
+  reveal()
+  update()
+})
 </script>
 
 <template>
-  <div class="seg" role="tablist" :aria-label="label">
+  <div ref="el" class="seg" :class="{ 'fade-l': fade.l, 'fade-r': fade.r }" role="tablist" :aria-label="label" @scroll.passive="update">
     <button
       v-for="o in options"
       :key="o.value"
@@ -32,6 +56,22 @@ const model = defineModel<string>({ required: true })
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
   scrollbar-width: none;
+}
+
+.seg::-webkit-scrollbar {
+  display: none;
+}
+
+.seg.fade-r {
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+
+.seg.fade-l {
+  mask-image: linear-gradient(to right, transparent, #000 28px);
+}
+
+.seg.fade-l.fade-r {
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
 }
 
 .opt {
@@ -73,5 +113,12 @@ const model = defineModel<string>({ required: true })
 .on .count {
   color: var(--brand-text);
   background: var(--brand-soft);
+}
+
+/* Dedo: pestañas más altas (el control entero pasa de 40 px) */
+@media (pointer: coarse) {
+  .opt {
+    height: 36px;
+  }
 }
 </style>

@@ -79,6 +79,8 @@
   --surface-active: #eceef3;
   --surface-inverse: #0d1117;
   --overlay: rgb(9 11 16 / 0.48);
+  /* Elemento activo de un menú lateral (en oscuro --surface apenas se distingue del fondo) */
+  --nav-active: var(--surface);
 
   --border: #e5e7ec;
   --border-subtle: #eef0f3;
@@ -146,6 +148,7 @@
   --surface-active: #1e232d;
   --surface-inverse: #f3f4f7;
   --overlay: rgb(0 0 0 / 0.62);
+  --nav-active: #1c212b;
 
   --border: #222732;
   --border-subtle: #1a1e27;

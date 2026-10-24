@@ -21,7 +21,7 @@ const link = (r: Row) => (r.id ? `/${props.kind === 'client' ? 'clientes' : 'pro
         <UiAvatar :name="r.name" :size="30" />
         <div class="grow">
           <div class="line">
-            <span class="truncate name">{{ r.name }}</span>
+            <span class="name">{{ r.name }}</span>
             <span class="num amount">{{ eur(r.amount, false) }}</span>
           </div>
           <div class="track" :title="`${pct(share(r), 1)} del total · ${r.count} ${kind === 'client' ? 'factura' : 'gasto'}${r.count === 1 ? '' : 's'}`">
@@ -65,17 +65,22 @@ const link = (r: Row) => (r.id ? `/${props.kind === 'client' ? 'clientes' : 'pro
 
 .line {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 6px;
 }
 
+/* Nombre entero: si no cabe, baja a otra línea en vez de cortarse */
 .name {
+  min-width: 0;
   font-size: var(--text-sm);
   font-weight: 560;
+  overflow-wrap: anywhere;
 }
 
 .amount {
+  flex: none;
   font-size: var(--text-sm);
   font-weight: 600;
 }

@@ -227,7 +227,7 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
 
     <div v-else class="content" :class="{ refreshing: status === 'pending' }">
       <!-- Resumen anual -->
-      <section class="summary card rise" :style="{ '--i': 1, '--cols': summary.length }" :aria-label="`Resumen del año ${data.year}`">
+      <section class="summary card rise" :class="{ six: summary.length > 5 }" :style="{ '--i': 1, '--cols': summary.length }" :aria-label="`Resumen del año ${data.year}`">
         <div v-for="s in summary" :key="s.label" class="sum-item">
           <p class="sum-label"><Icon :name="s.icon" aria-hidden="true" /> {{ s.label }}</p>
           <p class="sum-value" :class="{ neg: s.value < 0 }">{{ eur(s.value) }}</p>
@@ -409,7 +409,7 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
 
         <!-- Lateral: calendario y presentación -->
         <aside class="side">
-          <UiCard class="rise" style="--i: 6" icon="ph:calendar-dots" title="Calendario fiscal" subtitle="Próximos plazos de la AEAT">
+          <UiCard class="rise cal" style="--i: 6" icon="ph:calendar-dots" title="Calendario fiscal" subtitle="Próximos plazos de la AEAT">
             <ol class="timeline">
               <li v-for="d in data.upcoming" :key="`${d.end}-${d.title}`" class="t-item" :class="{ soon: daysUntil(d.end) < 15 }">
                 <div class="t-date" aria-hidden="true">
@@ -427,7 +427,7 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
             </ol>
           </UiCard>
 
-          <UiCard class="rise" style="--i: 7" icon="ph:calendar-check" :title="`Resúmenes anuales ${data.year}`" subtitle="Se presentan a principios del año siguiente">
+          <UiCard class="rise annual-card" style="--i: 7" icon="ph:calendar-check" :title="`Resúmenes anuales ${data.year}`" subtitle="Se presentan a principios del año siguiente">
             <ul class="annual">
               <li v-for="a in ANNUAL" :key="a.model" class="an-row">
                 <span class="model-chip num">{{ a.model }}</span>
@@ -604,11 +604,94 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
 
 /* ─── Rejilla ─── */
 
+/* Por el ancho real del contenido (la barra lateral resta 248 px). Con sitio, el calendario va a la
+   derecha y lo demás del lateral (resúmenes anuales, aviso) baja bajo los trimestres: sin huecos */
+.page {
+  container: tax / inline-size;
+}
+
 .grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-5);
   align-items: start;
+}
+
+@container tax (min-width: 1000px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+
+  .grid > .side {
+    display: contents;
+  }
+
+  .quarters,
+  .side > * {
+    grid-column: 1;
+  }
+
+  .side > .cal {
+    position: sticky;
+    top: calc(var(--topbar-h) + var(--s-4));
+    grid-column: 2;
+    grid-row: 1 / span 4;
+  }
+}
+
+/* Resumen del año: todo en una fila mientras quepa; con 6 cifras en una tableta, 3 + 3 */
+@container tax (max-width: 999px) {
+  .sum-item {
+    padding: 0 var(--s-4);
+  }
+
+  .sum-value {
+    font-size: var(--text-lg);
+  }
+}
+
+@container tax (600px <= width < 860px) {
+  .summary.six {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    row-gap: var(--s-4);
+  }
+
+  .summary.six .sum-item:nth-child(4) {
+    border-left: 0;
+  }
+}
+
+.annual-card {
+  container: annual / inline-size;
+}
+
+/* Calendario a todo el ancho (tableta): los plazos en columnas, sin la línea que los une */
+.cal {
+  container: cal / inline-size;
+}
+
+@container cal (min-width: 640px) {
+  .timeline {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: var(--s-2) var(--s-5);
+  }
+
+  .t-item:not(:last-child)::before {
+    display: none;
+  }
+}
+
+@container annual (min-width: 600px) {
+  .annual {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: var(--s-6);
+  }
+
+  .an-row:nth-child(2) {
+    border-top: 0;
+  }
 }
 
 .quarters {
@@ -846,8 +929,6 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
   display: flex;
   flex-direction: column;
   gap: var(--s-4);
-  position: sticky;
-  top: calc(var(--topbar-h) + var(--s-4));
 }
 
 .timeline {
@@ -935,12 +1016,12 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
   min-width: 0;
 }
 
+/* Nombre del modelo entero: baja de línea antes que cortarse */
 .t-mname {
+  min-width: 0;
   font-size: var(--text-xs);
+  line-height: 1.35;
   color: var(--text-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .callout {
@@ -996,25 +1077,6 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
 
 /* ─── Responsive ─── */
 
-@media (max-width: 1279px) {
-  .grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .side {
-    position: static;
-  }
-
-  .summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    row-gap: var(--s-4);
-  }
-
-  .sum-item:nth-child(4) {
-    border-left: 0;
-  }
-}
-
 @media (max-width: 767px) {
   .quarters {
     grid-template-columns: minmax(0, 1fr);
@@ -1031,6 +1093,15 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
 
   .sum-item:nth-child(even) {
     border-left: 1px solid var(--border-subtle);
+  }
+
+  /* La cifra que queda sola en la última fila ocupa las dos columnas */
+  .sum-item:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  .summary {
+    row-gap: var(--s-4);
   }
 
   .detail {

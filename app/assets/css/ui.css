@@ -360,6 +360,14 @@ select.control {
 .wrap { flex-wrap: wrap; }
 .between { justify-content: space-between; }
 
+/* Textos según el dispositivo: «Arrastra aquí» con ratón, «Toca para subir» con el dedo */
+.touch-only { display: none; }
+
+@media (hover: none) {
+  .touch-only { display: revert; }
+  .no-touch { display: none !important; }
+}
+
 .skeleton {
   background: linear-gradient(90deg, var(--surface-sunken) 0, var(--surface-hover) 40%, var(--surface-sunken) 80%);
   background-size: 800px 100%;

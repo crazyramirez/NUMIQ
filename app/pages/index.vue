@@ -172,8 +172,8 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
           <template #head>
             <div class="adv-head">
               <span class="adv-ic" aria-hidden="true"><Icon name="ph:sparkle-fill" /></span>
-              <div>
-                <h2 class="section-title"><span class="ai-text">Asesor NUMIQ</span></h2>
+              <div class="adv-titles">
+                <h2 class="section-title adv-title"><span class="ai-text">Asesor NUMIQ</span></h2>
                 <p class="adv-sub">Recomendaciones a partir de tus datos</p>
               </div>
               <UiButton class="adv-analyze" size="sm" variant="ai" icon="ph:magic-wand" :to="`/asistente?q=${encodeURIComponent('Analiza cómo va mi negocio este trimestre y dame 3 recomendaciones concretas para mejorar')}`">Analizar</UiButton>
@@ -199,8 +199,10 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
           </button>
           <div v-else-if="!insights.length" class="adv-empty">
             <span class="ok-ic" aria-hidden="true"><Icon name="ph:seal-check-fill" /></span>
-            <p class="ins-title">Todo en orden</p>
-            <p class="ins-body">No hay nada urgente: sin facturas vencidas ni sorpresas fiscales a la vista.</p>
+            <div>
+              <p class="ins-title">Todo en orden</p>
+              <p class="ins-body">No hay nada urgente: sin facturas vencidas ni sorpresas fiscales a la vista.</p>
+            </div>
           </div>
           <template #footer>
             <NuxtLink to="/asistente" class="adv-ask">
@@ -253,13 +255,14 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
                 <span class="dd num">{{ deadlineDay(d.end) }}</span>
                 <span class="mm">{{ deadlineMonth(d.end) }}</span>
               </div>
+              <!-- El plazo va en la fila de modelos: el título usa todo el ancho y no se parte -->
               <div class="grow">
                 <p class="dl-title">{{ d.title }} <span class="muted">· {{ d.period }}</span></p>
                 <div class="models">
                   <span v-for="m in d.models" :key="m" class="model" :title="MODEL_NAMES[m]">{{ m }}</span>
+                  <UiBadge class="dl-when" :tone="daysUntil(d.end) < 15 ? 'warning' : 'neutral'" size="sm">{{ relDays(d.end) }}</UiBadge>
                 </div>
               </div>
-              <UiBadge :tone="daysUntil(d.end) < 15 ? 'warning' : 'neutral'" size="sm">{{ relDays(d.end) }}</UiBadge>
             </li>
           </ul>
         </UiCard>
@@ -303,7 +306,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
               <NuxtLink :to="`/facturas/${r.id}`" class="recent-row">
                 <span class="doc-ic" aria-hidden="true"><Icon :name="r.status === 'draft' ? 'ph:file-dashed' : 'ph:receipt'" /></span>
                 <div class="grow">
-                  <p class="truncate recent-name">{{ r.contactName ?? 'Sin cliente' }}</p>
+                  <p class="recent-name">{{ r.contactName ?? 'Sin cliente' }}</p>
                   <p class="recent-sub">
                     <span class="mono">{{ r.number ?? 'Borrador' }}</span> · {{ fdate(r.issueDate) }}
                   </p>
@@ -344,7 +347,10 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 </template>
 
 <style scoped>
+/* Las rejillas miran el ancho real del contenido, no el de la ventana: con la barra
+   lateral abierta, una tableta en horizontal deja ~870 px y no 1180 */
 .layout {
+  container: dash / inline-size;
   display: flex;
   flex-direction: column;
   gap: var(--s-5);
@@ -354,8 +360,14 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 
 .kpis {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s-4);
+}
+
+@container dash (min-width: 1000px) {
+  .kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .kpi {
@@ -438,10 +450,17 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 
 /* ─── Filas ─── */
 
+/* Gráfico y asesor lado a lado solo si el asesor tiene sitio (≥ 340 px); si no, uno debajo del otro */
 .row-main {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-5);
+}
+
+@container dash (min-width: 1040px) {
+  .row-main {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
 }
 
 .more-ins {
@@ -526,16 +545,37 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
   }
 }
 
-.row-3 {
+.row-3,
+.row-2 {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-5);
 }
 
-.row-2 {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--s-5);
+@container dash (min-width: 640px) {
+  .row-3 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .row-3 > :last-child {
+    grid-column: span 2;
+  }
+}
+
+@container dash (min-width: 760px) {
+  .row-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container dash (min-width: 1040px) {
+  .row-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .row-3 > :last-child {
+    grid-column: auto;
+  }
 }
 
 .sk-block {
@@ -546,10 +586,36 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 
 /* ─── Asesor ─── */
 
+.advisor {
+  container: advisor / inline-size;
+}
+
+/* El texto baja de línea antes que el título; si ni así cabe, «Analizar» pasa abajo a todo el ancho */
 .adv-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--s-3);
+}
+
+.adv-titles {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+.adv-title {
+  white-space: nowrap;
+}
+
+.adv-analyze {
+  margin-left: auto;
+  flex: none;
+}
+
+@container advisor (max-width: 340px) {
+  .adv-analyze {
+    flex: 1 0 100%;
+  }
 }
 
 .adv-ic {
@@ -625,7 +691,14 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
   font-size: var(--text-sm);
 }
 
+/* Con todo en orden el aviso se centra en el alto que deje el gráfico de al lado */
+.advisor :deep(.body) {
+  display: flex;
+  flex-direction: column;
+}
+
 .adv-empty {
+  margin-block: auto;
   text-align: center;
   padding: var(--s-6) var(--s-2);
 }
@@ -640,6 +713,33 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
   color: var(--success);
   background: var(--success-soft);
   border-radius: 50%;
+}
+
+/* Asesor a todo el ancho: recomendaciones en columnas y el «todo en orden» en una línea */
+@container advisor (min-width: 760px) {
+  .insights {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--s-5) var(--s-6);
+  }
+
+  .insight + .insight {
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .adv-empty {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 0;
+    text-align: left;
+  }
+
+  .ok-ic {
+    flex: none;
+    margin-bottom: 0;
+  }
 }
 
 .adv-ask {
@@ -796,8 +896,13 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 .models {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 4px;
   margin-top: 5px;
+}
+
+.dl-when {
+  margin-left: auto;
 }
 
 /* ─── Clientes ─── */
@@ -897,6 +1002,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 
 .recent-name {
   font-weight: 560;
+  overflow-wrap: anywhere;
 }
 
 .recent-sub {
@@ -928,28 +1034,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
   border-radius: var(--r-md);
 }
 
-/* ─── Responsive ─── */
-
-@media (max-width: 1279px) {
-  .kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .row-3 {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .row-3 > :last-child {
-    grid-column: span 2;
-  }
-}
-
-@media (max-width: 1023px) {
-  .row-main,
-  .row-2 {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
+/* ─── Móvil ─── */
 
 @media (max-width: 767px) {
   .recent.desk {
@@ -996,18 +1081,5 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
   .kpi-foot .muted {
     display: none;
   }
-
-  .row-3 {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .row-3 > :last-child {
-    grid-column: auto;
-  }
-}
-
-.adv-analyze {
-  margin-left: auto;
-  flex: none;
 }
 </style>

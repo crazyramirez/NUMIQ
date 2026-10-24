@@ -581,7 +581,7 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
             <p class="pre">{{ c.notes }}</p>
           </div>
           <p v-if="!c.email && !c.phone && !address" class="hint missing">
-            <Icon name="ph:info" /> Completa su dirección y email para que aparezcan en las facturas y poder enviárselas.
+            <Icon name="ph:info" /> {{ isClient ? 'Completa su dirección y email para que aparezcan en las facturas y poder enviárselas.' : 'Completa su email y teléfono para tenerlos a mano cuando necesites contactar.' }}
           </p>
         </UiCard>
       </div>
@@ -836,11 +836,32 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
   color: var(--text-2);
 }
 
+/* Por el ancho real del contenido, no el de la ventana (la barra lateral resta 248 px) */
+.page {
+  container: contact / inline-size;
+}
+
+/* Las cifras van todas en una fila; si no caben, en 2 × 2 (nunca 3 + 1) */
 .kpis {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s-4);
   margin-bottom: var(--s-5);
+}
+
+@container contact (min-width: 760px) {
+  .kpis {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+  }
+}
+
+/* En 2 × 2, la que queda sola en la última fila ocupa las dos columnas */
+@container contact (max-width: 759px) {
+  .kpis > :nth-child(odd):last-child {
+    grid-column: 1 / -1;
+  }
 }
 
 .kpi {
@@ -876,16 +897,25 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
   color: var(--text-3);
 }
 
+/* Documentos y ficha lado a lado solo si la tabla de documentos conserva ~700 px */
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-5);
   align-items: start;
 }
 
+@container contact (min-width: 1060px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+}
+
+/* Una columna en el lateral; a todo el ancho, los datos se reparten en columnas */
 .dl {
   display: grid;
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px var(--s-6);
 }
 
 .dl dt {
@@ -928,12 +958,6 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
   margin-top: 2px;
 }
 
-@media (max-width: 1023px) {
-  .layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 @media (max-width: 767px) {
   .hero {
     gap: var(--s-4);
@@ -962,11 +986,6 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
 
   .doc-filters {
     padding-inline: var(--s-4);
-  }
-
-  /* La tarjeta que queda sola en la última fila ocupa las dos columnas */
-  .kpis > :nth-child(odd):last-child {
-    grid-column: 1 / -1;
   }
 
   .kpi {

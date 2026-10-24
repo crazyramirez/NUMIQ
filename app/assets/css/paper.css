@@ -615,7 +615,7 @@
 
   .paper-meta {
     grid-auto-flow: row;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   /* Tres datos en dos columnas: el último ocupa la fila entera (sin hueco gris) */
@@ -735,6 +735,17 @@
     text-align: left;
     background: none;
     border: 0;
+  }
+
+  /* Diseño con bandas: la banda va en la ficha entera, no a trozos detrás de cada dato */
+  .paper.paper .lines-wrap tbody tr:nth-child(n) td {
+    background: none;
+  }
+
+  .paper.l-bold .lines-wrap tbody tr:nth-child(even) {
+    margin-inline: -8px;
+    padding-inline: 10px;
+    background: color-mix(in srgb, var(--p-accent) 6%, white);
   }
 
   .paper.paper .lines-wrap td.c-desc,

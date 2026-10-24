@@ -480,6 +480,15 @@ const moreItems = computed<MenuItem[]>(() => {
   letter-spacing: -0.02em;
 }
 
+/* El número nunca se parte («F2026-/0052»): si no cabe con los botones, son los botones los que bajan */
+.v-head .grow {
+  flex: 1 1 auto;
+}
+
+.v-head h1 .num {
+  white-space: nowrap;
+}
+
 .v-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
@@ -716,11 +725,23 @@ const moreItems = computed<MenuItem[]>(() => {
     width: 100%;
   }
 
-  .v-head .page-actions > :first-child {
+  /* La acción principal (Emitir, Registrar cobro, Convertir…) arriba y a todo el ancho; las demás debajo */
+  .v-head .page-actions > .btn {
     flex: 1;
+  }
+
+  .v-head .page-actions > .btn-primary {
+    order: -1;
+    flex-basis: 100%;
+  }
+
+  .pager-btn {
+    height: 40px;
+    padding: 0 12px;
   }
 }
 
+/* Tarjetas laterales encima del documento, en dos columnas que se rellenan sin huecos */
 @media (max-width: 1180px) {
   .v-body {
     grid-template-columns: minmax(0, 1fr);
@@ -729,8 +750,14 @@ const moreItems = computed<MenuItem[]>(() => {
   .v-side {
     position: static;
     order: -1;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    display: block;
+    columns: 2 300px;
+    column-gap: var(--s-4);
+  }
+
+  .v-side > * {
+    break-inside: avoid;
+    margin-bottom: var(--s-4);
   }
 }
 .vf-err {

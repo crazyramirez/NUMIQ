@@ -194,4 +194,13 @@ const tag = computed(() => (props.to ? NuxtLink : 'button'))
   animation: spin 0.7s linear infinite;
   opacity: 0.85;
 }
+
+/* Dedo: los botones pequeños (⋯ de las filas, acciones de 32 px) tocan en 42 px sin cambiar su tamaño visible */
+@media (pointer: coarse) {
+  .btn-sm::after {
+    content: '';
+    position: absolute;
+    inset: -5px;
+  }
+}
 </style>

@@ -340,7 +340,7 @@ const IDEAS = computed(() => ALL_IDEAS.filter(i => i.kind === props.kind))
       <div class="kpi">
         <p class="eyebrow">Margen recurrente</p>
         <p class="v num" :class="margin >= 0 ? 'pos' : 'neg'">{{ margin >= 0 ? '+' : '' }}{{ eur(margin) }}<span class="per">/mes</span></p>
-        <p class="s">{{ fixed > 0 && mrr > 0 ? `Tus cuotas cubren el ${Math.round(Math.min(mrr / fixed, 9.99) * 100)} % de los gastos fijos` : 'Lo que entra menos lo que sale cada mes' }}</p>
+        <p class="s">{{ fixed > 0 && mrr > 0 ? `Tus cuotas cubren el ${Math.round(Math.min(mrr / fixed, 9.99) * 100)} % de los gastos fijos` : 'Lo que entra menos lo que sale cada mes' }}</p>
       </div>
       <div class="kpi">
         <p class="eyebrow">Próximos 30 días</p>
@@ -629,6 +629,7 @@ const IDEAS = computed(() => ALL_IDEAS.filter(i => i.kind === props.kind))
 
 .tl-items {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   min-width: 0;
   flex: 1;
@@ -900,14 +901,10 @@ const IDEAS = computed(() => ALL_IDEAS.filter(i => i.kind === props.kind))
   }
 }
 
-@media (max-width: 1023px) {
-  .kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
+/* Las tres cifras en fila hasta el móvil; ahí 2 + 1 con la tercera a todo el ancho */
 @media (max-width: 767px) {
   .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--s-3);
   }
 

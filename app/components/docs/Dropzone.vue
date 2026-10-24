@@ -29,6 +29,13 @@ const folderInput = ref<HTMLInputElement>()
 const cameraInput = ref<HTMLInputElement>()
 let depth = 0
 
+// En el móvil no se arrastra: «Arrastra la factura…» pasa a «Sube la factura…» (tras montar: sin desajuste con el SSR)
+const touch = ref(false)
+onMounted(() => (touch.value = matchMedia('(hover: none)').matches))
+const shownTitle = computed(() => (touch.value ? props.title.replace(/^Arrastra(?: aquí)?/, 'Sube') : props.title))
+// El tercer icono enseña un ZIP solo si se aceptan ZIP
+const lastIcon = computed(() => (!props.accept || /zip/i.test(props.accept) ? 'ph:file-zip' : 'ph:image'))
+
 function onEnter(e: DragEvent) {
   if (props.disabled || !e.dataTransfer?.types.includes('Files')) return
   depth++
@@ -98,9 +105,9 @@ defineExpose({ pick: () => fileInput.value?.click(), camera: () => cameraInput.v
     <div class="art" aria-hidden="true">
       <span class="doc d1"><Icon name="ph:file-pdf" /></span>
       <span class="doc d2"><Icon name="ph:receipt" /></span>
-      <span class="doc d3"><Icon name="ph:file-zip" /></span>
+      <span class="doc d3"><Icon :name="lastIcon" /></span>
     </div>
-    <p class="t">{{ over ? 'Suelta para subir' : title }}</p>
+    <p class="t">{{ over ? 'Suelta para subir' : shownTitle }}</p>
     <p v-if="hint" class="s">{{ hint }}</p>
     <div class="btns">
       <UiButton v-if="camera" class="cam" variant="primary" icon="ph:camera" :disabled="disabled" @click="cameraInput?.click()">Hacer foto</UiButton>

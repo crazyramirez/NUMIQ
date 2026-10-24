@@ -106,6 +106,11 @@ function run(t: Task) {
 </template>
 
 <style scoped>
+/* Columnas según el ancho de la tarjeta (la barra lateral también resta) */
+.today {
+  container: today / inline-size;
+}
+
 .today-h {
   display: flex;
   align-items: center;
@@ -141,7 +146,7 @@ function run(t: Task) {
 
 .tasks {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -157,13 +162,22 @@ function run(t: Task) {
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.task:nth-child(odd) {
-  border-right: 1px solid var(--border-subtle);
+.task:last-child {
+  border-bottom: 0;
 }
 
-.task:last-child,
-.task:nth-last-child(2):nth-child(odd) {
-  border-bottom: 0;
+@container today (min-width: 960px) {
+  .tasks {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .task:nth-child(odd) {
+    border-right: 1px solid var(--border-subtle);
+  }
+
+  .task:nth-last-child(2):nth-child(odd) {
+    border-bottom: 0;
+  }
 }
 
 .t-ic {
@@ -251,22 +265,8 @@ function run(t: Task) {
   color: var(--text-3);
 }
 
-@media (max-width: 1100px) {
-  .tasks {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .task:nth-child(odd) {
-    border-right: 0;
-  }
-
-  .task:nth-last-child(2):nth-child(odd) {
-    border-bottom: 1px solid var(--border-subtle);
-  }
-}
-
-/* Móvil: el botón baja debajo del texto, a todo el ancho de la columna */
-@media (max-width: 640px) {
+/* Estrecha: el botón baja debajo del texto, a todo el ancho de la columna */
+@container today (max-width: 600px) {
   .today-h {
     padding: var(--s-4) var(--s-4) var(--s-3);
   }

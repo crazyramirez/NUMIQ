@@ -263,7 +263,7 @@ const userItems = computed<MenuItem[]>(() => [
 .item.active {
   color: var(--text);
   font-weight: 600;
-  background: var(--surface);
+  background: var(--nav-active);
   box-shadow: var(--shadow-sm), 0 0 0 1px var(--border-subtle);
 }
 
@@ -361,6 +361,11 @@ const userItems = computed<MenuItem[]>(() => [
     inset: 0;
     z-index: var(--z-sidebar);
     background: var(--overlay);
+  }
+
+  /* Cajón del móvil: filas de 44 px, cómodas para el dedo */
+  .item {
+    height: 44px;
   }
 }
 </style>

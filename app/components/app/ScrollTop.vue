@@ -8,8 +8,14 @@ const visible = ref(false)
 /** Con una barra de selección abierta (UiBulkBar) se aparta para no tapar sus acciones */
 const bulkOpen = useState('bulk-bar-open', () => false)
 
+// Solo al subir (o al llegar al final): bajando leyendo una lista no tapa los importes de la derecha
+let lastY = 0
 function onScroll() {
-  visible.value = window.scrollY > 280
+  const y = window.scrollY
+  const atEnd = window.innerHeight + y >= document.documentElement.scrollHeight - 80
+  if (y <= 280) visible.value = false
+  else if (Math.abs(y - lastY) > 6 || atEnd) visible.value = y < lastY || atEnd
+  lastY = y
 }
 
 function scrollToTop() {

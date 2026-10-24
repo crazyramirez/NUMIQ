@@ -201,9 +201,10 @@ h2 {
   animation: rise 700ms var(--ease-out) both;
 }
 
+/* A la derecha, a media altura: no tapa el «+18 %» de la esquina */
 .float-a {
-  right: -36px;
-  top: -26px;
+  right: -44px;
+  top: 64px;
   animation-delay: 200ms;
 }
 

@@ -475,7 +475,7 @@ async function remove() {
         <span class="af-ic" aria-hidden="true"><Icon name="ph:sparkle-fill" /></span>
         <div class="af-content">
           <p class="af-t">{{ reading ? 'Analizando el documento con IA…' : '¿Tienes la factura o el ticket en archivo?' }}</p>
-          <p class="af-s">{{ reading ? 'Extrayendo proveedor, fecha, bases imponibles, IVA y retenciones…' : 'Arrastra aquí tu PDF o imagen, o hazle una foto para rellenar los datos automáticamente.' }}</p>
+          <p class="af-s"><template v-if="reading">Extrayendo proveedor, fecha, bases imponibles, IVA y retenciones…</template><template v-else><span class="no-touch">Arrastra aquí tu PDF o imagen, o hazle una foto</span><span class="touch-only">Hazle una foto o sube el PDF</span> para rellenar los datos automáticamente.</template></p>
         </div>
         <UiButton variant="ai" size="sm" icon="ph:scan" :loading="reading" @click="scanInput?.click()">
           Escanear factura
@@ -646,6 +646,7 @@ async function remove() {
 
           <div v-for="(l, i) in form.taxLines" :key="i" class="tax-table-row" role="row">
             <UiInput
+              class="tl-base"
               :model-value="l.base"
               numeric
               suffix="€"
@@ -655,12 +656,14 @@ async function remove() {
               @update:model-value="setBase(l, $event)"
             />
             <UiSelect
+              class="tl-rate"
               :model-value="l.vatRate"
               :options="vatOptions"
               :aria-label="`Tipo de IVA ${i + 1}`"
               @update:model-value="setRate(l, $event)"
             />
             <UiInput
+              class="tl-quota"
               :model-value="l.vatAmount"
               numeric
               suffix="€"
@@ -1512,5 +1515,43 @@ async function remove() {
     flex: 1;
     width: auto;
   }
+}
+
+@media (max-width: 480px) {
+  /* Cada línea de IVA en dos filas con sus etiquetas: base a todo el ancho; tipo y cuota debajo */
+  .tax-table-head {
+    display: none;
+  }
+
+  .tax-table-row {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr) 32px;
+    grid-template-areas:
+      'base base base'
+      'rate quota del';
+    align-items: end;
+    gap: 10px var(--s-2);
+    padding: 12px;
+  }
+
+  .tl-base { grid-area: base; }
+  .tl-rate { grid-area: rate; }
+  .tl-quota { grid-area: quota; }
+  .row-del { grid-area: del; padding-bottom: 2px; }
+
+  .tl-base::before,
+  .tl-rate::before,
+  .tl-quota::before {
+    display: block;
+    margin-bottom: 5px;
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--text-3);
+  }
+
+  .tl-base::before { content: 'Base imponible'; }
+  .tl-rate::before { content: 'Tipo de IVA'; }
+  .tl-quota::before { content: 'Cuota IVA'; }
 }
 </style>

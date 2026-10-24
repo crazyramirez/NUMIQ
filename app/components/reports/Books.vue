@@ -110,7 +110,7 @@ const counts = computed(() => (data.value?.type === tab.value ? rows.value.lengt
         <caption class="sr-only">Libro registro de facturas {{ tab === 'issued' ? 'emitidas' : 'recibidas' }} de {{ label }}</caption>
         <thead>
           <tr>
-            <th scope="col">Fecha</th>
+            <th scope="col" class="c-date">Fecha</th>
             <th scope="col">Número</th>
             <th scope="col">{{ party }}</th>
             <th scope="col" class="r">Base</th>
@@ -121,14 +121,16 @@ const counts = computed(() => (data.value?.type === tab.value ? rows.value.lengt
         </thead>
         <tbody>
           <tr v-for="r in visible" :key="r.id" class="clickable" @click="navigateTo(r.to)">
-            <td class="num nowrap">{{ fdateShort(r.date) }}</td>
+            <td class="num nowrap c-date">{{ fdateShort(r.date) }}</td>
             <td class="nowrap">
               <NuxtLink :to="r.to" class="strong num" @click.stop>{{ r.number || '—' }}</NuxtLink>
+              <span class="sub num date-sub">{{ fdateShort(r.date) }}</span>
               <span v-if="r.tag" class="sub">{{ r.tag }}</span>
             </td>
+            <!-- Nombre entero: baja de línea en vez de cortarse o ensanchar la tabla -->
             <td class="party">
-              <span class="strong truncate">{{ r.name }}</span>
-              <span class="sub truncate">{{ [r.nif, r.sub].filter(Boolean).join(' · ') || 'Sin NIF' }}</span>
+              <span class="strong">{{ r.name }}</span>
+              <span class="sub">{{ [r.nif, r.sub].filter(Boolean).join(' · ') || 'Sin NIF' }}</span>
             </td>
             <td class="r num">{{ eur(r.base) }}</td>
             <td class="r num">
@@ -141,7 +143,8 @@ const counts = computed(() => (data.value?.type === tab.value ? rows.value.lengt
         </tbody>
         <tfoot>
           <tr>
-            <td colspan="3">{{ filtered.length }} {{ tab === 'issued' ? 'factura' : 'registro' }}{{ filtered.length === 1 ? '' : 's' }}{{ search ? ' encontrados' : '' }}</td>
+            <td class="c-date" />
+            <td colspan="2">{{ filtered.length }} {{ tab === 'issued' ? 'factura' : 'registro' }}{{ filtered.length === 1 ? '' : 's' }}{{ search ? ' encontrados' : '' }}</td>
             <td class="r num">{{ eur(totals.base) }}</td>
             <td class="r num">{{ eur(totals.vat) }}</td>
             <td class="r num">{{ totals.irpf ? `−${eur(totals.irpf)}` : '—' }}</td>
@@ -202,15 +205,50 @@ const counts = computed(() => (data.value?.type === tab.value ? rows.value.lengt
 }
 
 .party {
-  max-width: 280px;
+  min-width: 150px;
 }
 
 .party .strong {
   display: block;
+  overflow-wrap: anywhere;
 }
 
 .table td .sub {
   white-space: nowrap;
+}
+
+.table td.party .sub {
+  white-space: normal;
+}
+
+/* Estrecho (tableta con barra lateral, móvil): la fecha va bajo el número y las celdas se aprietan,
+   así Total cabe sin desplazar la tabla */
+.books {
+  container: books / inline-size;
+}
+
+.date-sub {
+  display: none;
+}
+
+@container books (max-width: 860px) {
+  .c-date {
+    display: none;
+  }
+
+  .date-sub {
+    display: block;
+  }
+
+  .table th,
+  .table td {
+    padding-inline: 10px;
+  }
+
+  .table th:nth-child(2),
+  .table td:nth-child(2) {
+    padding-left: var(--s-4);
+  }
 }
 
 @media (max-width: 767px) {
@@ -224,10 +262,6 @@ const counts = computed(() => (data.value?.type === tab.value ? rows.value.lengt
 
   .state {
     padding: var(--s-2) var(--s-4) var(--s-4);
-  }
-
-  .party {
-    max-width: 180px;
   }
 }
 </style>

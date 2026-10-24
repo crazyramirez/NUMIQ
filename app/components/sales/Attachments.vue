@@ -99,7 +99,7 @@ async function remove(a: Attachment) {
     </ul>
     <button v-else-if="canEdit" type="button" class="empty" :disabled="uploading" @click="input?.click()">
       <Icon name="ph:file-arrow-up" class="e-ic" />
-      <span><strong>Arrastra aquí</strong> la orden de pedido, el albarán o el contrato</span>
+      <span><strong class="no-touch">Arrastra aquí</strong><strong class="touch-only">Toca para subir</strong> la orden de pedido, el albarán o el contrato</span>
       <span class="hint">PDF, imagen, Word, Excel, CSV o ZIP · máx. 10 MB</span>
     </button>
     <p v-else class="muted small">Sin documentos adjuntos.</p>

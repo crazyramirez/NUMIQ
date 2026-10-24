@@ -350,8 +350,9 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   opacity: 0.8;
 }
 
+/* Sin teclado físico los atajos no sirven: fuera el pie entero */
 @media (hover: none) {
-  .hide-touch,
+  .foot,
   .e-key {
     display: none;
   }

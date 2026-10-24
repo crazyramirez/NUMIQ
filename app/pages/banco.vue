@@ -984,6 +984,7 @@ const BANK_CODES: Record<string, string> = {
   font-size: var(--text-xs);
   line-height: 1.5;
   color: var(--text-3);
+  overflow-wrap: anywhere;
 }
 
 .t-sub span + span::before {
@@ -1201,7 +1202,13 @@ a.chip.ok:hover {
   min-width: 0;
 }
 
-@media (max-width: 1100px) {
+/* Por el ancho real del contenido (con la barra lateral, una tableta deja ~870 px): la propuesta
+   y las acciones bajan debajo de la descripción antes de que se aprieten */
+.page {
+  container: bank / inline-size;
+}
+
+@container bank (max-width: 1000px) {
   .tx {
     grid-template-columns: 44px minmax(0, 1fr) 110px;
     grid-template-areas:
@@ -1219,7 +1226,7 @@ a.chip.ok:hover {
       'pick date act act';
   }
 
-  .pick { grid-area: pick; }
+  .pick { grid-area: pick; align-self: start; margin-top: 5px; }
   .t-date { grid-area: date; align-self: start; }
   .t-main { grid-area: main; }
   .t-amt { grid-area: amt; align-self: start; }

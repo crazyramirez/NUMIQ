@@ -253,11 +253,11 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
                   >
                 </th>
                 <th>Nombre</th>
-                <th>Población</th>
+                <th class="c-city">Población</th>
                 <th>Contacto</th>
                 <th class="r">{{ t.amount }}</th>
                 <th v-if="isClient" class="r">Pendiente</th>
-                <th class="r">Última actividad</th>
+                <th class="r c-last">Última actividad</th>
                 <th class="act-col"><span class="sr-only">Acciones</span></th>
               </tr>
             </thead>
@@ -284,21 +284,22 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
                     <UiAvatar :name="r.name" :size="34" :square="r.kind === 'company'" :src="r.logoUrl" contain />
                     <div class="who-t">
                       <span class="strong truncate">{{ r.name }}</span>
-                      <span class="sub mono">{{ r.nif || 'Sin NIF' }}</span>
+                      <span class="sub"><span class="mono">{{ r.nif || 'Sin NIF' }}</span><span v-if="r.city" class="city-sub"> · {{ r.city }}</span></span>
                     </div>
                   </div>
                 </td>
-                <td class="muted">{{ r.city || '—' }}</td>
+                <td class="muted c-city">{{ r.city || '—' }}</td>
                 <td>
-                  <span class="truncate contact-l">{{ r.email || '—' }}</span>
-                  <span v-if="r.phone" class="sub">{{ r.phone }}</span>
+                  <!-- Sin email, el teléfono pasa a la línea principal (nada de «—» encima) -->
+                  <span class="truncate contact-l">{{ r.email || r.phone || '—' }}</span>
+                  <span v-if="r.email && r.phone" class="sub">{{ r.phone }}</span>
                 </td>
                 <td class="r num strong">{{ eur(isClient ? r.billed12m : r.spent12m) }}</td>
                 <td v-if="isClient" class="r num">
                   <span v-if="r.pending > 0" class="pending">{{ eur(r.pending) }}</span>
                   <span v-else class="muted">—</span>
                 </td>
-                <td class="r muted">{{ r.lastActivity ? relDays(r.lastActivity) : '—' }}</td>
+                <td class="r muted c-last">{{ r.lastActivity ? relDays(r.lastActivity) : '—' }}</td>
                 <td class="act-col" @click.stop @keydown.stop>
                   <UiMenu :items="rowMenu(r)" :width="190">
                     <template #default="{ toggle }">
@@ -497,7 +498,28 @@ input[type='checkbox'] {
   display: none;
 }
 
-@media (max-width: 767px) {
+/* Columnas según el ancho real del contenido (la barra lateral resta 248 px):
+   < 1100 sin población ni última actividad · < 760 filas de móvil */
+.page {
+  container: contacts / inline-size;
+}
+
+.city-sub {
+  display: none;
+}
+
+@container contacts (max-width: 1099px) {
+  .c-city,
+  .c-last {
+    display: none;
+  }
+
+  .city-sub {
+    display: inline;
+  }
+}
+
+@container contacts (max-width: 759px) {
   .desktop {
     display: none;
   }
@@ -507,6 +529,7 @@ input[type='checkbox'] {
   }
 
   .toolbar {
+    flex-wrap: wrap;
     padding: var(--s-3) var(--s-4);
   }
 
@@ -514,15 +537,13 @@ input[type='checkbox'] {
     max-width: none;
   }
 
-  .toolbar {
-    flex-wrap: wrap;
-  }
-
   .sel-toggle {
     display: inline-flex;
     width: 100%;
   }
+}
 
+@media (max-width: 767px) {
   .stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--s-3);

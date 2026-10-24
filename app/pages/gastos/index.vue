@@ -548,7 +548,7 @@ function savePartial() {
                 </th>
                 <th>Fecha</th>
                 <th>Proveedor y concepto</th>
-                <th>Categoría</th>
+                <th class="c-cat">Categoría</th>
                 <th>Deducible</th>
                 <th class="r">Total</th>
                 <th>Estado</th>
@@ -575,12 +575,15 @@ function savePartial() {
                 <td class="muted nowrap">{{ fdate(e.issueDate) }}</td>
                 <td>
                   <div class="who">
+                    <span v-if="e.categoryName" class="cat-ic cat-lead" :style="{ '--c': e.categoryColor ?? 'var(--text-4)' }" :title="e.categoryName" aria-hidden="true">
+                      <Icon :name="e.categoryIcon || 'ph:tag'" />
+                    </span>
                     <span class="strong truncate">{{ e.supplierName || EXPENSE_KIND[e.kind] || 'Gasto' }}</span>
                     <UiBadge v-if="!e.reviewed" tone="ai" size="sm" icon="ph:sparkle-fill">Revisar</UiBadge>
                   </div>
                   <span class="sub truncate">{{ [e.description, e.number].filter(Boolean).join(' · ') || '—' }}</span>
                 </td>
-                <td>
+                <td class="c-cat">
                   <span v-if="e.categoryName" class="cat-chip">
                     <span class="cat-ic" :style="{ '--c': e.categoryColor ?? 'var(--text-4)' }" aria-hidden="true">
                       <Icon :name="e.categoryIcon || 'ph:tag'" />
@@ -706,7 +709,6 @@ function savePartial() {
 <style scoped>
 .summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.4fr);
   gap: var(--s-4);
   margin-bottom: var(--s-5);
 }
@@ -814,7 +816,7 @@ function savePartial() {
 }
 
 .ded-filter {
-  width: 220px;
+  width: 244px;
 }
 
 .sel-toggle {
@@ -1151,13 +1153,63 @@ input[type='checkbox'] {
   display: block;
 }
 
-@media (max-width: 1279px) {
+.cat-lead {
+  display: none;
+}
+
+/* Por el ancho real del contenido (la barra lateral resta 248 px), no el de la ventana:
+   ≥ 1100 resumen en 4 · < 1000 sin columna de categoría (va el icono junto al proveedor) · < 760 filas de móvil */
+.page {
+  container: gastos / inline-size;
+}
+
+.summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cats {
+  container: cats / inline-size;
+  grid-column: 1 / -1;
+}
+
+@container gastos (min-width: 1100px) {
   .summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 1.4fr);
   }
 
   .cats {
-    grid-column: 1 / -1;
+    grid-column: auto;
+  }
+}
+
+/* Leyenda en una columna si en dos se cortarían los nombres */
+@container cats (max-width: 420px) {
+  .legend {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container gastos (max-width: 999px) {
+  .c-cat {
+    display: none;
+  }
+
+  .cat-lead {
+    display: grid;
+  }
+}
+
+@container gastos (max-width: 759px) {
+  .desktop {
+    display: none;
+  }
+
+  .cards {
+    display: block;
+  }
+
+  .sel-toggle {
+    display: inline-flex;
   }
 }
 
@@ -1173,14 +1225,6 @@ input[type='checkbox'] {
 }
 
 @media (max-width: 767px) {
-  .desktop {
-    display: none;
-  }
-
-  .cards {
-    display: block;
-  }
-
   .toolbar {
     padding: var(--s-3) var(--s-4);
   }
@@ -1194,7 +1238,6 @@ input[type='checkbox'] {
   }
 
   .sel-toggle {
-    display: inline-flex;
     width: 100%;
   }
 

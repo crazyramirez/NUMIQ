@@ -1336,10 +1336,17 @@ const R_CODES = [
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* Dos columnas que se rellenan sin huecos: «Más opciones» plegado no se estira a la altura de su vecina */
   .side {
     position: static;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: block;
+    columns: 2 280px;
+    column-gap: var(--s-4);
+  }
+
+  .side > * {
+    break-inside: avoid;
+    margin-bottom: var(--s-4);
   }
 }
 

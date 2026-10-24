@@ -57,12 +57,17 @@ export function defaultDesign(accentColor?: string | null): InvoiceDesign {
     defaultNotes: '',
     defaultTerms: 'Presupuesto válido durante 30 días desde su fecha. Precios sin IVA salvo indicación.',
     defaultEmailSubject: 'Factura {numero} · {empresa}',
-    defaultEmailMessage: 'Hola{cliente ? `, ${cliente}` : \'\'}:\n\nTe enviamos la factura {numero} por importe de {importe}{vencimiento ? `, con vencimiento el ${vencimiento}` : \'\'}.\n\nGracias por tu confianza.\n\nUn saludo,\n{empresa}',
+    defaultEmailMessage: 'Hola, {cliente}:\n\nTe enviamos la factura {numero} por importe de {importe}, con vencimiento el {vencimiento}.\n\nGracias por tu confianza.\n\nUn saludo,\n{empresa}',
     defaultEmailSubjectQuote: 'Presupuesto {numero} · {empresa}',
-    defaultEmailMessageQuote: 'Hola{cliente ? `, ${cliente}` : \'\'}:\n\nTe enviamos el presupuesto {numero} por {importe}.\n\nQuedamos a tu disposición para cualquier duda o ajuste.\n\nUn saludo,\n{empresa}',
+    defaultEmailMessageQuote: 'Hola, {cliente}:\n\nTe enviamos el presupuesto {numero} por {importe}.\n\nQuedamos a tu disposición para cualquier duda o ajuste.\n\nUn saludo,\n{empresa}',
     footerText: '',
   }
 }
+
+// Plantillas por defecto de antes, con sintaxis de código (se veía tal cual en Ajustes): se cambian por las nuevas
+const LEGACY_EMAIL_MESSAGE = 'Hola{cliente ? `, ${cliente}` : \'\'}:\n\nTe enviamos la factura {numero} por importe de {importe}{vencimiento ? `, con vencimiento el ${vencimiento}` : \'\'}.\n\nGracias por tu confianza.\n\nUn saludo,\n{empresa}'
+const LEGACY_EMAIL_MESSAGE_QUOTE = 'Hola{cliente ? `, ${cliente}` : \'\'}:\n\nTe enviamos el presupuesto {numero} por {importe}.\n\nQuedamos a tu disposición para cualquier duda o ajuste.\n\nUn saludo,\n{empresa}'
+const upgrade = (v: string | undefined, legacy: string, current: string) => (v === legacy ? current : v)
 
 /** Mezcla lo guardado con los valores por defecto (campos nuevos, datos antiguos) */
 export function normalizeDesign(raw: Partial<InvoiceDesign> | null | undefined, accentColor?: string | null): InvoiceDesign {
@@ -84,22 +89,29 @@ export function normalizeDesign(raw: Partial<InvoiceDesign> | null | undefined, 
     defaultNotes: (raw.defaultNotes ?? d.defaultNotes).slice(0, 1000),
     defaultTerms: (raw.defaultTerms ?? d.defaultTerms).slice(0, 1000),
     defaultEmailSubject: (raw.defaultEmailSubject ?? d.defaultEmailSubject).slice(0, 200),
-    defaultEmailMessage: (raw.defaultEmailMessage ?? d.defaultEmailMessage).slice(0, 3000),
+    defaultEmailMessage: (upgrade(raw.defaultEmailMessage, LEGACY_EMAIL_MESSAGE, d.defaultEmailMessage) ?? d.defaultEmailMessage).slice(0, 3000),
     defaultEmailSubjectQuote: (raw.defaultEmailSubjectQuote ?? d.defaultEmailSubjectQuote).slice(0, 200),
-    defaultEmailMessageQuote: (raw.defaultEmailMessageQuote ?? d.defaultEmailMessageQuote).slice(0, 3000),
+    defaultEmailMessageQuote: (upgrade(raw.defaultEmailMessageQuote, LEGACY_EMAIL_MESSAGE_QUOTE, d.defaultEmailMessageQuote) ?? d.defaultEmailMessageQuote).slice(0, 3000),
     footerText: (raw.footerText ?? '').slice(0, 600),
   }
 }
 
-/** Reemplaza variables en plantillas de correo como {cliente}, {numero}, {importe}, etc. */
+/**
+ * Reemplaza variables en plantillas de correo como {cliente}, {numero}, {importe}, etc.
+ * Si una variable está vacía se lleva con ella su inciso: «Hola {cliente}:» → «Hola:» y
+ * «…de {importe}, con vencimiento el {vencimiento}.» → «…de {importe}.»
+ */
 export function renderEmailTemplate(template: string, vars: Record<string, string>): string {
   if (!template) return ''
   let res = template
-  // Manejo de condicionales ternarios JS simples como {cliente ? `, ${cliente}` : ''}
-  res = res.replace(/\{(\w+)\s*\?\s*`([^`]*)`\s*:\s*`([^`]*)`\}/g, (_, k, ifTrue, ifFalse) => {
-    return vars[k] ? ifTrue.replace(`\${${k}}`, vars[k]) : ifFalse
-  })
-  // Manejo de tokens directos {cliente}, {numero}, {importe}, {vencimiento}, {empresa}, {tipo}
+  // Condicionales de las plantillas antiguas: {cliente ? `, ${cliente}` : ''} (comillas ``, '' o "")
+  res = res.replace(/\{(\w+)\s*\?\s*(['"`])([^'"`]*)\2\s*:\s*(['"`])([^'"`]*)\4\}/g, (_, k: string, _q1, ifTrue: string, _q2, ifFalse: string) =>
+    vars[k] ? ifTrue.replace(/\$\{(\w+)\}/g, (m, v: string) => vars[v] ?? m) : ifFalse)
+  for (const [k, v] of Object.entries(vars)) {
+    if (v) continue
+    res = res.replace(new RegExp(`,[^,.:;\\n{}]*\\{${k}\\}`, 'g'), '').replace(new RegExp(`[ \\t]*\\{${k}\\}`, 'g'), '')
+  }
+  // Tokens directos {cliente}, {numero}, {importe}, {vencimiento}, {empresa}, {tipo}
   res = res.replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m)
   return res
 }

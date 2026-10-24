@@ -117,9 +117,8 @@ const linkUrl = computed(() => {
           </button>
         </div>
         <p class="desc-full selectable">{{ tx.description }}</p>
-        <div class="desc-meta">
-          <span>Longitud: {{ tx.description.length }} caracteres</span>
-          <span v-if="tx.description.length > 50" class="muted">Texto original sin abreviaciones tal como lo emitió el banco</span>
+        <div v-if="tx.description.length > 50" class="desc-meta">
+          <span class="muted">Texto original sin abreviaciones tal como lo emitió el banco</span>
         </div>
       </div>
 
@@ -227,8 +226,8 @@ const linkUrl = computed(() => {
             </UiButton>
           </template>
           <template v-else-if="tx && tx.status !== 'pending'">
-            <UiButton v-if="tx.status === 'matched'" size="sm" icon="ph:arrows-left-right" @click="emit('openMatch'); open = false">
-              {{ (tx.amount ?? 0) > 0 ? 'Reasignar a otra factura…' : 'Reasignar a otro gasto…' }}
+            <UiButton v-if="tx.status === 'matched'" size="sm" icon="ph:arrows-left-right" :title="(tx.amount ?? 0) > 0 ? 'Reasignar a otra factura' : 'Reasignar a otro gasto'" @click="emit('openMatch'); open = false">
+              Reasignar…
             </UiButton>
             <UiButton size="sm" variant="ghost" icon="ph:arrow-counter-clockwise" @click="emit('unmatch'); open = false">
               {{ tx.status === 'matched' ? 'Deshacer conciliación' : 'Volver a pendiente' }}

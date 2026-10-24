@@ -281,7 +281,8 @@ function insertToken(kind: 'invoice' | 'quote', token: string) {
             <img v-if="logoUrl" :src="logoUrl" alt="Logo actual" class="logo-img">
             <div v-else class="drop-empty">
               <Icon name="ph:upload-simple" class="drop-ic" />
-              <p><strong>Arrastra tu logo</strong> o elígelo</p>
+              <p class="no-touch"><strong>Arrastra tu logo</strong> o elígelo</p>
+              <p class="touch-only"><strong>Sube tu logo</strong></p>
               <p class="hint">PNG o SVG con fondo transparente · máx. 2 MB</p>
             </div>
             <div v-if="canEdit" class="drop-actions">
@@ -365,7 +366,7 @@ function insertToken(kind: 'invoice' | 'quote', token: string) {
               <UiTextarea
                 v-model="d.defaultEmailMessage"
                 rows="6"
-                placeholder="Hola {cliente}:\n\nTe enviamos la factura..."
+                placeholder="Hola, {cliente}:\n\nTe enviamos la factura..."
                 maxlength="3000"
                 :disabled="!canEdit"
               />
@@ -401,7 +402,7 @@ function insertToken(kind: 'invoice' | 'quote', token: string) {
               <UiTextarea
                 v-model="d.defaultEmailMessageQuote"
                 rows="6"
-                placeholder="Hola {cliente}:\n\nTe enviamos el presupuesto..."
+                placeholder="Hola, {cliente}:\n\nTe enviamos el presupuesto..."
                 maxlength="3000"
                 :disabled="!canEdit"
               />

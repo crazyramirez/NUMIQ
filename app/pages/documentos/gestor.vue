@@ -374,7 +374,7 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
           </UiButton>
         </UiCard>
 
-        <UiCard title="Envíos anteriores" icon="ph:clock-counter-clockwise" padding="none" class="rise" style="--i: 3">
+        <UiCard title="Envíos anteriores" icon="ph:clock-counter-clockwise" padding="none" class="rise history" style="--i: 3">
           <UiEmpty v-if="!info.packs.length" compact icon="ph:paper-plane-tilt" title="Aún no has enviado nada" />
           <ul v-else class="packs">
             <li v-for="p in shownPacks" :key="p.id" class="pack">
@@ -659,7 +659,7 @@ input[type='checkbox'] {
 
 .actionbar {
   position: sticky;
-  bottom: var(--s-4);
+  bottom: calc(var(--s-4) + var(--bnav) + env(safe-area-inset-bottom));
   z-index: var(--z-sticky);
   display: flex;
   align-items: center;
@@ -767,14 +767,22 @@ input[type='checkbox'] {
   background: var(--surface-hover);
 }
 
+/* Una columna: arriba «Tu gestor», luego los pasos y al final los envíos anteriores */
 @media (max-width: 1100px) {
   .grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .aside {
-    position: static;
+    display: contents;
+  }
+
+  .aside > :first-child {
     order: -1;
+  }
+
+  .history {
+    order: 1;
   }
 }
 

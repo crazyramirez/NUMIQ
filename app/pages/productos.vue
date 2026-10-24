@@ -224,7 +224,7 @@ const bulkActions = computed<BulkAction[]>(() => [
       </div>
       <div v-if="top" class="stat star">
         <p class="eyebrow"><Icon name="ph:crown-simple-fill" aria-hidden="true" /> Más vendido</p>
-        <p class="v-name truncate">{{ top.name }}</p>
+        <p class="v-name" :title="top.name">{{ top.name }}</p>
         <p class="s num">{{ eur(top.revenue, false) }} · {{ top.uses }} {{ top.uses === 1 ? 'vez' : 'veces' }}</p>
       </div>
     </section>
@@ -462,10 +462,16 @@ const bulkActions = computed<BulkAction[]>(() => [
   color: var(--warning-solid);
 }
 
+/* Hasta dos líneas antes de cortar: el nombre del más vendido se lee entero */
 .v-name {
+  display: -webkit-box;
   margin-top: 8px;
+  overflow: hidden;
   font-size: var(--text-lg);
   font-weight: 640;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .toolbar {
@@ -801,7 +807,13 @@ input[type='checkbox'] {
   color: var(--text-3);
 }
 
-@media (max-width: 1023px) {
+/* Por el ancho real del contenido (la barra lateral resta 248 px): sin sitio, fuera la columna de uso
+   antes que cortar el nombre del producto */
+.page {
+  container: items / inline-size;
+}
+
+@container items (max-width: 900px) {
   .row,
   .list-head {
     grid-template-columns: 16px minmax(0, 1fr) 170px 36px;

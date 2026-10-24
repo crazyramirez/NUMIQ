@@ -152,6 +152,10 @@ function rowMenu(r: Row): MenuItem[] {
     { label: 'Ver detalle', icon: 'ph:eye', to: `${base.value}/${r.id}` },
     { label: 'Editar', icon: 'ph:pencil-simple', to: `${base.value}/${r.id}/editar` },
   ]
+  // También aquí: en pantallas medianas el botón «Cobrar» de la fila no se muestra
+  if (!isQ && ['issued', 'sent', 'partial'].includes(r.status)) {
+    items.push({ label: 'Registrar cobro', icon: 'ph:hand-coins', onClick: () => { payDoc.value = r } })
+  }
   if (r.status !== 'draft') {
     items.push({ label: 'Descargar PDF', icon: 'ph:download-simple', onClick: () => window.open(`/api/sales/${r.id}/pdf?download=1`, '_blank') })
   }
@@ -332,7 +336,14 @@ const bulkActions = computed<BulkAction[]>(() => [
                     </p>
                   </div>
                 </td>
-                <td class="col-date muted">{{ fdate(r.issueDate) }}</td>
+                <td class="col-date muted">
+                  {{ fdate(r.issueDate) }}
+                  <!-- Sin columna de vencimiento (pantallas medianas), el plazo va debajo de la fecha -->
+                  <span v-if="r.dueDate" class="sub due-sub" :class="{ late: r.overdue }">
+                    <template v-if="isQuote">Hasta {{ fdate(r.dueDate) }}</template>
+                    <template v-else-if="['issued', 'sent', 'partial'].includes(r.status)">{{ r.overdue ? 'Venció' : 'Vence' }} {{ relDays(r.dueDate) }}</template>
+                  </span>
+                </td>
                 <td class="col-due" :class="r.overdue ? 'late' : 'muted'">
                   <template v-if="r.dueDate && ['issued', 'sent', 'partial'].includes(r.status)">{{ relDays(r.dueDate) }}</template>
                   <template v-else>{{ fdate(r.dueDate) }}</template>
@@ -422,6 +433,12 @@ const bulkActions = computed<BulkAction[]>(() => [
 </template>
 
 <style scoped>
+/* La tabla se adapta al ancho real del contenido (con la barra lateral, una tableta deja ~870 px):
+   ≥ 1000 completa · 760–999 sin columna de vencimiento · < 760 filas de móvil */
+.page {
+  container: sales / inline-size;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -583,9 +600,14 @@ const bulkActions = computed<BulkAction[]>(() => [
   word-break: break-word;
 }
 
-.late {
+.late,
+.sub.late {
   color: var(--danger);
   font-weight: 560;
+}
+
+.due-sub {
+  display: none;
 }
 
 .act-col {
@@ -672,32 +694,22 @@ input[type='checkbox'] {
   display: none;
 }
 
-@media (max-width: 900px) {
-  .tools-right {
-    width: 100%;
+@container sales (max-width: 999px) {
+  .col-due,
+  .quick {
+    display: none;
   }
 
-  .search {
-    flex: 1;
-    width: auto;
-    min-width: 0;
+  .due-sub {
+    display: block;
+  }
+
+  .act-col {
+    width: 1%;
   }
 }
 
-@media (max-width: 767px) {
-  .stats {
-    grid-template-columns: 1fr 1fr;
-    gap: var(--s-3);
-  }
-
-  .stats .stat:first-child {
-    grid-column: span 2;
-  }
-
-  .stat strong {
-    font-size: var(--text-xl);
-  }
-
+@container sales (max-width: 759px) {
   .desk {
     display: none;
   }
@@ -712,7 +724,47 @@ input[type='checkbox'] {
 
   .sel-toggle {
     display: inline-flex;
+  }
+}
+
+@media (max-width: 900px) {
+  .tools-right {
     width: 100%;
+  }
+
+  .search {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+
+  .sel-toggle {
+    width: 100%;
+  }
+}
+
+@media (max-width: 767px) {
+  /* Buscador y periodo a todo el ancho, uno debajo del otro (como en Gastos): el texto de ayuda se lee entero */
+  .tools-right {
+    flex-wrap: wrap;
+  }
+
+  .search,
+  .period {
+    flex: 1 1 100%;
+  }
+
+  .stats {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--s-3);
+  }
+
+  .stats .stat:first-child {
+    grid-column: span 2;
+  }
+
+  .stat strong {
+    font-size: var(--text-xl);
   }
 }
 </style>

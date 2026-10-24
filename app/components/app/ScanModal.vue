@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useMediaQuery } from '@vueuse/core'
 import type { DroppedFile } from '~/components/docs/Dropzone.vue'
 import type { ImportInvoiceData, ScanReading } from '#shared/types/import'
 
@@ -24,6 +25,8 @@ const editing = ref(false)
 const saving = ref(false)
 const expenseOpen = ref(false)
 const pick = ref<'auto' | 'issued' | 'received'>('auto')
+// Sin teclado ni ratón (móvil) no se habla de arrastrar ni de Ctrl+V
+const touch = useMediaQuery('(hover: none)')
 
 interface Category { id: number, kind: string, name: string, deductiblePct: number, accountCode: string | null }
 const categories = ref<Category[]>([])
@@ -303,7 +306,7 @@ async function attachToExisting() {
         :multiple="false"
         camera
         title="Arrastra la factura o el ticket"
-        hint="Foto, PDF o Word. También puedes pegar una captura con Ctrl+V."
+        :hint="touch ? 'Foto, PDF o Word.' : 'Foto, PDF o Word. También puedes pegar una captura con Ctrl+V.'"
         accept="image/*,.pdf,.doc,.docx,.odt,.txt,.xml"
         @files="onFiles"
       />

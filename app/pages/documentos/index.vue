@@ -188,7 +188,7 @@ const TYPES = ['PDF', 'Fotos', 'Word', 'Excel', 'CSV', 'ZIP', 'Carpetas']
           <h2 class="scan-t">Escaneo rápido</h2>
           <p class="scan-s">Haz una foto al ticket o sube el PDF: en segundos tienes el gasto o la factura listos para guardar.</p>
           <UiButton variant="ai" icon="ph:camera" block @click="openScan()">Escanear ahora</UiButton>
-          <p class="scan-tip"><Icon name="ph:keyboard" aria-hidden="true" /> También puedes pegar una captura con Ctrl+V</p>
+          <p class="scan-tip no-touch"><Icon name="ph:keyboard" aria-hidden="true" /> También puedes pegar una captura con Ctrl+V</p>
         </UiCard>
 
         <UiCard title="Así funciona" icon="ph:lightbulb-filament" class="rise" style="--i: 3">
@@ -560,7 +560,12 @@ const TYPES = ['PDF', 'Fotos', 'Word', 'Excel', 'CSV', 'ZIP', 'Carpetas']
   color: var(--text-4);
 }
 
-@media (max-width: 1100px) {
+/* Por el ancho real del contenido (la barra lateral resta 248 px): el panel de opciones baja antes de apretarse */
+.page {
+  container: docs / inline-size;
+}
+
+@container docs (max-width: 1060px) {
   .grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -568,6 +573,7 @@ const TYPES = ['PDF', 'Fotos', 'Word', 'Excel', 'CSV', 'ZIP', 'Carpetas']
   .aside {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
   }
 }
 
@@ -585,9 +591,43 @@ const TYPES = ['PDF', 'Fotos', 'Word', 'Excel', 'CSV', 'ZIP', 'Carpetas']
     display: none;
   }
 
+  /* Nombre y resumen enteros arriba; debajo, estado y papelera (como las demás listas del móvil) */
   .batch {
-    gap: var(--s-2);
-    padding: 12px 6px 12px 14px;
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr) auto;
+    grid-template-areas:
+      'ic main main'
+      'ic status del';
+    align-items: center;
+    gap: 6px var(--s-3);
+    padding: 12px 10px 10px 14px;
+  }
+
+  .b-ic {
+    grid-area: ic;
+    align-self: start;
+  }
+
+  .batch > .grow {
+    grid-area: main;
+  }
+
+  .batch > .badge {
+    grid-area: status;
+    justify-self: start;
+  }
+
+  .b-del {
+    grid-area: del;
+  }
+
+  .chev {
+    display: none;
+  }
+
+  .b-name,
+  .b-sub {
+    white-space: normal;
   }
 }
 </style>
