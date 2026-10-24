@@ -18,6 +18,8 @@ let pending: { path: string, patch: Patch } | null = null
 let timer: ReturnType<typeof setTimeout> | undefined
 let inFlight: RouteLocationNormalized | null = null
 const watched = new WeakSet<Router>()
+// Última URL de cada página en esta pestaña: el «Volver» de una ficha regresa al listado tal como estaba
+const lastUrl = reactive(new Map<string, string>())
 
 const merge = (query: RouteLocationNormalized['query'], patch: Patch) => {
   const out = { ...query, ...patch }
@@ -28,6 +30,7 @@ const merge = (query: RouteLocationNormalized['query'], patch: Patch) => {
 function track(router: Router) {
   if (watched.has(router)) return
   watched.add(router)
+  lastUrl.set(router.currentRoute.value.path, router.currentRoute.value.fullPath)
   router.beforeEach((to, from) => {
     inFlight = to
     // Se deja la página con cambios aún sin escribir (se tecleó y se pulsó una fila enseguida): se guardan en la
@@ -38,10 +41,12 @@ function track(router: Router) {
     if (state?.current?.split(/[?#]/)[0] !== from.path) return
     const url = router.resolve({ path: from.path, query: merge(from.query, pending.patch), hash: from.hash }).fullPath
     window.history.replaceState({ ...state, current: url }, '', router.options.history.createHref(url))
+    lastUrl.set(from.path, url)
     pending = null
     clearTimeout(timer)
   })
-  router.afterEach((to) => {
+  router.afterEach((to, _from, failure) => {
+    if (!failure) lastUrl.set(to.path, to.fullPath)
     if (to !== inFlight) return
     inFlight = null
     if (pending) nextTick(() => flush(router))
@@ -69,6 +74,25 @@ function patchQuery(router: Router, path: string, patch: Patch, delay = 0) {
   clearTimeout(timer)
   if (delay) timer = setTimeout(() => flush(router), delay)
   else nextTick(() => flush(router))
+}
+
+/**
+ * «Volver» de una ficha a su listado: con la búsqueda, filtros y página con que se dejó. Si el listado es la
+ * entrada anterior del historial, es un atrás de verdad (no apila otra entrada).
+ */
+export function useBackTo(path: MaybeRefOrGetter<string>) {
+  const router = useRouter()
+  if (import.meta.client) track(router)
+  const href = computed(() => lastUrl.get(toValue(path)) ?? toValue(path))
+  function back(e?: MouseEvent) {
+    // Ctrl/⌘ o botón central: el enlace se abre aparte como siempre
+    if (e && (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button > 0)) return
+    e?.preventDefault()
+    const prev = (window.history.state as { back?: string } | null)?.back
+    if (prev && prev.split(/[?#]/)[0] === toValue(path)) router.back()
+    else navigateTo(href.value)
+  }
+  return { href, back }
 }
 
 /** Cambia parte de la query de la página actual junto con los `useQueryState` (undefined quita la clave) */

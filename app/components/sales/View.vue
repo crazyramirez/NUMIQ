@@ -73,6 +73,7 @@ const VF_STATUS: Record<string, { label: string, tone: 'brand' | 'success' | 'wa
 
 const isQuote = computed(() => doc.value?.kind === 'quote' || doc.value?.kind === 'proforma')
 const base = computed(() => (isQuote.value ? '/presupuestos' : '/facturas'))
+const { href: listHref, back } = useBackTo(base)
 const kindLabel = computed(() => KIND_LABEL[doc.value?.kind ?? 'invoice'] ?? 'Factura')
 const isOpen = computed(() => ['issued', 'sent', 'partial'].includes(doc.value?.status ?? ''))
 const overdue = computed(() => !isQuote.value && isOpen.value && !!doc.value?.dueDate && daysUntil(doc.value.dueDate) < 0)
@@ -146,7 +147,7 @@ async function remove() {
   try {
     await $fetch(`/api/sales/${props.id}`, { method: 'DELETE' })
     toast.success(isQ ? 'Presupuesto eliminado' : 'Factura eliminada')
-    await navigateTo(base.value)
+    await navigateTo(listHref.value)
   }
   catch (err) {
     toast.error('No se pudo eliminar', errorMessage(err))
@@ -259,7 +260,7 @@ const moreItems = computed<MenuItem[]>(() => {
   <div v-if="doc && company" class="view page">
     <div class="v-head no-print">
       <div class="head-nav">
-        <UiButton variant="ghost" square icon="ph:arrow-left" :to="base" aria-label="Volver al listado" title="Volver al listado" />
+        <UiButton variant="ghost" square icon="ph:arrow-left" aria-label="Volver al listado" title="Volver al listado" @click="back()" />
         <div class="pager-btns" role="navigation" aria-label="Navegación entre documentos">
           <UiButton
             variant="ghost"

@@ -21,6 +21,7 @@ interface Close {
 
 const route = useRoute()
 const router = useRouter()
+const { href: taxesHref, back } = useBackTo('/impuestos')
 const toast = useToast()
 const { me } = useMe()
 const readOnly = computed(() => me.value?.company?.role === 'advisor')
@@ -99,7 +100,7 @@ const outcome = (m: Model) => (m.result > 0 ? 'a ingresar' : m.result < 0 ? (m.m
 
 <template>
   <div class="page page-narrow">
-    <NuxtLink to="/impuestos" class="back"><Icon name="ph:arrow-left" aria-hidden="true" /> Impuestos</NuxtLink>
+    <a :href="taxesHref" class="back" @click="back"><Icon name="ph:arrow-left" aria-hidden="true" /> Impuestos</a>
 
     <header class="page-head">
       <div>

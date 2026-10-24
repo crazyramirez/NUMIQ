@@ -14,6 +14,7 @@ const route = useRoute()
 const router = useRouter()
 const isClient = computed(() => props.role === 'client')
 const base = computed(() => (isClient.value ? '/clientes' : '/proveedores'))
+const { href: listHref, back } = useBackTo(base)
 const noun = computed(() => (isClient.value ? 'clientes' : 'proveedores'))
 
 const { data: ai } = await useFetch<{ configured: boolean }>('/api/ai/status', { default: () => ({ configured: true }) })
@@ -168,7 +169,7 @@ useHead({ title: () => `Importar ${noun.value} · NUMIQ` })
   <div class="page">
     <header class="page-head">
       <div>
-        <NuxtLink :to="base" class="ci-back"><Icon name="ph:arrow-left" aria-hidden="true" /> {{ isClient ? 'Clientes' : 'Proveedores' }}</NuxtLink>
+        <a :href="listHref" class="ci-back" @click="back"><Icon name="ph:arrow-left" aria-hidden="true" /> {{ isClient ? 'Clientes' : 'Proveedores' }}</a>
         <h1>Importar {{ noun }}</h1>
         <p class="sub">Sube tu listado de cualquier programa o pégalo: la IA deja cada dato en su sitio y tú revisas antes de crear nada.</p>
       </div>

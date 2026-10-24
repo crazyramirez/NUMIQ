@@ -73,6 +73,7 @@ const { verifactu } = useMe()
 
 const isQuote = computed(() => props.kind === 'quote' || props.kind === 'proforma')
 const base = computed(() => (isQuote.value ? '/presupuestos' : '/facturas'))
+const { href: listHref } = useBackTo(base)
 const rectifiesQuery = Number(route.query.rectifica) || null
 
 const [{ data: company }, { data: contacts, refresh: refreshContacts }, { data: items, refresh: refreshItems }, { data: allSeries }, { data: doc }, { data: source }, { data: design }] = await Promise.all([
@@ -538,7 +539,7 @@ async function save(issue: boolean) {
 /** Vuelve a donde se abrió el editor (catálogo, ficha del cliente, el propio documento…); sin historial, al listado */
 function goBack() {
   if (window.history.state?.back) router.back()
-  else navigateTo(base.value)
+  else navigateTo(listHref.value)
 }
 
 onBeforeRouteLeave(async () => {

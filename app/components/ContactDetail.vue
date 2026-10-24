@@ -63,6 +63,7 @@ const toast = useToast()
 const { confirm } = useConfirm()
 const isClient = computed(() => props.role === 'client')
 const listPath = computed(() => (isClient.value ? '/clientes' : '/proveedores'))
+const { href: listHref, back } = useBackTo(listPath)
 
 const { data: c, status, refresh, error } = useFetch<ContactFull>(() => `/api/contacts/${props.id}`, {
   key: `contact-${props.id}`,
@@ -150,7 +151,7 @@ async function remove() {
       isClient.value ? 'Cliente eliminado' : 'Proveedor eliminado',
       unassignedCount > 0 ? `Se han desasignado ${unassignedCount} documento(s) correctamente.` : c.value.name,
     )
-    navigateTo(listPath.value)
+    navigateTo(listHref.value)
   }
   catch (err) {
     toast.error('No se pudo eliminar', errorMessage(err))
@@ -168,7 +169,7 @@ async function archive() {
   try {
     await $fetch(`/api/contacts/${props.id}/archive`, { method: 'POST' })
     toast.success('Contacto archivado', c.value.name)
-    navigateTo(listPath.value)
+    navigateTo(listHref.value)
   }
   catch (err) {
     toast.error('No se pudo archivar', errorMessage(err))
@@ -332,9 +333,9 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
 
 <template>
   <div class="page">
-    <NuxtLink :to="listPath" class="back">
+    <a :href="listHref" class="back" @click="back">
       <Icon name="ph:arrow-left" aria-hidden="true" /> {{ isClient ? 'Clientes' : 'Proveedores' }}
-    </NuxtLink>
+    </a>
 
     <div v-if="error" class="card">
       <UiEmpty icon="ph:warning-circle" title="No encontramos este contacto" :text="errorMessage(error)">

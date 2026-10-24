@@ -52,6 +52,7 @@ const router = useRouter()
 const toast = useToast()
 const { confirm } = useConfirm()
 const id = Number(route.params.id)
+const { href: listHref, back } = useBackTo('/documentos')
 
 const { data, refresh, error } = await useFetch<Detail>(`/api/imports/${id}`)
 useHead({ title: computed(() => `${data.value?.batch.name ?? 'Importación'} · NUMIQ`) })
@@ -242,7 +243,7 @@ const summary = computed(() => {
 
 <template>
   <div class="page">
-    <NuxtLink to="/documentos" class="back"><Icon name="ph:arrow-left" aria-hidden="true" /> Documentos</NuxtLink>
+    <a :href="listHref" class="back" @click="back"><Icon name="ph:arrow-left" aria-hidden="true" /> Documentos</a>
 
     <UiEmpty v-if="error" icon="ph:warning-circle" title="No se encontró esta importación" text="Puede que se haya descartado.">
       <UiButton to="/documentos" variant="secondary">Volver</UiButton>
