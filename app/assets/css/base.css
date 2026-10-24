@@ -18,9 +18,13 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  /* App, no página: sin zoom por doble toque (se sigue desplazando) ni destello gris al tocar */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
+  touch-action: manipulation;
   min-height: 100dvh;
   font-family: var(--font-sans);
   font-size: var(--text-base);

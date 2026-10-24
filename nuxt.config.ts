@@ -57,7 +57,8 @@ export default defineNuxtConfig({
       title: 'NUMIQ',
       htmlAttrs: { lang: 'es' },
       meta: [
-        { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
+        // Sin zoom ni escalado: se usa como app (los gestos de iOS se cortan en plugins/no-zoom.client.ts)
+        { name: 'viewport', content: 'width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover' },
         { name: 'description', content: description },
         // Vista previa al compartir un enlace (WhatsApp, LinkedIn, X…): sin SSR, los rastreadores solo ven esta cabecera
         { property: 'og:type', content: 'website' },
