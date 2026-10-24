@@ -39,8 +39,11 @@ const current = computed(() => {
 .area-tabs {
   display: flex;
   gap: 2px;
+  /* Solo horizontal: la línea va como sombra interior para que nada sobresalga en vertical */
   overflow-x: auto;
-  border-bottom: 1px solid var(--border);
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  box-shadow: inset 0 -1px 0 var(--border);
   scrollbar-width: none;
 }
 
@@ -55,7 +58,6 @@ const current = computed(() => {
   gap: 8px;
   height: 42px;
   padding: 0 14px;
-  margin-bottom: -1px;
   font-weight: 560;
   color: var(--text-3);
   white-space: nowrap;
