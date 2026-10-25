@@ -2,6 +2,7 @@
 import { filePreviewKind } from '#shared/utils/file-preview'
 import type { ViewerFile } from '~/composables/useFileViewer'
 import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
+import type { StampSource } from '~/composables/useSignSession'
 
 /**
  * Visor de documentos a pantalla completa: PDF (zoom, páginas, texto seleccionable), imágenes (zoom,
@@ -19,7 +20,7 @@ interface Loaded {
   text?: string
 }
 
-const { state, close } = useFileViewer()
+const { state, close, replace } = useFileViewer()
 const toast = useToast()
 
 const root = ref<HTMLElement>()
@@ -27,6 +28,22 @@ const closeBtn = ref<HTMLButtonElement>()
 const strip = ref<HTMLElement>()
 const pdfRef = ref<{ goTo: (page: number) => void } | null>(null)
 const imgRef = ref<{ actualSize: () => void } | null>(null)
+
+// ─── Firmar: firmas sobre las páginas, guardadas como copia junto al original ───
+const signing = ref(false)
+const session = createSignSession(root)
+provide(SIGN_SESSION, session)
+const studio = ref<{
+  handleKey: (e: KeyboardEvent) => boolean
+  save: () => Promise<void>
+  download: () => Promise<void>
+  requestExit: () => void
+  place: (s: StampSource, at?: { x: number, y: number }) => void
+  busy: 'save' | 'download' | null
+  count: number
+  sources: StampSource[]
+} | null>(null)
+const signedFiles = useSignedFiles()
 
 const items = computed(() => state.value.items)
 const index = computed(() => state.value.index)
@@ -115,6 +132,12 @@ async function show() {
     current.value = loaded
     status.value = 'ready'
     canShare.value = shareable(loaded)
+    // Abierto con «Firmar…»: entra directo en el modo firma
+    // (solo se apaga la marca: reasignar el estado volvería a abrir el documento)
+    if (state.value.sign) {
+      state.value.sign = false
+      startSigning()
+    }
     // Los vecinos se preparan para que pasar de uno a otro sea instantáneo
     for (const n of [index.value + 1, index.value - 1]) {
       const near = items.value[n]
@@ -136,7 +159,7 @@ function retry() {
 
 function go(i: number) {
   const n = items.value.length
-  if (n < 2) return
+  if (n < 2 || signing.value) return
   const next = (i + n) % n
   direction.value = i > index.value ? 'next' : 'prev'
   state.value = { ...state.value, index: next }
@@ -164,6 +187,32 @@ const meta = computed(() => {
   if (item.value?.date) parts.push(fdate(item.value.date))
   return parts.join(' · ')
 })
+
+const signable = computed(() => status.value === 'ready' && !!current.value && (kind.value === 'pdf' || kind.value === 'image'))
+
+function startSigning() {
+  if (!signable.value) return
+  rotation.value = 0
+  session.clear()
+  signing.value = true
+}
+
+function stopSigning() {
+  signing.value = false
+  session.clear()
+}
+
+// Copia firmada guardada: el visor pasa a mostrarla y las vistas que listan archivos se recargan
+function onSigned(file: { id: number, originalName: string, mime: string, size: number, createdAt: string }) {
+  const from = item.value?.fileId ?? 0
+  const next = storedFile(file)
+  stopSigning()
+  // Copia firmada actualizada: misma dirección, contenido nuevo
+  cache.delete(next.url)
+  replace(index.value, next)
+  signedFiles.value = { from, file: file.id }
+  refreshNuxtData()
+}
 
 const zoomable = computed(() => status.value === 'ready' && (kind.value === 'pdf' || kind.value === 'image'))
 const printable = computed(() => status.value === 'ready' && (kind.value === 'pdf' || kind.value === 'image'))
@@ -238,6 +287,9 @@ function onKey(e: KeyboardEvent) {
 
 function handleKey(e: KeyboardEvent) {
   const mod = e.ctrlKey || e.metaKey
+  // Firmando, las teclas son primero de las firmas (Esc suelta la elegida o sale del modo firma)
+  if (signing.value && studio.value?.handleKey(e)) return true
+  if (signing.value && e.key === 'Escape') return true
   // Esc va primero que en los modales de debajo (fase de captura): cierra solo el visor
   if (e.key === 'Escape') {
     e.preventDefault()
@@ -298,7 +350,7 @@ function onTouchEnd(e: TouchEvent) {
   if (!s || e.touches.length) return
   swipe = null
   const t = e.changedTouches[0]
-  if (!t || s.multi || !multi.value || zoom.value > 1.01) return
+  if (!t || s.multi || !multi.value || zoom.value > 1.01 || signing.value) return
   const dx = t.clientX - s.x
   const dy = t.clientY - s.y
   if (Math.abs(dx) > 64 && Math.abs(dx) > Math.abs(dy) * 1.6 && performance.now() - s.t < 700) go(index.value + (dx < 0 ? 1 : -1))
@@ -333,6 +385,7 @@ function cleanup() {
 }
 
 watch(() => [state.value.open, state.value.items, state.value.index] as const, ([open]) => {
+  if (signing.value) stopSigning()
   if (open) show()
 }, { immediate: true })
 
@@ -376,6 +429,11 @@ function onBackdropClick(e: MouseEvent) {
   const down = backdropDown
   backdropDown = null
   if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 || zoom.value > 1.01) return
+  // Firmando, un clic fuera solo suelta la firma elegida: cerrar perdería lo colocado
+  if (signing.value) {
+    if (!(e.target as HTMLElement).closest('[data-placement], .sg-dock, .sg-sheet-wrap, .sg-ask')) session.selected.value = null
+    return
+  }
   const t = e.target as HTMLElement
   if (t.closest(DOCUMENT) || e.offsetX > t.clientWidth || e.offsetY > t.clientHeight) return
   close()
@@ -413,9 +471,23 @@ async function copyImage() {
   }
 }
 
-function viewerMenu(): CtxSpec {
+function viewerMenu(e?: MouseEvent): CtxSpec {
   const ready = status.value === 'ready' && !!current.value
   const items: CtxItem[] = []
+  if (signing.value && studio.value) {
+    // Clic derecho sobre la página: la firma se pone justo ahí
+    const at = e && (e.target as HTMLElement | null)?.closest?.('[data-sign-page]') ? { x: e.clientX, y: e.clientY } : undefined
+    const sources = studio.value.sources
+    items.push(
+      ...sources.slice(0, 6).map(s => ({ label: at ? `Poner «${s.label}» aquí` : `Poner «${s.label}»`, icon: 'ph:signature', onClick: () => studio.value?.place(s, at) })),
+      { divider: true },
+      { label: 'Guardar firmado', icon: 'ph:check-circle', keys: [modKey(), 'S'], disabled: !studio.value.count, onClick: () => studio.value?.save() },
+      { label: 'Descargar firmado', icon: 'ph:download-simple', disabled: !studio.value.count, onClick: () => studio.value?.download() },
+      { label: 'Dejar de firmar', icon: 'ph:x', keys: ['Esc'], onClick: () => studio.value?.requestExit() },
+    )
+    return { title: 'Firmar documento', subtitle: name.value, icon: 'ph:signature', items }
+  }
+  if (signable.value) items.push({ label: 'Firmar…', icon: 'ph:signature', onClick: startSigning }, { divider: true })
   if (zoomable.value) {
     items.push(
       { label: 'Acercar', icon: 'ph:magnifying-glass-plus', keys: ['+'], disabled: zoom.value >= maxZoom.value, onClick: () => zoomStep(1) },
@@ -470,6 +542,7 @@ function viewerMenu(): CtxSpec {
         v-if="state.open"
         ref="root"
         class="fv"
+        :class="{ signing }"
         data-ctx-theme="dark"
         role="dialog"
         @keydown.stop
@@ -478,10 +551,15 @@ function viewerMenu(): CtxSpec {
       >
         <header class="fv-bar">
           <div class="fv-file">
-            <span class="fv-ic" :class="kindInfo.tone" aria-hidden="true"><Icon :name="kindInfo.icon" /></span>
+            <span v-if="signing" class="fv-ic sign" aria-hidden="true"><Icon name="ph:signature" /></span>
+            <span v-else class="fv-ic" :class="kindInfo.tone" aria-hidden="true"><Icon :name="kindInfo.icon" /></span>
             <div class="min0">
               <p class="fv-name" :title="name">{{ name }}</p>
-              <p class="fv-meta num">
+              <p v-if="signing" class="fv-meta">
+                <span class="fv-count sign">Firmando</span>
+                <span class="truncate">{{ studio?.count ? `${studio.count} ${studio.count === 1 ? 'firma colocada' : 'firmas colocadas'}` : 'Elige una firma abajo' }}</span>
+              </p>
+              <p v-else class="fv-meta num">
                 <span v-if="multi" class="fv-count">{{ index + 1 }} de {{ items.length }}</span>
                 <span class="truncate">{{ meta }}</span>
               </p>
@@ -492,13 +570,38 @@ function viewerMenu(): CtxSpec {
             <button type="button" class="fv-btn" :disabled="zoom <= 0.25" aria-label="Alejar" title="Alejar (−)" @click="zoomStep(-1)"><Icon name="ph:minus-bold" /></button>
             <button type="button" class="fv-pct num" :class="{ on: zoom !== 1 }" :title="zoom === 1 ? 'Ajustado a la pantalla' : 'Ajustar a la pantalla (0)'" @click="zoom = 1">{{ pct }}</button>
             <button type="button" class="fv-btn" :disabled="zoom >= maxZoom" aria-label="Acercar" title="Acercar (+)" @click="zoomStep(1)"><Icon name="ph:plus-bold" /></button>
-            <template v-if="kind === 'image'">
+            <template v-if="kind === 'image' && !signing">
               <span class="fv-sep" aria-hidden="true" />
               <button type="button" class="fv-btn" aria-label="Girar" title="Girar (R)" @click="rotation += 90"><Icon name="ph:arrow-clockwise-bold" /></button>
             </template>
           </div>
 
-          <div class="fv-acts">
+          <div v-if="signing" class="fv-acts">
+            <button type="button" class="fv-btn fv-txt" :disabled="!!studio?.busy" title="Dejar de firmar (Esc)" @click="studio?.requestExit()">
+              <Icon name="ph:x-bold" class="only-narrow" /><span class="fv-txt-t">Descartar</span>
+            </button>
+            <button
+              v-if="item?.fileId"
+              type="button"
+              class="fv-btn"
+              :disabled="!studio?.count || !!studio?.busy"
+              aria-label="Descargar firmado"
+              title="Descargar firmado"
+              @click="studio?.download()"
+            >
+              <span v-if="studio?.busy === 'download'" class="fv-mini-spin" aria-hidden="true" /><Icon v-else name="ph:download-simple" />
+            </button>
+            <button type="button" class="fv-primary" :disabled="!studio?.count || !!studio?.busy" :title="item?.fileId ? 'Guardar una copia firmada junto al original (Ctrl+S)' : 'Descargar el documento firmado'" @click="studio?.save()">
+              <span v-if="studio?.busy" class="fv-mini-spin" aria-hidden="true" />
+              <Icon v-else :name="item?.fileId ? 'ph:check-bold' : 'ph:download-simple-bold'" />
+              <span class="fv-primary-long">{{ item?.fileId ? 'Guardar firmado' : 'Descargar firmado' }}</span>
+              <span class="fv-primary-short">{{ item?.fileId ? 'Guardar' : 'Descargar' }}</span>
+            </button>
+          </div>
+          <div v-else class="fv-acts">
+            <button v-if="signable" type="button" class="fv-btn fv-sign" title="Firmar el documento" @click="startSigning">
+              <Icon name="ph:signature" /><span class="fv-sign-t">Firmar</span>
+            </button>
             <button v-if="printable" type="button" class="fv-btn hide-touch" aria-label="Imprimir" title="Imprimir (Ctrl+P)" @click="print"><Icon name="ph:printer" /></button>
             <button v-if="canShare" type="button" class="fv-btn" aria-label="Compartir" title="Compartir" @click="share"><Icon name="ph:share-network" /></button>
             <a v-if="downloadHref" :href="downloadHref" :download="name" class="fv-btn fv-dl" :aria-label="`Descargar ${name}`" title="Descargar">
@@ -536,7 +639,11 @@ function viewerMenu(): CtxSpec {
                 @loaded="pages = $event"
                 @page="page = $event"
                 @error="status = 'error'"
-              />
+              >
+                <template #page="{ index: pageIndex }">
+                  <DocsSignLayer v-if="signing" :page="pageIndex" />
+                </template>
+              </LazyDocsPdfPages>
 
               <LazyDocsImageStage
                 v-else-if="current.kind === 'image'"
@@ -547,7 +654,9 @@ function viewerMenu(): CtxSpec {
                 :rotation="rotation"
                 @loaded="(w, h) => (dims = { w, h })"
                 @error="status = 'error'"
-              />
+              >
+                <DocsSignLayer v-if="signing" :page="0" />
+              </LazyDocsImageStage>
 
               <div v-else-if="current.kind === 'word' || current.kind === 'sheet'" class="fv-paper">
                 <LazyDocsOfficePreview :blob="current.blob" :kind="current.kind" :name="current.name" @error="status = 'error'" />
@@ -571,7 +680,22 @@ function viewerMenu(): CtxSpec {
             </div>
           </Transition>
 
-          <template v-if="multi">
+          <LazyDocsSignStudio
+            v-if="signing && current && (current.kind === 'pdf' || current.kind === 'image')"
+            ref="studio"
+            :kind="current.kind"
+            :page="current.kind === 'pdf' ? Math.max(0, page - 1) : 0"
+            :pages="current.kind === 'pdf' ? pages : 1"
+            :name="current.name"
+            :mime="current.mime"
+            :pdf="current.pdf"
+            :object-url="current.objectUrl"
+            :file-id="item?.fileId"
+            @exit="stopSigning"
+            @saved="onSigned"
+          />
+
+          <template v-if="multi && !signing">
             <button type="button" class="fv-nav prev" aria-label="Documento anterior" title="Anterior (←)" @click="go(index - 1)"><Icon name="ph:caret-left-bold" /></button>
             <button type="button" class="fv-nav next" aria-label="Documento siguiente" title="Siguiente (→)" @click="go(index + 1)"><Icon name="ph:caret-right-bold" /></button>
           </template>
@@ -585,7 +709,7 @@ function viewerMenu(): CtxSpec {
           </Transition>
         </div>
 
-        <footer v-if="multi" ref="strip" class="fv-strip" aria-label="Documentos">
+        <footer v-if="multi && !signing" ref="strip" class="fv-strip" aria-label="Documentos">
           <button
             v-for="(f, i) in items"
             :key="`${i}-${f.url}`"
@@ -1046,6 +1170,118 @@ function viewerMenu(): CtxSpec {
   transform: translateX(-50%);
 }
 
+/* ─── Firmar ─── */
+.fv-ic.sign {
+  color: #b4c3ff;
+  background: rgba(96, 124, 255, 0.2);
+}
+
+.fv-count.sign {
+  color: #cdd7ff;
+  background: rgba(96, 124, 255, 0.24);
+}
+
+.fv-sign {
+  padding: 0 13px 0 11px;
+  font-size: 13.5px;
+  font-weight: 620;
+  color: #fff;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--brand) 92%, white), var(--brand));
+  box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--brand) 70%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.fv-sign:hover:not(:disabled) {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--brand) 80%, white), color-mix(in srgb, var(--brand) 92%, white));
+}
+
+.fv-sign :deep(svg) {
+  font-size: 18px;
+}
+
+.fv-txt {
+  padding: 0 12px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--fv-text-2);
+}
+
+.fv-txt:hover:not(:disabled) {
+  color: var(--fv-text);
+}
+
+.only-narrow,
+.fv-primary-short {
+  display: none;
+}
+
+.fv-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  margin-left: 4px;
+  padding: 0 15px 0 13px;
+  font-size: 13.5px;
+  font-weight: 650;
+  color: #fff;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--brand) 92%, white), var(--brand));
+  border: 0;
+  border-radius: 10px;
+  box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--brand) 70%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  transition: opacity var(--t-fast), transform var(--t-fast);
+}
+
+.fv-primary :deep(svg) {
+  font-size: 16px;
+}
+
+.fv-primary:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.fv-primary:disabled {
+  opacity: 0.38;
+  cursor: default;
+  box-shadow: none;
+}
+
+.fv-primary:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.fv-mini-spin {
+  width: 15px;
+  height: 15px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* La bandeja de firmas ocupa el pie: el documento termina encima de ella */
+.fv.signing .fv-slot {
+  bottom: 112px;
+}
+
+.fv.signing .fv-pages {
+  top: 14px;
+  bottom: auto;
+}
+
+.fv.signing :deep(.pg) {
+  overflow: visible;
+}
+
+.fv.signing :deep(.textLayer) {
+  pointer-events: none;
+}
+
+.fv.signing :deep(.img-stage) {
+  cursor: default;
+}
+
 /* ─── Miniaturas ─── */
 .fv-strip {
   position: relative;
@@ -1214,6 +1450,39 @@ function viewerMenu(): CtxSpec {
 
   .fv-nav {
     display: none;
+  }
+
+  .fv-sign-t {
+    display: none;
+  }
+
+  .fv-sign {
+    padding: 0 9px;
+  }
+
+  .fv-txt {
+    padding: 0 9px;
+  }
+
+  .fv-txt-t {
+    display: none;
+  }
+
+  .only-narrow,
+  .fv-primary-short {
+    display: inline-block;
+  }
+
+  .fv-primary-long {
+    display: none;
+  }
+
+  .fv-primary {
+    padding: 0 12px;
+  }
+
+  .fv.signing .fv-slot {
+    bottom: 100px;
   }
 
   .fv-paper {

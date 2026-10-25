@@ -73,6 +73,7 @@ function attCtx(a: Attachment, i: number): CtxSpec {
     icon: iconFor(a.mime).name,
     items: [
       { label: 'Ver', icon: 'ph:eye', onClick: () => view(i) },
+      ...(props.canEdit && signableMime(a.mime) ? [{ label: 'Firmar…', icon: 'ph:signature', onClick: () => viewer.open(props.items.map(storedFile), i, { sign: true }) }] : []),
       { label: 'Descargar', icon: 'ph:download-simple', onClick: () => { window.location.href = `/api/files/${a.id}?download=1` } },
       { label: 'Copiar nombre', icon: 'ph:copy', onClick: () => copyText(a.originalName, 'Nombre') },
       ...(props.canEdit

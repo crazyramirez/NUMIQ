@@ -67,7 +67,7 @@ export async function buildBackup(company: Company, opts: BackupOptions) {
   const json = (name: string, rows: unknown) => add(`Datos (JSON)/${name}.json`, Buffer.from(JSON.stringify(rows, null, 1), 'utf8'))
 
   const t = tables
-  const [contacts, items, itemCategories, categories, series, sales, payments, expenses, bankAccounts, bankTx, recurrings, filings, verifactu, files, templates, emails, packs, calendar] = await Promise.all([
+  const [contacts, items, itemCategories, categories, series, sales, payments, expenses, bankAccounts, bankTx, recurrings, filings, verifactu, files, templates, emails, packs, calendar, signatures] = await Promise.all([
     db.select().from(t.contacts).where(eq(t.contacts.companyId, cid)).orderBy(asc(t.contacts.name)),
     db.select().from(t.items).where(eq(t.items.companyId, cid)).orderBy(asc(t.items.name)),
     db.select().from(t.itemCategories).where(eq(t.itemCategories.companyId, cid)).orderBy(asc(t.itemCategories.name)),
@@ -86,6 +86,7 @@ export async function buildBackup(company: Company, opts: BackupOptions) {
     db.select().from(t.sentEmails).where(eq(t.sentEmails.companyId, cid)),
     db.select().from(t.advisorPacks).where(eq(t.advisorPacks.companyId, cid)),
     db.select().from(t.calendarEvents).where(eq(t.calendarEvents.companyId, cid)).orderBy(asc(t.calendarEvents.startDate)),
+    db.select().from(t.signatures).where(eq(t.signatures.companyId, cid)).orderBy(asc(t.signatures.id)),
   ])
   const saleIds = sales.map(s => s.id)
   const expenseIds = expenses.map(e => e.id)
@@ -118,6 +119,7 @@ export async function buildBackup(company: Company, opts: BackupOptions) {
   json('correos_enviados', emails)
   json('envios_gestor', packs.map(p => ({ ...p, token: undefined, path: undefined })))
   json('archivos', files.map(f => ({ ...f, path: undefined })))
+  json('firmas', signatures.map(x => ({ ...x, path: undefined })))
 
   // ─── Excel legible ───
   const contactById = new Map(contacts.map(c => [c.id, c]))
@@ -221,6 +223,12 @@ export async function buildBackup(company: Company, opts: BackupOptions) {
       const kind = data && detectImage(data)
       if (!data || !kind) continue
       add(`Productos/${safe(i.name)}.${kind.ext}`, data, false)
+      originals++
+    }
+    for (const sig of signatures) {
+      const data = await readStoredFile(sig.path).catch(() => null)
+      if (!data) continue
+      add(`Firmas/${safe(sig.name)}.png`, data, false)
       originals++
     }
     if (company.logoPath) {

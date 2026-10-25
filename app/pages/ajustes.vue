@@ -12,6 +12,7 @@ const SECTIONS = [
   { id: 'numeracion', label: 'Numeración', icon: 'ph:list-numbers' },
   { id: 'ia', label: 'Inteligencia artificial', icon: 'ph:sparkle' },
   { id: 'diseno', label: 'Diseño de factura', icon: 'ph:paint-brush' },
+  { id: 'firmas', label: 'Firmas', icon: 'ph:signature' },
   { id: 'cobros', label: 'Cobros', icon: 'ph:bell-ringing' },
   { id: 'gestoria', label: 'Gestoría', icon: 'ph:briefcase' },
   { id: 'equipo', label: 'Equipo', icon: 'ph:users-three' },
@@ -570,6 +571,7 @@ function onDesignSaved(accent: string) {
           </div>
 
           <!-- ─── Diseño ─── -->
+          <SettingsSignaturesPanel v-if="section === 'firmas'" class="rise" style="--i: 2" />
           <SettingsInvoiceDesigner v-if="section === 'diseno'" class="rise" style="--i: 2" :can-edit="canEdit" @saved="onDesignSaved" />
 
           <!-- ─── Copia de seguridad ─── -->

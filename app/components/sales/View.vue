@@ -527,7 +527,10 @@ function paperCtx(): CtxSpec | null {
               <p class="muted small">{{ isQuote ? 'Hecho con otro programa: conserva su número.' : `Emitida con otro programa: conserva su número${verifactu ? ' y no genera registro VeriFactu en NUMIQ' : ''}.` }}</p>
             </div>
           </div>
-          <button v-if="doc.fileId" type="button" class="link small imp-link" @click="viewer.open(storedFile({ id: doc.fileId }))"><Icon name="ph:file-text" aria-hidden="true" /> Ver el documento original</button>
+          <div v-if="doc.fileId" class="imp-acts">
+            <button type="button" class="link small imp-link" @click="viewer.open(storedFile({ id: doc.fileId }))"><Icon name="ph:file-text" aria-hidden="true" /> Ver el documento original</button>
+            <button v-if="doc.original && signableMime(doc.original.mime)" type="button" class="link small imp-link" @click="viewer.open(storedFile(doc.original), 0, { sign: true })"><Icon name="ph:signature" aria-hidden="true" /> Firmar</button>
+          </div>
         </section>
 
         <SalesAttachments :doc-id="doc.id" :items="doc.attachments" @changed="refresh" />
@@ -1028,10 +1031,16 @@ function paperCtx(): CtxSpec | null {
   border-radius: var(--r-md);
 }
 
+.imp-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin-top: var(--s-3);
+}
+
 .imp-link {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-top: var(--s-3);
 }
 </style>

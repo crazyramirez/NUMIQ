@@ -218,6 +218,7 @@ onBeforeUnmount(() => {
         :style="{ width: `${Math.floor(s.w * scale)}px`, height: `${Math.floor(s.h * scale)}px` }"
       >
         <div class="textLayer" />
+        <slot name="page" :index="i" />
       </div>
     </div>
   </div>

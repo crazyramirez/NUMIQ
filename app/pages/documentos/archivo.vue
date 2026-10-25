@@ -97,9 +97,9 @@ async function upload(list: DroppedFile[]) {
 
 // Visor de la app: recorre los documentos de la carpeta y el periodo que se están viendo
 const viewer = useFileViewer()
-function show(f: VaultFile) {
+function show(f: VaultFile, sign = false) {
   const list = files.value
-  viewer.open(list.map(storedFile), Math.max(0, list.findIndex(x => x.id === f.id)))
+  viewer.open(list.map(storedFile), Math.max(0, list.findIndex(x => x.id === f.id)), { sign })
 }
 
 const editing = ref<VaultFile | null>(null)
@@ -144,6 +144,7 @@ async function remove(f: VaultFile) {
 function menuFor(f: VaultFile) {
   return [
     { label: 'Ver', icon: 'ph:eye', onClick: () => show(f) },
+    ...(signableMime(f.mime) ? [{ label: 'Firmar…', icon: 'ph:signature', onClick: () => show(f, true) }] : []),
     { label: 'Descargar', icon: 'ph:download-simple', onClick: () => { window.location.href = `/api/files/${f.id}?download=1` } },
     { label: 'Mover o renombrar', icon: 'ph:folder-simple-dashed', onClick: () => openEdit(f) },
     { divider: true },
@@ -171,6 +172,7 @@ function ctxFor(f: VaultFile): CtxSpec {
     icon: fileIcon(f.name, f.mime),
     items: [
       { label: 'Ver', icon: 'ph:eye', keys: ['↵'], onClick: () => show(f) },
+      ...(signableMime(f.mime) ? [{ label: 'Firmar…', icon: 'ph:signature', onClick: () => show(f, true) }] : []),
       { label: 'Descargar', icon: 'ph:download-simple', onClick: () => { window.location.href = `/api/files/${f.id}?download=1` } },
       { divider: true },
       {

@@ -698,6 +698,23 @@ export const calendarFeeds = mysqlTable('calendar_feeds', {
   createdAt: createdAt(),
 }, t => [index('cal_feeds_user_idx').on(t.companyId, t.userId)])
 
+// ─── Firmas de la empresa (dibujadas, escritas o subidas) ────────────────────
+
+/** Firma guardada para estampar en documentos desde el visor: PNG con fondo transparente */
+export const signatures = mysqlTable('signatures', {
+  id: int('id').autoincrement().primaryKey(),
+  companyId: int('company_id').notNull(),
+  name: varchar('name', { length: 60 }).notNull(),
+  kind: mysqlEnum('kind', ['drawn', 'typed', 'image']).notNull().default('drawn'),
+  path: varchar('path', { length: 500 }).notNull(),
+  width: int('width').notNull(),
+  height: int('height').notNull(),
+  /** La que se propone primero al firmar */
+  isDefault: boolean('is_default').notNull().default(false),
+  createdBy: int('created_by'),
+  createdAt: createdAt(),
+}, t => [index('signatures_company_idx').on(t.companyId)])
+
 // ─── VeriFactu: registros de facturación encadenados ─────────────────────────
 
 export const verifactuRecords = mysqlTable('verifactu_records', {

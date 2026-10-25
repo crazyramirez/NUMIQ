@@ -42,10 +42,21 @@ interface Category { id: number, kind: string, name: string, accountCode: string
 const toast = useToast()
 const viewer = useFileViewer()
 // El documento leído se abre en el visor, encima del gasto
-function viewOriginal() {
+function viewOriginal(at = 0) {
   const id = scan.value?.fileId ?? original.value?.id
-  if (id) viewer.open(storedFile({ id, name: scan.value?.fileName ?? original.value?.name, mime: scan.value?.mime ?? original.value?.mime }))
+  if (!id) return
+  const first = storedFile({ id, name: scan.value?.fileName ?? original.value?.name, mime: scan.value?.mime ?? original.value?.mime })
+  viewer.open([first, ...(scan.value ? [] : extra.value.map(storedFile))], at)
 }
+
+// Copia firmada guardada desde el visor: aparece junto al original sin cerrar el gasto
+const signedFiles = useSignedFiles()
+watch(signedFiles, async (v) => {
+  if (!v || !props.expenseId || !open.value) return
+  if (v.from !== original.value?.id && !extra.value.some(a => a.id === v.from)) return
+  const e = await $fetch<{ attachments: ExpenseFile[] }>(`/api/expenses/${props.expenseId}`).catch(() => null)
+  if (e) extra.value = e.attachments
+})
 const { confirm } = useConfirm()
 const guardDuplicate = useDuplicateGuard()
 const formId = useId()
@@ -82,6 +93,9 @@ const categories = ref<Category[]>([])
 /** Escaneo con IA en curso de guardar y documento original de un gasto ya guardado */
 const scan = ref<{ fileId: number, fileName: string, mime: string, confidence: number | null, warnings: string[], newSupplier: ImportParty | null } | null>(null)
 const original = ref<{ id: number, name: string, mime: string, confidence: number | null } | null>(null)
+interface ExpenseFile { id: number, originalName: string, mime: string, size: number, createdAt: string }
+/** Otros documentos del gasto, como la copia firmada del justificante */
+const extra = ref<ExpenseFile[]>([])
 /** Por qué está «por revisar» (al guardar queda revisado) */
 const review = ref<string[] | null>(null)
 const reviewCurrencyCode = computed(() => reviewCurrency(review.value))
@@ -112,11 +126,12 @@ watch([open, () => props.expenseId], async ([v]) => {
   try {
     const listsReady = loadLists()
     if (props.expenseId) {
-      const e = await $fetch<Omit<ExpenseForm, 'taxLines' | 'paid'> & { status: string, aiConfidence: number | null, reviewed: boolean, reviewNotes: string[] | null, taxLines: Array<{ base: number, vatRate: number, vatAmount: number }>, file: { id: number, name: string, mime: string } | null }>(`/api/expenses/${props.expenseId}`)
+      const e = await $fetch<Omit<ExpenseForm, 'taxLines' | 'paid'> & { status: string, aiConfidence: number | null, reviewed: boolean, reviewNotes: string[] | null, taxLines: Array<{ base: number, vatRate: number, vatAmount: number }>, file: { id: number, name: string, mime: string } | null, attachments: ExpenseFile[] }>(`/api/expenses/${props.expenseId}`)
       review.value = e.reviewed ? null : e.reviewNotes?.length ? e.reviewNotes : ['Revisa los datos con el documento original']
       scan.value = null
       learned.value = null
       original.value = e.file ? { ...e.file, confidence: e.aiConfidence } : null
+      extra.value = e.attachments ?? []
       form.value = {
         kind: e.kind,
         supplierId: e.supplierId,
@@ -145,6 +160,7 @@ watch([open, () => props.expenseId], async ([v]) => {
       review.value = null
       scan.value = null
       original.value = null
+      extra.value = []
       learned.value = null
       await listsReady
       if (props.prefill?.data) applyScan(props.prefill)
@@ -534,10 +550,16 @@ async function remove() {
             <UiBadge v-if="scan || original?.confidence != null" tone="ai" icon="ph:sparkle-fill" size="sm">
               Leído con IA{{ (scan?.confidence ?? original?.confidence) != null ? ` · ${scan?.confidence ?? original?.confidence} %` : '' }}
             </UiBadge>
-            <button type="button" class="link ar-link" @click="viewOriginal">
+            <button type="button" class="link ar-link" @click="viewOriginal()">
               <Icon :name="fileIcon(scan?.fileName ?? original?.name ?? '', scan?.mime ?? original?.mime)" aria-hidden="true" />
               <span class="truncate">{{ scan?.fileName ?? original?.name ?? (scan ? 'Ver documento escaneado' : 'Documento original') }}</span>
             </button>
+            <template v-if="!scan">
+              <button v-for="(a, i) in extra" :key="a.id" type="button" class="link ar-link" @click="viewOriginal(i + 1)">
+                <Icon :name="/firmad/i.test(a.originalName) ? 'ph:signature' : fileIcon(a.originalName, a.mime)" aria-hidden="true" />
+                <span class="truncate">{{ a.originalName }}</span>
+              </button>
+            </template>
           </div>
         </div>
         <ul v-if="scan?.warnings.length" class="ar-warn">

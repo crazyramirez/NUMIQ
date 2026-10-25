@@ -80,6 +80,7 @@ defineExpose({ actualSize: () => zoomAt(1 / base.value) })
   >
     <div ref="wrap" class="img-wrap" :style="wrapStyle">
       <img :src="src" :alt="alt" class="img" :class="{ ready }" :style="imgStyle" draggable="false" @load="onLoad" @error="emit('error')">
+      <slot />
     </div>
   </div>
 </template>
