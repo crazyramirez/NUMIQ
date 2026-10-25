@@ -87,14 +87,14 @@ const linkUrl = computed(() => {
 </script>
 
 <template>
-  <UiModal v-model="open" title="Detalle del movimiento bancario" :subtitle="account ? `${account.name}${account.iban ? ` · ${account.iban}` : ''}` : undefined" size="lg">
+  <UiModal v-model="open" title="Detalle del movimiento bancario" :subtitle="account ? `${account.name}${account.iban ? ` · ${account.iban}` : ''}` : undefined" size="lg" no-touch-keyboard>
     <div v-if="tx" class="detail-wrap">
       <!-- Cabecera con importe y estado -->
       <div class="amt-hero" :class="isIncome ? 'income' : 'expense'">
         <div class="amt-left">
           <span class="amt-symbol" aria-hidden="true"><Icon :name="isIncome ? 'ph:arrow-down-left-bold' : 'ph:arrow-up-right-bold'" /></span>
           <div>
-            <span class="amt-type">{{ isIncome ? 'Abono / Ingreso en cuenta' : 'Cargo / Pago en cuenta' }}</span>
+            <span class="amt-type">{{ isIncome ? 'Abono en cuenta' : 'Cargo en cuenta' }}</span>
             <div class="amt-val num">{{ isIncome ? '+' : '' }}{{ eur(tx.amount) }}</div>
           </div>
         </div>
@@ -109,12 +109,12 @@ const linkUrl = computed(() => {
       <div class="field-card">
         <div class="field-card-head">
           <div class="field-card-title">
-            <Icon name="ph:text-align-left" aria-hidden="true" />
-            <span>Concepto íntegro del extracto bancario</span>
+            <Icon name="ph:text-align-left" class="ttl-ic" aria-hidden="true" />
+            <span>Concepto del extracto</span>
           </div>
           <button type="button" class="copy-btn" :class="{ copied }" @click="copyText(tx.description, 'Concepto copiado')">
-            <Icon :name="copied ? 'ph:check' : 'ph:copy'" aria-hidden="true" />
-            <span>{{ copied ? 'Copiado' : 'Copiar concepto' }}</span>
+            <Icon :name="copied ? 'ph:check' : 'ph:copy'" class="copy-ic" aria-hidden="true" />
+            <span>{{ copied ? 'Copiado' : 'Copiar' }}</span>
           </button>
         </div>
         <p class="desc-full selectable">{{ tx.description }}</p>
@@ -227,7 +227,7 @@ const linkUrl = computed(() => {
             </UiButton>
           </template>
           <template v-else-if="tx && tx.status !== 'pending'">
-            <UiButton v-if="tx.status === 'matched'" size="sm" icon="ph:arrows-left-right" :title="(tx.amount ?? 0) > 0 ? 'Reasignar a otra factura' : 'Reasignar a otro gasto'" @click="emit('openMatch'); open = false">
+            <UiButton v-if="tx.status === 'matched' && !tx.link" size="sm" icon="ph:arrows-left-right" :title="(tx.amount ?? 0) > 0 ? 'Reasignar a otra factura' : 'Reasignar a otro gasto'" @click="emit('openMatch'); open = false">
               Reasignar…
             </UiButton>
             <UiButton size="sm" variant="ghost" icon="ph:arrow-counter-clockwise" @click="emit('unmatch'); open = false">
@@ -235,7 +235,7 @@ const linkUrl = computed(() => {
             </UiButton>
           </template>
         </div>
-        <UiButton variant="soft" @click="open = false">Cerrar</UiButton>
+        <UiButton variant="soft" class="close-btn" @click="open = false">Cerrar</UiButton>
       </div>
     </template>
   </UiModal>
@@ -243,6 +243,7 @@ const linkUrl = computed(() => {
 
 <style scoped>
 .detail-wrap {
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: var(--s-4);
@@ -284,7 +285,7 @@ const linkUrl = computed(() => {
 
 .amt-hero.income .amt-symbol {
   color: var(--success);
-  background: var(--success-subtle);
+  background: var(--success-soft);
 }
 
 .amt-hero.expense .amt-symbol {
@@ -350,11 +351,21 @@ const linkUrl = computed(() => {
   font-size: var(--text-xs);
   font-weight: 560;
   color: var(--brand-text);
-  background: var(--brand-subtle);
+  background: var(--brand-soft);
   border: 1px solid transparent;
   border-radius: var(--r-sm);
+  white-space: nowrap;
   cursor: pointer;
   transition: all var(--t-fast);
+}
+
+.ttl-ic {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.copy-ic {
+  font-size: 13px;
 }
 
 .copy-btn:hover {
@@ -364,7 +375,7 @@ const linkUrl = computed(() => {
 
 .copy-btn.copied {
   color: var(--success);
-  background: var(--success-subtle);
+  background: var(--success-soft);
 }
 
 .desc-full {
@@ -465,7 +476,7 @@ const linkUrl = computed(() => {
 
 .match-box.sug {
   background: var(--surface-2);
-  border-color: var(--brand-subtle);
+  border-color: var(--brand-soft);
 }
 
 .match-ic {
@@ -554,5 +565,86 @@ const linkUrl = computed(() => {
   align-items: center;
   gap: var(--s-2);
   flex-wrap: wrap;
+}
+
+/* Móvil: los datos pasan a una ficha con filas etiqueta / valor y las propuestas apilan sus botones */
+@container (max-width: 520px) {
+  .amt-hero {
+    align-items: flex-start;
+    padding: var(--s-4);
+  }
+
+  .amt-symbol {
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+  }
+
+  .info-grid {
+    gap: 0;
+    background: var(--surface-2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-lg);
+  }
+
+  .info-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: var(--s-3);
+    align-items: baseline;
+    padding: 11px 14px;
+    background: none;
+    border: 0;
+    border-radius: 0;
+  }
+
+  .info-item + .info-item {
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .info-lbl {
+    font-size: var(--text-xs);
+  }
+
+  .info-sub {
+    grid-row: 2;
+  }
+
+  .info-item > :not(.info-lbl) {
+    grid-column: 2;
+    justify-self: end;
+    min-width: 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+
+  .match-box {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .match-box > :last-child {
+    flex: 1 1 100%;
+  }
+
+  .match-actions .match-btn {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 640px) {
+  .modal-footer-actions {
+    flex-wrap: wrap;
+  }
+
+  .footer-left {
+    flex: 1 1 100%;
+  }
+
+  .footer-left > *,
+  .close-btn {
+    flex: 1 1 auto;
+  }
 }
 </style>
