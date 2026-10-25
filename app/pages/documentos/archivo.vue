@@ -141,17 +141,6 @@ async function remove(f: VaultFile) {
   }
 }
 
-function menuFor(f: VaultFile) {
-  return [
-    { label: 'Ver', icon: 'ph:eye', onClick: () => show(f) },
-    ...(signableMime(f.mime) ? [{ label: 'Firmar…', icon: 'ph:signature', onClick: () => show(f, true) }] : []),
-    { label: 'Descargar', icon: 'ph:download-simple', onClick: () => { window.location.href = `/api/files/${f.id}?download=1` } },
-    { label: 'Mover o renombrar', icon: 'ph:folder-simple-dashed', onClick: () => openEdit(f) },
-    { divider: true },
-    { label: 'Eliminar', icon: 'ph:trash', danger: true, onClick: () => remove(f) },
-  ]
-}
-
 // Clic derecho / pulsación larga: además de lo del menú «⋮», mover de carpeta o de trimestre sin abrir el formulario
 async function moveTo(f: VaultFile, body: { folder?: string, quarter?: number }, ok: string) {
   try {
@@ -265,11 +254,7 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
           <UiBadge size="sm" tone="neutral" :icon="vaultFolder(f.folder).icon" class="f-folder">{{ vaultFolder(f.folder).label }}</UiBadge>
           <span class="f-q num">{{ f.quarter }}T {{ f.year }}</span>
           <span class="f-size num">{{ fileSize(f.size) }}</span>
-          <UiMenu :items="menuFor(f)" :width="200">
-            <template #default="{ toggle }">
-              <UiButton variant="ghost" size="sm" square icon="ph:dots-three-vertical" :aria-label="`Acciones de ${f.name}`" @click="toggle" />
-            </template>
-          </UiMenu>
+          <UiRowMenuButton :menu="() => ctxFor(f)" :label="`Acciones de ${f.name}`" />
         </li>
       </ul>
       <UiPager v-model="page" v-model:size="pageSize" :pages="pages" :total="pageTotal" />

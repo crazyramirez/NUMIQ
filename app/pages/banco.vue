@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { BulkAction } from '~/components/ui/BulkBar.vue'
-import type { MenuItem } from '~/components/ui/Menu.vue'
 import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 import type { ImportResult } from '~/components/bank/ImportModal.vue'
 
@@ -286,53 +285,6 @@ function toggleExpand(id: number) {
       if (el) checkDesc(el, id)
     })
   }
-}
-
-function menuFor(tx: Tx): MenuItem[] {
-  const items: MenuItem[] = [
-    { label: 'Ver información completa', icon: 'ph:info', onClick: () => openDetail(tx) },
-  ]
-  if (tx.status !== 'pending') {
-    items.push({ divider: true })
-    if (tx.status === 'matched') {
-      items.push({
-        label: tx.amount > 0 ? 'Reasignar a otra factura…' : 'Reasignar a otro gasto…',
-        icon: 'ph:arrows-left-right',
-        onClick: () => openMatch(tx),
-      })
-    }
-    else {
-      items.push({
-        label: tx.amount > 0 ? 'Asignar a una factura…' : 'Asignar a un gasto…',
-        icon: 'ph:link',
-        onClick: () => openMatch(tx),
-      })
-    }
-    items.push({
-      label: tx.status === 'matched' ? 'Deshacer conciliación' : 'Volver a pendiente',
-      icon: 'ph:arrow-counter-clockwise',
-      onClick: () => unmatch(tx),
-    })
-    return items
-  }
-  items.push(
-    { divider: true },
-    { label: tx.amount > 0 ? 'Buscar factura…' : 'Buscar gasto…', icon: 'ph:magnifying-glass', onClick: () => openMatch(tx) },
-  )
-  if (tx.amount < 0) {
-    items.push(
-      { label: 'Crear gasto…', icon: 'ph:plus-circle', onClick: () => openExpense(tx) },
-      { label: 'Crear gasto no deducible', icon: 'ph:prohibit', onClick: () => createExpense(tx, 0) },
-    )
-  }
-  items.push(
-    { divider: true },
-    { label: 'Traspaso entre cuentas', icon: 'ph:arrows-left-right', onClick: () => ignore(tx, 'Traspaso entre tus cuentas') },
-    { label: 'Pago de impuestos', icon: 'ph:bank', onClick: () => ignore(tx, 'Pago de impuestos') },
-    { label: tx.amount > 0 ? 'Ingreso personal' : 'Gasto personal', icon: 'ph:user', onClick: () => ignore(tx, tx.amount > 0 ? 'Ingreso personal' : 'Gasto personal') },
-    { label: 'Ignorar', icon: 'ph:eye-slash', onClick: () => ignore(tx) },
-  )
-  return items
 }
 
 // ─── Selección: aceptar, ignorar, deshacer o eliminar muchos de una vez (los de la página a la vista) ───
@@ -714,11 +666,7 @@ const pages = computed(() => pageCount(data.value?.total ?? 0, data.value?.pageS
                   Reasignar
                 </UiButton>
               </template>
-              <UiMenu :items="menuFor(tx)" :width="230">
-                <template #default="{ toggle }">
-                  <UiButton size="sm" variant="ghost" square icon="ph:dots-three-bold" aria-label="Más acciones" @click="toggle" />
-                </template>
-              </UiMenu>
+              <UiRowMenuButton :menu="() => txCtx(tx)" label="Más acciones" />
             </div>
           </li>
         </ul>

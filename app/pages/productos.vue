@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { ItemCategory } from '~/components/ItemCategoriesModal.vue'
 import type { BulkAction } from '~/components/ui/BulkBar.vue'
-import type { MenuItem } from '~/components/ui/Menu.vue'
 import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 
 interface Item {
@@ -101,13 +100,6 @@ const removeItem = useItemDelete()
 async function remove(i: Item) {
   if (await removeItem(i)) refreshAll()
 }
-
-const rowMenu = (i: Item): MenuItem[] => [
-  { label: 'Editar', icon: 'ph:pencil-simple', onClick: () => openEdit(i.id) },
-  { label: 'Facturar', icon: 'ph:receipt', to: `/facturas/nueva?producto=${i.id}` },
-  { divider: true },
-  { label: 'Eliminar', icon: 'ph:trash', danger: true, onClick: () => remove(i) },
-]
 
 // ─── Páginas de 25 y selección (de la página a la vista): eliminar o mover de categoría muchos de una vez ───
 
@@ -442,11 +434,7 @@ const bulkActions = computed<BulkAction[]>(() => [
               <span class="pv num">{{ i.vatRate ? `${eur(i.unitPrice)} + IVA ${pct(i.vatRate)}` : `${eur(i.unitPrice)} sin IVA` }}</span>
             </div>
 
-            <UiMenu :items="rowMenu(i)" :width="190">
-              <template #default="{ toggle }">
-                <UiButton variant="ghost" size="sm" square icon="ph:dots-three-bold" :aria-label="`Acciones de ${i.name}`" @click="toggle" />
-              </template>
-            </UiMenu>
+            <UiRowMenuButton :menu="() => rowCtx(i)" :label="`Acciones de ${i.name}`" />
           </li>
         </ul>
 
@@ -473,11 +461,7 @@ const bulkActions = computed<BulkAction[]>(() => [
                 <small v-if="i.unit">por {{ i.unit }}</small>
               </template>
               <template #menu>
-                <UiMenu :items="rowMenu(i)" :width="190">
-                  <template #default="{ toggle }">
-                    <UiButton variant="ghost" size="sm" square icon="ph:dots-three-bold" :aria-label="`Acciones de ${i.name}`" @click="toggle" />
-                  </template>
-                </UiMenu>
+                <UiRowMenuButton :menu="() => rowCtx(i)" :label="`Acciones de ${i.name}`" />
               </template>
             </UiListRow>
           </li>

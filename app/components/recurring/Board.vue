@@ -476,11 +476,7 @@ const IDEAS = computed(() => ALL_IDEAS.filter(i => i.kind === props.kind))
               :title="r.status === 'active' ? 'Pausar' : 'Reanudar'"
               @click="setActive(r, r.status !== 'active')"
             />
-            <UiMenu :items="menuOf(r)" :width="230">
-              <template #default="{ toggle }">
-                <UiButton size="sm" variant="ghost" square icon="ph:dots-three-bold" :aria-label="`Más acciones de ${r.name}`" @click="toggle" />
-              </template>
-            </UiMenu>
+            <UiRowMenuButton :menu="() => rowCtx(r)" :label="`Más acciones de ${r.name}`" />
           </div>
         </li>
       </ul>
@@ -514,11 +510,7 @@ const IDEAS = computed(() => ALL_IDEAS.filter(i => i.kind === props.kind))
               <small v-if="Math.abs(monthlyOf(r) - r.total) > 0.005">{{ eur(monthlyOf(r), false) }}/mes</small>
             </template>
             <template #menu>
-              <UiMenu :items="menuOf(r)" :width="230">
-                <template #default="{ toggle }">
-                  <UiButton size="sm" variant="ghost" square icon="ph:dots-three-bold" :aria-label="`Más acciones de ${r.name}`" @click="toggle" />
-                </template>
-              </UiMenu>
+              <UiRowMenuButton :menu="() => rowCtx(r)" :label="`Más acciones de ${r.name}`" />
             </template>
           </UiListRow>
         </li>

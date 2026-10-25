@@ -224,32 +224,6 @@ function statusItems(r: Row): MenuItem[] {
   return items
 }
 
-function rowMenu(r: Row): MenuItem[] {
-  const isQ = isQuote.value
-  const items: MenuItem[] = [
-    { label: 'Ver detalle', icon: 'ph:eye', to: `${base.value}/${r.id}` },
-    { label: 'Editar', icon: 'ph:pencil-simple', to: `${base.value}/${r.id}/editar` },
-  ]
-  // También aquí: en pantallas medianas el botón «Cobrar» de la fila no se muestra
-  if (!isQ && ['issued', 'sent', 'partial'].includes(r.status)) {
-    items.push({ label: 'Registrar cobro', icon: 'ph:hand-coins', onClick: () => { payDoc.value = r } })
-  }
-  // Estado del presupuesto a mano (el facturado ya está aceptado y no cambia)
-  if (isQ && r.status !== 'invoiced') {
-    items.push({ divider: true }, { heading: 'Estado' }, ...QUOTE_STATUS_OPTIONS.map(o => ({
-      label: o.label,
-      icon: o.icon,
-      active: r.status === o.value,
-      onClick: () => setRowStatus(r, o.value),
-    })), { divider: true })
-  }
-  if (r.status !== 'draft') {
-    items.push({ label: 'Descargar PDF', icon: 'ph:download-simple', onClick: () => window.open(`/api/sales/${r.id}/pdf?download=1`, '_blank') })
-  }
-  items.push({ divider: true }, { label: isQ ? 'Eliminar presupuesto' : 'Eliminar factura', icon: 'ph:trash', danger: true, onClick: () => removeDoc(r) })
-  return items
-}
-
 // ─── Páginas (50 por defecto) y selección de todo lo filtrado: cambiar el estado o eliminar muchos de una vez ───
 
 const list = computed(() => rows.value ?? [])
@@ -445,7 +419,13 @@ function rowCtx(r: Row): CtxSpec {
     ...(desktopCtx() ? [{ label: 'Abrir en otra pestaña', icon: 'ph:arrow-square-out', onClick: () => window.open(url, '_blank', 'noopener') }] : []),
     { divider: true },
   ]
-  if (!isQ && ['issued', 'sent', 'partial'].includes(r.status)) items.push({ label: 'Registrar cobro…', icon: 'ph:hand-coins', onClick: () => { payDoc.value = r } })
+  // Cobro: de un toque (hoy, por lo pendiente) o con otra fecha o importe
+  if (!isQ && ['issued', 'sent', 'partial'].includes(r.status)) {
+    items.push(
+      { label: 'Cobrada hoy', sub: eur(r.total - r.paidTotal), icon: 'ph:hand-coins', onClick: () => payToday(r) },
+      { label: 'Registrar cobro…', sub: 'Otra fecha, importe o forma de pago', icon: 'ph:calendar-dots', onClick: () => { payDoc.value = r } },
+    )
+  }
   if (isQ && !['invoiced', 'rejected', 'draft'].includes(r.status)) items.push({ label: 'Convertir en factura', icon: 'ph:receipt', onClick: () => convertRow(r) })
   if (isQ && r.status !== 'invoiced') {
     items.push({
@@ -633,12 +613,7 @@ const bulkActions = computed<BulkAction[]>(() => [
                 <td class="act-col" @click.stop @keydown.stop>
                   <div class="row-acts">
                     <SalesInvoiceLinks v-if="isQuote && r.invoices.length" :invoices="r.invoices" />
-                    <UiButton v-if="!isQuote && ['issued', 'sent', 'partial'].includes(r.status)" size="sm" variant="ghost" icon="ph:hand-coins" class="quick" @click="payDoc = r">Cobrar</UiButton>
-                    <UiMenu :items="rowMenu(r)" :width="isQuote ? 220 : 190">
-                      <template #default="{ toggle }">
-                        <UiButton variant="ghost" size="sm" square icon="ph:dots-three-bold" :aria-label="`Acciones de ${r.number ?? 'borrador'}`" @click="toggle" />
-                      </template>
-                    </UiMenu>
+                    <UiRowMenuButton :menu="() => rowCtx(r)" :label="`Acciones de ${r.number ?? 'borrador'}`" />
                   </div>
                 </td>
               </tr>
@@ -672,11 +647,7 @@ const bulkActions = computed<BulkAction[]>(() => [
                 <small v-else-if="r.status === 'partial'">pend. {{ eur(r.total - r.paidTotal) }}</small>
               </template>
               <template #menu>
-                <UiMenu :items="rowMenu(r)" :width="isQuote ? 220 : 190">
-                  <template #default="{ toggle }">
-                    <UiButton variant="ghost" size="sm" square icon="ph:dots-three-bold" :aria-label="`Acciones de ${r.number ?? 'borrador'}`" @click="toggle" />
-                  </template>
-                </UiMenu>
+                <UiRowMenuButton :menu="() => rowCtx(r)" :label="`Acciones de ${r.number ?? 'borrador'}`" />
               </template>
               <template v-if="isQuote && r.invoices.length" #after>
                 <div class="m-invoices">
@@ -900,7 +871,8 @@ const bulkActions = computed<BulkAction[]>(() => [
 }
 
 .act-col {
-  width: 120px;
+  width: 1%;
+  white-space: nowrap;
   text-align: right;
   padding-right: var(--s-3);
 }
@@ -910,16 +882,6 @@ const bulkActions = computed<BulkAction[]>(() => [
   align-items: center;
   justify-content: flex-end;
   gap: var(--s-1);
-}
-
-.quick {
-  opacity: 0;
-  transition: opacity var(--t-fast);
-}
-
-tr:hover .quick,
-.quick:focus-visible {
-  opacity: 1;
 }
 
 .sk {
@@ -984,8 +946,7 @@ input[type='checkbox'] {
 }
 
 @container sales (max-width: 999px) {
-  .col-due,
-  .quick {
+  .col-due {
     display: none;
   }
 

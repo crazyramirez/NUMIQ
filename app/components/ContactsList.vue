@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { BulkAction } from '~/components/ui/BulkBar.vue'
-import type { MenuItem } from '~/components/ui/Menu.vue'
 import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 
 /** Listado de clientes o proveedores con búsqueda y lo facturado o gastado en el periodo (por defecto, el año en curso) */
@@ -113,13 +112,6 @@ async function removeContact(r: ContactRow) {
   catch (err) {
     toast.error('No se pudo eliminar', errorMessage(err))
   }
-}
-
-function rowMenu(r: ContactRow): MenuItem[] {
-  return [
-    { label: 'Ver detalle', icon: 'ph:eye', to: `${base.value}/${r.id}` },
-    { label: isClient.value ? 'Eliminar cliente' : 'Eliminar proveedor', icon: 'ph:trash', danger: true, onClick: () => removeContact(r) },
-  ]
 }
 
 // ─── Páginas de 25 y selección (de la página a la vista): eliminar muchos de una vez ───
@@ -368,11 +360,7 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
                 </td>
                 <td class="r muted c-last">{{ r.lastActivity ? relDays(r.lastActivity) : '—' }}</td>
                 <td class="act-col" @click.stop @keydown.stop>
-                  <UiMenu :items="rowMenu(r)" :width="190">
-                    <template #default="{ toggle }">
-                      <UiButton variant="ghost" size="sm" square icon="ph:dots-three-bold" :aria-label="`Acciones de ${r.name}`" @click="toggle" />
-                    </template>
-                  </UiMenu>
+                  <UiRowMenuButton :menu="() => rowCtx(r)" :label="`Acciones de ${r.name}`" />
                 </td>
               </tr>
             </tbody>
@@ -396,11 +384,7 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
                 <small>{{ isClient ? 'facturado' : 'gastado' }} {{ periodPhrase(period) }}</small>
               </template>
               <template #menu>
-                <UiMenu :items="rowMenu(r)" :width="190">
-                  <template #default="{ toggle }">
-                    <UiButton variant="ghost" size="sm" square icon="ph:dots-three-bold" :aria-label="`Acciones de ${r.name}`" @click="toggle" />
-                  </template>
-                </UiMenu>
+                <UiRowMenuButton :menu="() => rowCtx(r)" :label="`Acciones de ${r.name}`" />
               </template>
             </UiListRow>
           </li>

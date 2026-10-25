@@ -861,6 +861,7 @@ function savePartial() {
                 <th>Deducible</th>
                 <th class="r">Total</th>
                 <th>Estado</th>
+                <th class="act-col"><span class="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>
@@ -930,6 +931,10 @@ function savePartial() {
                     </template>
                   </div>
                 </td>
+                <!-- Mismo menú que el clic derecho -->
+                <td class="act-col" @click.stop @keydown.stop>
+                  <UiRowMenuButton :menu="() => rowCtx(e)" :label="`Acciones de ${nameOf(e)}`" />
+                </td>
               </tr>
             </tbody>
           </table>
@@ -967,6 +972,9 @@ function savePartial() {
                 </span>
               </template>
               <template #amount>{{ eur(e.total) }}</template>
+              <template #menu>
+                <UiRowMenuButton :menu="() => rowCtx(e)" :label="`Acciones de ${nameOf(e)}`" />
+              </template>
             </UiListRow>
           </li>
         </ul>
@@ -1046,6 +1054,13 @@ function savePartial() {
 </template>
 
 <style scoped>
+.act-col {
+  width: 1%;
+  padding-right: var(--s-3);
+  white-space: nowrap;
+  text-align: right;
+}
+
 .summary {
   display: grid;
   gap: var(--s-4);
