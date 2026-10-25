@@ -11,6 +11,8 @@ export interface SalesEmailInput {
   attachPdf: boolean
   /** Adjuntos del documento que viajan también en el correo (orden de pedido, albarán…) */
   attachmentIds: number[]
+  /** Documento original importado o escaneado del que sale la factura */
+  attachOriginal?: boolean
 }
 
 const KIND_TITLES: Record<string, string> = { invoice: 'Factura', rectifying: 'Factura rectificativa', quote: 'Presupuesto', proforma: 'Proforma' }
@@ -54,6 +56,10 @@ export async function sendSalesEmail(company: Company, userId: number | null, id
         eq(tables.files.companyId, company.id), eq(tables.files.linkedType, 'sales_document'), eq(tables.files.linkedId, id), inArray(tables.files.id, input.attachmentIds),
       ))
     : []
+  if (input.attachOriginal && doc.original && !extra.some(f => f.id === doc.original!.id)) {
+    const [file] = await db.select().from(tables.files).where(and(eq(tables.files.id, doc.original.id), eq(tables.files.companyId, company.id)))
+    if (file) extra.unshift(file)
+  }
   const extraFiles = await Promise.all(extra.map(async f => ({ filename: f.originalName, content: await readStoredFile(f.path), contentType: f.mime })))
   const totalBytes = extraFiles.reduce((s, f) => s + f.content.length, input.attachPdf ? buffer.length : 0)
   if (totalBytes > 20 * 1024 * 1024) throw createError({ statusCode: 413, statusMessage: 'Los adjuntos superan 20 MB: Gmail no los aceptaría' })

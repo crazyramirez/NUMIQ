@@ -25,6 +25,7 @@ type Doc = PaperDoc & {
   viewCount: number
   emails: Array<{ id: number, kind: 'document' | 'reminder', to: string, subject: string, status: 'sent' | 'failed', error: string | null, withPdf: boolean, createdAt: string }>
   attachments: Array<{ id: number, originalName: string, mime: string, size: number, createdAt: string }>
+  original: { id: number, originalName: string, mime: string, size: number } | null
   canEdit?: boolean
   hasVerifactu?: boolean
   prev?: { id: number, number: string | null } | null

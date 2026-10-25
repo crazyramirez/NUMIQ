@@ -10,6 +10,8 @@ const props = defineProps<{
     dueDate: string | null
     contact: { name: string, email?: string | null, kind?: 'company' | 'person' } | null
     attachments: Array<{ id: number, originalName: string, size: number }>
+    /** Archivo importado o escaneado del que sale la factura */
+    original?: { id: number, originalName: string, size: number } | null
   }
   companyName: string
   reminder?: boolean
@@ -23,7 +25,7 @@ const label = computed(() => (isQuote.value ? 'presupuesto' : props.doc.kind ===
 // Saludo con el nombre de pila solo para personas; a una empresa, "Hola:"
 const firstName = computed(() => (props.doc.contact?.kind === 'person' ? props.doc.contact.name.split(' ')[0] ?? '' : ''))
 
-const form = reactive({ to: '', cc: '', subject: '', message: '', attachPdf: true, attachmentIds: [] as number[] })
+const form = reactive({ to: '', cc: '', subject: '', message: '', attachPdf: true, attachOriginal: false, attachmentIds: [] as number[] })
 const errors = reactive<Record<string, string | null>>({ to: null, subject: null, message: null })
 const sending = ref(false)
 
@@ -36,6 +38,7 @@ function defaults() {
   form.to = props.doc.contact?.email ?? ''
   form.cc = ''
   form.attachPdf = true
+  form.attachOriginal = false
   form.attachmentIds = []
   const d = designData.value?.design
   const tokens: Record<string, string> = {
@@ -125,6 +128,12 @@ async function send() {
           <span class="att-ic pdf"><Icon name="ph:file-pdf-fill" /></span>
           <span class="grow truncate">{{ (doc.number ?? 'documento') }}.pdf</span>
           <span class="muted small">PDF con tu diseño</span>
+        </label>
+        <label v-if="doc.original" class="att-row">
+          <input v-model="form.attachOriginal" type="checkbox">
+          <span class="att-ic"><Icon name="ph:file-text" /></span>
+          <span class="grow truncate">{{ doc.original.originalName }}</span>
+          <span class="muted small">Original · {{ sizeLabel(doc.original.size) }}</span>
         </label>
         <label v-for="a in doc.attachments" :key="a.id" class="att-row">
           <input v-model="form.attachmentIds" type="checkbox" :value="a.id">

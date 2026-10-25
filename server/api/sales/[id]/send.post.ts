@@ -12,6 +12,8 @@ const schema = z.object({
   attachPdf: z.boolean().default(true),
   /** Adjuntos del documento que viajan también en el correo (orden de pedido, albarán…) */
   attachmentIds: z.array(z.number().int().positive()).max(10).default([]),
+  /** Documento original importado o escaneado del que sale la factura */
+  attachOriginal: z.boolean().default(false),
 })
 
 /** Envía la factura o el presupuesto (o un recordatorio de pago) desde el Gmail de la app */

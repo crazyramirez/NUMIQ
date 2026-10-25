@@ -282,6 +282,27 @@ export async function loadQuoteInvoices(companyId: number, quoteIds: number[]) {
   return result
 }
 
+/**
+ * Documento original (importado o escaneado) que se puede enviar al cliente con la factura: solo si
+ * es suyo y de nadie más. Un Excel/CSV o un PDF con varias facturas llevaría datos de otros clientes.
+ */
+async function ownOriginal(companyId: number, id: number, fileId: number) {
+  const db = useDb()
+  const f = tables.files
+  const [file] = await db.select({ id: f.id, originalName: f.originalName, mime: f.mime, size: f.size, kind: f.kind })
+    .from(f).where(and(eq(f.id, fileId), eq(f.companyId, companyId)))
+  // Ya adjunto: sale en la lista de adjuntos
+  if (!file || file.kind === 'attachment' || /spreadsheet|excel|csv|tab-separated|zip/.test(file.mime)) return null
+  const [sales, expenses] = await Promise.all([
+    db.select({ id: tables.salesDocuments.id }).from(tables.salesDocuments)
+      .where(and(eq(tables.salesDocuments.companyId, companyId), eq(tables.salesDocuments.fileId, fileId), ne(tables.salesDocuments.id, id))).limit(1),
+    db.select({ id: tables.expenses.id }).from(tables.expenses)
+      .where(and(eq(tables.expenses.companyId, companyId), eq(tables.expenses.fileId, fileId))).limit(1),
+  ])
+  if (sales.length || expenses.length) return null
+  return { id: file.id, originalName: file.originalName, mime: file.mime, size: file.size }
+}
+
 export async function loadSalesDocument(companyId: number, id: number) {
   const db = useDb()
   const [doc] = await db.select().from(tables.salesDocuments)
@@ -290,7 +311,7 @@ export async function loadSalesDocument(companyId: number, id: number) {
   const isQuoteFamily = doc.kind === 'quote' || doc.kind === 'proforma'
   const familyKinds = isQuoteFamily ? (['quote', 'proforma'] as const) : (['invoice', 'rectifying'] as const)
 
-  const [lines, payments, contact, verifactu, emails, attachments, owner, invoiceLinks, siblings, source] = await Promise.all([
+  const [lines, payments, contact, verifactu, emails, attachments, owner, invoiceLinks, siblings, source, original] = await Promise.all([
     db.select().from(tables.salesDocumentLines).where(eq(tables.salesDocumentLines.documentId, id)).orderBy(tables.salesDocumentLines.position),
     db.select().from(tables.payments).where(eq(tables.payments.salesDocumentId, id)).orderBy(tables.payments.date),
     doc.contactId ? db.select().from(tables.contacts).where(eq(tables.contacts.id, doc.contactId)).then(r => r[0] ?? null) : null,
@@ -324,6 +345,7 @@ export async function loadSalesDocument(companyId: number, id: number) {
         .where(and(eq(tables.salesDocuments.id, doc.sourceId), eq(tables.salesDocuments.companyId, companyId)))
         .then(r => r[0] ?? null)
       : null,
+    doc.fileId ? ownOriginal(companyId, id, doc.fileId) : null,
   ])
   const production = owner ? verifactuSettings(owner).environment === 'production' : false
   const idx = siblings.findIndex(s => s.id === id)
@@ -339,6 +361,8 @@ export async function loadSalesDocument(companyId: number, id: number) {
     payments,
     emails,
     attachments,
+    /** Archivo importado o escaneado del que sale la factura (si no figura ya entre los adjuntos) */
+    original,
     contact: contact ? contactView(contact) : null,
     hasVerifactu: false,
     canEdit: true,
