@@ -2,6 +2,8 @@
 import type { MenuItem } from '~/components/ui/Menu.vue'
 
 const { navOpen } = useSidebar()
+// Punto en el menú si hay importaciones por confirmar en Documentos
+const inbox = useInboxCount()
 const palette = useState('paletteOpen', () => false)
 const { isDark, toggle: toggleTheme } = useTheme()
 const { open: openScan } = useScan()
@@ -15,8 +17,11 @@ const createItems: MenuItem[] = CREATE_ACTIONS.map(a => ({ label: a.label, icon:
 
 <template>
   <header class="topbar">
-    <UiButton class="burger" variant="ghost" square icon="ph:list" aria-label="Abrir menú" @click="navOpen = true" />
-    <!-- Móvil: la marca a la izquierda; crear y «Más» están en la barra inferior -->
+    <span class="burger">
+      <UiButton variant="ghost" square icon="ph:list" :aria-label="inbox.count.value ? 'Abrir menú: hay documentos por revisar' : 'Abrir menú'" @click="navOpen = true" />
+      <span v-if="inbox.count.value" class="burger-dot" aria-hidden="true" />
+    </span>
+    <!-- Móvil: menú y marca a la izquierda, tema a la derecha; crear está en la barra inferior -->
     <NuxtLink to="/" class="m-brand" aria-label="NUMIQ, inicio"><AppLogo :size="30" :wordmark="false" /></NuxtLink>
 
     <button type="button" class="search" @click="palette = true">
@@ -26,7 +31,7 @@ const createItems: MenuItem[] = CREATE_ACTIONS.map(a => ({ label: a.label, icon:
     </button>
 
     <div class="right">
-      <UiButton variant="ghost" square :icon="isDark ? 'ph:sun' : 'ph:moon'" aria-label="Cambiar tema" @click="toggleTheme" />
+      <UiButton class="theme-btn" variant="ghost" square :icon="isDark ? 'ph:sun' : 'ph:moon'" :aria-label="isDark ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'" :title="isDark ? 'Tema claro' : 'Tema oscuro'" @click="toggleTheme" />
       <UiBadge v-if="readOnly" tone="ai" icon="ph:eye" class="ro">Modo consulta</UiBadge>
       <UiButton v-if="!readOnly" class="scan-btn" variant="secondary" icon="ph:scan" aria-label="Escanear factura o ticket" title="Escanear factura o ticket" @click="openScan()">
         Escanear
@@ -58,7 +63,21 @@ const createItems: MenuItem[] = CREATE_ACTIONS.map(a => ({ label: a.label, icon:
 }
 
 .burger {
+  position: relative;
   display: none;
+  flex: none;
+}
+
+.burger-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 9px;
+  height: 9px;
+  background: var(--danger-solid);
+  border: 2px solid var(--bg);
+  border-radius: 50%;
+  pointer-events: none;
 }
 
 .search {
@@ -139,18 +158,49 @@ const createItems: MenuItem[] = CREATE_ACTIONS.map(a => ({ label: a.label, icon:
 }
 
 @media (max-width: 767px) {
+  .topbar {
+    gap: var(--s-2);
+    padding: 0 var(--s-3);
+  }
+
   .keys,
-  .burger,
-  .right > :not(.ro) {
+  .right > :not(.ro, .theme-btn) {
     display: none;
   }
 
   .m-brand {
     display: inline-flex;
+    margin-right: 2px;
   }
 
   .search {
     max-width: none;
+    height: 40px;
+  }
+
+  .right {
+    gap: 0;
+  }
+
+  /* Botones de 40 px: cómodos para el dedo */
+  .topbar .burger :deep(.btn),
+  .topbar .theme-btn {
+    width: 40px;
+    height: 40px;
+  }
+
+  .topbar .burger :deep(.btn) {
+    color: var(--text);
+  }
+
+  .topbar .burger :deep(.btn-icon) {
+    width: 22px;
+    height: 22px;
+  }
+
+  .topbar .theme-btn :deep(.btn-icon) {
+    width: 20px;
+    height: 20px;
   }
 }
 </style>

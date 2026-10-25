@@ -1,20 +1,15 @@
 <script setup lang="ts">
 /**
- * Navegación del móvil: lo de cada día a un toque (Inicio, Ingresos, Gastos), un «+» central para
- * crear (con la foto del ticket primero) y «Más» abre el menú completo.
+ * Navegación del móvil: lo de cada día a un toque (Inicio, Ingresos, Gastos, Banco) y un «+» central
+ * para crear (con la foto del ticket primero). El menú completo se abre con la hamburguesa de arriba.
  */
 const route = useRoute()
-const { navOpen } = useSidebar()
 const { me } = useMe()
 const { open: openScan } = useScan()
 
 // El gestor entra en modo consulta: sin crear
 const readOnly = computed(() => me.value?.company?.role === 'advisor')
 const area = computed(() => areaOf(route.path).area?.key ?? null)
-// Ajustes y demás pantallas sin área propia también se abren desde «Más»
-const isMore = computed(() => (area.value ? !['inicio', 'ingresos', 'gastos'].includes(area.value) : route.path !== '/'))
-// Punto en «Más» si hay importaciones por confirmar en Documentos
-const inbox = useInboxCount()
 
 const sheet = ref(false)
 watch(() => route.fullPath, () => (sheet.value = false))
@@ -59,13 +54,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <Icon :name="area === 'gastos' ? 'ph:wallet-fill' : 'ph:wallet'" class="bi-ic" aria-hidden="true" />
       <span>Gastos</span>
     </NuxtLink>
-    <button type="button" class="bi" :class="{ on: isMore }" aria-label="Más: banco, informes, impuestos, contactos, ajustes…" @click="navOpen = true">
-      <span class="bi-wrap">
-        <Icon :name="isMore ? 'ph:dots-three-circle-fill' : 'ph:dots-three-circle'" class="bi-ic" aria-hidden="true" />
-        <span v-if="inbox.count.value" class="bi-dot" aria-hidden="true" />
-      </span>
-      <span>Más</span>
-    </button>
+    <NuxtLink to="/banco" class="bi" :class="{ on: area === 'banco' }" :aria-current="area === 'banco' ? 'page' : undefined">
+      <Icon :name="area === 'banco' ? 'ph:piggy-bank-fill' : 'ph:piggy-bank'" class="bi-ic" aria-hidden="true" />
+      <span>Banco</span>
+    </NuxtLink>
   </nav>
 
   <Teleport to="body">
@@ -139,21 +131,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   height: 23px;
 }
 
-.bi-wrap {
-  position: relative;
-  display: inline-grid;
-}
-
-.bi-dot {
-  position: absolute;
-  top: -1px;
-  right: -2px;
-  width: 9px;
-  height: 9px;
-  background: var(--danger-solid);
-  border: 2px solid var(--surface);
-  border-radius: 50%;
-}
 
 .bi.on {
   color: var(--brand-text);

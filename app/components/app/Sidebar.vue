@@ -38,6 +38,21 @@ async function logout() {
 
 const pwa = usePwa()
 
+// Cajón del móvil: la apariencia a un toque, sin pasar por el menú de la cuenta
+const themes = [
+  { value: 'light', label: 'Claro', icon: 'ph:sun' },
+  { value: 'dark', label: 'Oscuro', icon: 'ph:moon' },
+  { value: 'auto', label: 'Auto', icon: 'ph:circle-half' },
+] as const
+const themeChoice = computed(() => colorMode.store.value)
+const setTheme = (v: typeof themes[number]['value']) => (colorMode.value = v)
+
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'Escape' && navOpen.value) navOpen.value = false
+}
+onMounted(() => window.addEventListener('keydown', onKey))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
+
 const userItems = computed<MenuItem[]>(() => [
   { heading: 'Apariencia' },
   { label: 'Claro', icon: 'ph:sun', active: colorMode.store.value === 'light', onClick: () => (colorMode.value = 'light') },
@@ -62,6 +77,9 @@ const userItems = computed<MenuItem[]>(() => [
         </NuxtLink>
         <button class="collapse" type="button" :aria-label="mini ? 'Expandir menú' : 'Contraer menú'" @click="collapsed = !collapsed">
           <Icon name="ph:sidebar-simple" />
+        </button>
+        <button class="close" type="button" aria-label="Cerrar menú" @click="navOpen = false">
+          <Icon name="ph:x" />
         </button>
       </div>
 
@@ -99,6 +117,21 @@ const userItems = computed<MenuItem[]>(() => [
       </nav>
 
       <div class="bottom">
+        <div class="theme" role="radiogroup" aria-label="Apariencia">
+          <button
+            v-for="t in themes"
+            :key="t.value"
+            type="button"
+            role="radio"
+            class="th"
+            :class="{ on: themeChoice === t.value }"
+            :aria-checked="themeChoice === t.value"
+            @click="setTheme(t.value)"
+          >
+            <Icon :name="themeChoice === t.value ? `${t.icon}-fill` : t.icon" class="th-ic" aria-hidden="true" />
+            {{ t.label }}
+          </button>
+        </div>
         <NuxtLink :to="SETTINGS_NAV.to" class="item" :class="{ active: isActive(SETTINGS_NAV.to) }" :title="mini ? SETTINGS_NAV.label : undefined">
           <Icon :name="isActive(SETTINGS_NAV.to) ? `${SETTINGS_NAV.icon}-fill` : SETTINGS_NAV.icon" class="ic" aria-hidden="true" />
           <span v-if="!mini" class="grow">{{ SETTINGS_NAV.label }}</span>
@@ -166,6 +199,11 @@ const userItems = computed<MenuItem[]>(() => [
 .collapse:hover {
   color: var(--text);
   background: var(--surface-hover);
+}
+
+.close,
+.theme {
+  display: none;
 }
 
 .company-menu {
@@ -353,6 +391,67 @@ const userItems = computed<MenuItem[]>(() => [
 
   .collapse {
     display: none;
+  }
+
+  .close {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    margin-right: -6px;
+    font-size: 20px;
+    color: var(--text-3);
+    border-radius: var(--r-md);
+  }
+
+  .close:active {
+    background: var(--surface-hover);
+  }
+
+  .theme {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 2px;
+    margin-bottom: 6px;
+    padding: 3px;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--r-lg);
+  }
+
+  .th {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 36px;
+    font-size: var(--text-sm);
+    font-weight: 550;
+    color: var(--text-3);
+    border-radius: var(--r-md);
+    -webkit-tap-highlight-color: transparent;
+    transition: color var(--t-fast), background var(--t-fast), box-shadow var(--t-fast);
+  }
+
+  .th.on {
+    color: var(--text);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm), 0 0 0 1px var(--border-subtle);
+  }
+
+  .th-ic {
+    width: 16px;
+    height: 16px;
+  }
+
+  .th.on .th-ic {
+    color: var(--brand);
+  }
+
+  /* Con notch o barra de gestos: nada queda debajo */
+  .sidebar {
+    padding-top: max(14px, env(safe-area-inset-top));
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
   }
 
   .scrim {
