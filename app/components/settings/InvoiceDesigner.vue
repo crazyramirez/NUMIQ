@@ -21,6 +21,10 @@ const LAYOUTS: Array<{ value: DesignLayout, label: string, hint: string }> = [
   { value: 'bold', label: 'Impacto', hint: 'Cabecera a todo color' },
 ]
 const COLORS = ['#4f46e5', '#7c3aed', '#0369a1', '#0f766e', '#15803d', '#c2410c', '#be123c', '#111827']
+const DENSITIES: Array<{ value: DesignDensity, label: string, hint: string, size: number }> = [
+  { value: 'normal', label: 'Normal', hint: 'Más aire entre bloques', size: 22 },
+  { value: 'compact', label: 'Compacto', hint: 'Más contenido por página', size: 17 },
+]
 const FONTS: Array<{ value: DesignFont, label: string, hint: string }> = [
   { value: 'Inter', label: 'Inter', hint: 'Neutra y precisa' },
   { value: 'Manrope', label: 'Manrope', hint: 'Geométrica y moderna' },
@@ -272,6 +276,26 @@ function insertToken(kind: 'invoice' | 'quote', token: string) {
                 <span class="aa" :style="fontStyle(f.value)">Aa</span>
                 <span class="f-name">{{ f.label }}</span>
                 <span class="f-hint">{{ f.hint }}</span>
+              </button>
+            </div>
+          </div>
+          <div class="field">
+            <span class="label">Tamaño de letra</span>
+            <div class="fonts two" role="radiogroup" aria-label="Tamaño de letra">
+              <button
+                v-for="o in DENSITIES"
+                :key="o.value"
+                type="button"
+                role="radio"
+                :aria-checked="d.density === o.value"
+                class="font"
+                :class="{ on: d.density === o.value }"
+                :disabled="!canEdit"
+                @click="d.density = o.value"
+              >
+                <span class="aa" :style="{ ...fontStyle(d.font), fontSize: `${o.size}px` }">Aa</span>
+                <span class="f-name">{{ o.label }}</span>
+                <span class="f-hint">{{ o.hint }}</span>
               </button>
             </div>
           </div>
@@ -620,6 +644,17 @@ function insertToken(kind: 'invoice' | 'quote', token: string) {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+}
+
+.fonts.two {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/* «Aa» a dos tamaños sobre la misma línea base */
+.fonts.two .aa {
+  display: flex;
+  align-items: flex-end;
+  height: 27px;
 }
 
 .font {

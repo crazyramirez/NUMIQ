@@ -63,7 +63,7 @@ const place = (p: PaperParty) => [[p.postalCode, p.city].filter(Boolean).join(' 
 </script>
 
 <template>
-  <article class="paper" :class="`l-${d.layout}`" :style="paperStyle">
+  <article class="paper" :class="[`l-${d.layout}`, { dense: d.density === 'compact' }]" :style="paperStyle">
     <header class="paper-head">
       <div class="paper-brand">
         <img v-if="logoUrl && d.showLogo" :src="logoUrl" :alt="brand" class="paper-logo">

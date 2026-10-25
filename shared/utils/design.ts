@@ -5,6 +5,8 @@
 
 export type DesignLayout = 'modern' | 'classic' | 'minimal' | 'bold'
 export type DesignFont = 'Inter' | 'Lora' | 'Manrope'
+/** Tamaño de letra y espaciado: `compact` mete más contenido en cada página */
+export type DesignDensity = 'normal' | 'compact'
 /**
  * Tabla de conceptos: `auto` solo enseña lo que aporta (cantidad y precio si alguna cantidad no es 1,
  * IVA si hay varios tipos), `full` todas las columnas, `amount` concepto e importe y `concept` solo el concepto
@@ -17,6 +19,7 @@ export interface InvoiceDesign {
   layout: DesignLayout
   accentColor: string
   font: DesignFont
+  density: DesignDensity
   showLogo: boolean
   /** Columna de descuento: solo si alguna línea lo lleva, o siempre */
   discountColumn: 'auto' | 'always'
@@ -55,6 +58,7 @@ export function defaultDesign(accentColor?: string | null): InvoiceDesign {
     layout: 'modern',
     accentColor: accentColor && /^#[0-9a-f]{6}$/i.test(accentColor) ? accentColor : '#4f46e5',
     font: 'Inter',
+    density: 'normal',
     showLogo: true,
     discountColumn: 'auto',
     lineColumns: 'auto',
@@ -87,6 +91,7 @@ export function normalizeDesign(raw: Partial<InvoiceDesign> | null | undefined, 
     layout: (['modern', 'classic', 'minimal', 'bold'] as const).includes(raw.layout as DesignLayout) ? raw.layout as DesignLayout : d.layout,
     accentColor: raw.accentColor && /^#[0-9a-f]{6}$/i.test(raw.accentColor) ? raw.accentColor : d.accentColor,
     font: (['Inter', 'Lora', 'Manrope'] as const).includes(raw.font as DesignFont) ? raw.font as DesignFont : d.font,
+    density: raw.density === 'compact' ? 'compact' : 'normal',
     showLogo: raw.showLogo ?? d.showLogo,
     discountColumn: raw.discountColumn === 'always' ? 'always' : 'auto',
     lineColumns: LINE_COLUMNS_MODES.includes(raw.lineColumns as LineColumnsMode) ? raw.lineColumns as LineColumnsMode : d.lineColumns,

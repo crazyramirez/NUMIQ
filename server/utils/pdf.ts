@@ -186,7 +186,8 @@ function partyLines(p: PartySnapshot, extra: Array<string | null | undefined> = 
 function brandBlock(company: PdfCompany, logo: PdfLogo | null, design: InvoiceDesign, color: string, align: 'left' | 'center' = 'left', plate = false): Node {
   const brand = company.tradeName || company.legalName
   if (logo && design.showLogo) {
-    const img = logo.svg ? { svg: logo.svg, fit: [150, 56] } : { image: logo.dataUrl, fit: [150, 56] }
+    const fit = design.density === 'compact' ? [132, 48] : [150, 56]
+    const img = logo.svg ? { svg: logo.svg, fit } : { image: logo.dataUrl, fit }
     if (!plate) return { ...img, alignment: align, margin: [0, 0, 0, 2] }
     // Sobre una banda de color el logo va en una placa blanca: sus colores siempre se leen
     return {
@@ -220,6 +221,15 @@ function qrBlock(doc: PdfDocument, color: string, semi: string, align: 'left' | 
 
 export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: InvoiceDesign, logo: PdfLogo | null) {
   const t = themeFor(design)
+  // Densidad: «normal» ya aprovecha bien la hoja; «compacto» reduce la letra y los espacios interiores
+  const compact = design.density === 'compact'
+  const f = (n: number) => (compact ? Math.round(n * 9) / 10 : n)
+  const gap = (n: number) => Math.round(n * (compact ? 0.6 : 0.78) * 10) / 10
+  const pad = (n: number) => (compact ? Math.round(n * 7) / 10 : n)
+  const side = compact ? 38 : 42
+  const top = compact ? 30 : 38
+  const contentW = 595.28 - side * 2
+  const bandH = top + (compact ? 96 : 100)
   const a = design.accentColor
   const F = design.font
   const SEMI = `${F}Semi`
@@ -237,20 +247,20 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
     const fg = onColor(a)
     const qr = doc.verifactu
       ? {
-          table: { widths: ['auto'], body: [[{ qr: doc.verifactu.qrUrl, fit: 70, eccLevel: 'M', foreground: '#11141b', background: '#ffffff' }]] },
-          layout: { hLineWidth: () => 0, vLineWidth: () => 0, fillColor: () => '#ffffff', paddingLeft: () => 4, paddingRight: () => 4, paddingTop: () => 4, paddingBottom: () => 4 },
+          table: { widths: ['auto'], body: [[{ qr: doc.verifactu.qrUrl, fit: compact ? 60 : 70, eccLevel: 'M', foreground: '#11141b', background: '#ffffff' }]] },
+          layout: { hLineWidth: () => 0, vLineWidth: () => 0, fillColor: () => '#ffffff', paddingLeft: () => 4, paddingRight: () => 4, paddingTop: () => pad(4), paddingBottom: () => pad(4) },
           width: 'auto',
         }
       : null
     header = {
       columns: [
-        { width: '*', stack: [brandBlock(company, logo, design, fg, 'left', true), { text: partyLines(doc.issuer).slice(0, 1).join(''), fontSize: 8.5, color: fg, margin: [0, 6, 0, 0] }] },
+        { width: '*', stack: [brandBlock(company, logo, design, fg, 'left', true), { text: partyLines(doc.issuer).slice(0, 1).join(''), fontSize: f(8.5), color: fg, margin: [0, 6, 0, 0] }] },
         {
           width: 'auto',
           stack: [
-            { text: title.toUpperCase(), font: SEMI, fontSize: 22, characterSpacing: 1.2, color: fg, alignment: 'right' },
-            { text: numberText, fontSize: 11, color: fg, alignment: 'right', margin: [0, 4, 0, 0] },
-            doc.verifactu ? { text: 'VERI*FACTU · verificable en la AEAT', fontSize: 6.8, color: fg, alignment: 'right', margin: [0, 8, 0, 0] } : null,
+            { text: title.toUpperCase(), font: SEMI, fontSize: f(22), characterSpacing: 1.2, color: fg, alignment: 'right' },
+            { text: numberText, fontSize: f(11), color: fg, alignment: 'right', margin: [0, 4, 0, 0] },
+            doc.verifactu ? { text: 'VERI*FACTU · verificable en la AEAT', fontSize: f(6.8), color: fg, alignment: 'right', margin: [0, 8, 0, 0] } : null,
           ].filter(Boolean),
         },
         qr,
@@ -263,11 +273,11 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
     header = {
       stack: [
         brandBlock(company, logo, design, INK, 'center'),
-        { text: [company.legalName, `NIF ${company.nif}`, ...partyLines(doc.issuer).slice(1, 3)].filter(Boolean).join('  ·  '), fontSize: 8, color: MUTED, alignment: 'center', margin: [0, 6, 0, 0] },
-        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 507, y2: 0, lineWidth: 1.6, lineColor: a }, { type: 'line', x1: 0, y1: 4, x2: 507, y2: 4, lineWidth: 0.5, lineColor: a }], margin: [0, 12, 0, 14] },
+        { text: [company.legalName, `NIF ${company.nif}`, ...partyLines(doc.issuer).slice(1, 3)].filter(Boolean).join('  ·  '), fontSize: f(8), color: MUTED, alignment: 'center', margin: [0, 6, 0, 0] },
+        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: contentW, y2: 0, lineWidth: 1.6, lineColor: a }, { type: 'line', x1: 0, y1: 4, x2: contentW, y2: 4, lineWidth: 0.5, lineColor: a }], margin: [0, gap(12), 0, gap(14)] },
         {
           columns: [
-            { width: '*', stack: [{ text: title.toUpperCase(), font: SEMI, fontSize: 18, characterSpacing: 1.5, color: t.titleColor }, { text: numberText, fontSize: 11, color: INK_2, margin: [0, 3, 0, 0] }] },
+            { width: '*', stack: [{ text: title.toUpperCase(), font: SEMI, fontSize: f(18), characterSpacing: 1.5, color: t.titleColor }, { text: numberText, fontSize: f(11), color: INK_2, margin: [0, 3, 0, 0] }] },
             qrBlock(doc, MUTED, SEMI),
           ].filter(Boolean),
         },
@@ -283,9 +293,9 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
           width: 'auto',
           stack: [
             minimal
-              ? { text: title, fontSize: 26, color: t.titleColor, alignment: 'right' }
-              : { text: title.toUpperCase(), font: SEMI, fontSize: 22, characterSpacing: 1.2, color: t.titleColor, alignment: 'right' },
-            { text: numberText, font: SEMI, fontSize: 11, color: doc.number ? INK_2 : MUTED, alignment: 'right', margin: [0, 3, 0, 8] },
+              ? { text: title, fontSize: f(26), color: t.titleColor, alignment: 'right' }
+              : { text: title.toUpperCase(), font: SEMI, fontSize: f(22), characterSpacing: 1.2, color: t.titleColor, alignment: 'right' },
+            { text: numberText, font: SEMI, fontSize: f(11), color: doc.number ? INK_2 : MUTED, alignment: 'right', margin: [0, 3, 0, 8] },
             qrBlock(doc, MUTED, SEMI),
           ].filter(Boolean),
         },
@@ -305,7 +315,7 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
     ? {
         table: {
           widths: metaItems.map(() => '*'),
-          body: [metaItems.map(([k, v]) => ({ stack: [label(k), { text: v, font: SEMI, fontSize: 10, margin: [0, 2, 0, 0] }] }))],
+          body: [metaItems.map(([k, v]) => ({ stack: [label(k), { text: v, font: SEMI, fontSize: f(10), margin: [0, 2, 0, 0] }] }))],
         },
         layout: {
           hLineWidth: () => (design.layout === 'classic' ? 0.6 : 0),
@@ -313,36 +323,36 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
           hLineColor: () => LINE,
           vLineColor: () => (design.layout === 'classic' ? LINE : '#ffffff'),
           fillColor: () => (design.layout === 'classic' ? null : SOFT),
-          paddingLeft: () => 10, paddingRight: () => 10, paddingTop: () => 8, paddingBottom: () => 8,
+          paddingLeft: () => 10, paddingRight: () => 10, paddingTop: () => pad(8), paddingBottom: () => pad(8),
         },
-        margin: [0, t.header === 'band' ? 52 : 26, 0, 0],
+        margin: [0, t.header === 'band' ? (compact ? 40 : 46) : gap(26), 0, 0],
       }
     : {
-        columns: metaItems.map(([k, v]) => ({ width: 'auto', stack: [label(k), { text: v, fontSize: 10, margin: [0, 2, 0, 0] }] })),
+        columns: metaItems.map(([k, v]) => ({ width: 'auto', stack: [label(k), { text: v, fontSize: f(10), margin: [0, 2, 0, 0] }] })),
         columnGap: 34,
-        margin: [0, 30, 0, 0],
+        margin: [0, gap(30), 0, 0],
       }
 
   // Emisor y cliente
   const party = (title: string, p: PartySnapshot | null, extra: Array<string | null | undefined>) => ({
     stack: p
-      ? [label(title), { text: p.name, font: SEMI, fontSize: 10.5, margin: [0, 3, 0, 2] }, ...partyLines(p, extra).map(l => ({ text: l, color: INK_2 }))]
+      ? [label(title), { text: p.name, font: SEMI, fontSize: f(10.5), margin: [0, 3, 0, 2] }, ...partyLines(p, extra).map(l => ({ text: l, color: INK_2 }))]
       : [label(title), { text: 'Sin cliente', color: MUTED, margin: [0, 3, 0, 0] }],
   })
   const issuerExtra = [[company.email, company.phone].filter(Boolean).join(' · ') || null, company.website]
   const parties: Node = t.partiesBoxed
     ? {
         table: { widths: ['*', '*'], body: [[party('Emisor', doc.issuer, issuerExtra), party('Cliente', doc.customer, [doc.customer?.email])]] },
-        layout: { hLineWidth: () => 0.6, vLineWidth: () => 0.6, hLineColor: () => LINE, vLineColor: () => LINE, paddingLeft: () => 12, paddingRight: () => 12, paddingTop: () => 10, paddingBottom: () => 10 },
-        margin: [0, 18, 0, 0],
+        layout: { hLineWidth: () => 0.6, vLineWidth: () => 0.6, hLineColor: () => LINE, vLineColor: () => LINE, paddingLeft: () => 12, paddingRight: () => 12, paddingTop: () => pad(10), paddingBottom: () => pad(10) },
+        margin: [0, gap(18), 0, 0],
       }
-    : { columns: [party('Emisor', doc.issuer, issuerExtra), party('Cliente', doc.customer, [doc.customer?.email])], columnGap: 40, margin: [0, 24, 0, 0] }
+    : { columns: [party('Emisor', doc.issuer, issuerExtra), party('Cliente', doc.customer, [doc.customer?.email])], columnGap: 40, margin: [0, gap(24), 0, 0] }
 
   const rectNote: Node | null = doc.kind === 'rectifying'
     ? {
         table: { widths: ['*'], body: [[{ text: [{ text: `Rectificativa ${doc.rectificationCode ?? ''}`, font: SEMI }, doc.rectifiedNumber ? ` de la factura ${doc.rectifiedNumber}` : '', doc.rectificationReason ? ` · ${doc.rectificationReason}` : ''], color: '#9a3412' }]] },
-        layout: { hLineWidth: () => 0, vLineWidth: () => 0, fillColor: () => '#fff7ed', paddingLeft: () => 10, paddingRight: () => 10, paddingTop: () => 7, paddingBottom: () => 7 },
-        margin: [0, 18, 0, 0],
+        layout: { hLineWidth: () => 0, vLineWidth: () => 0, fillColor: () => '#fff7ed', paddingLeft: () => 10, paddingRight: () => 10, paddingTop: () => pad(7), paddingBottom: () => pad(7) },
+        margin: [0, gap(18), 0, 0],
       }
     : null
 
@@ -354,18 +364,18 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
     ? {
         stack: doc.description.map((b, n): Node => {
           const top = n ? 5 : 0
-          if (b.k === 'h') return { text: runs(b.c), font: SEMI, fontSize: 10.5, color: INK, margin: [0, n ? 9 : 0, 0, 0] }
-          if (b.k === 'p') return { text: runs(b.c), color: INK_2, lineHeight: 1.25, margin: [0, top, 0, 0] }
-          const items = b.items.map(it => ({ text: runs(it), color: INK_2, lineHeight: 1.25, margin: [0, 1, 0, 1] }))
+          if (b.k === 'h') return { text: runs(b.c), font: SEMI, fontSize: f(10.5), color: INK, margin: [0, n ? 9 : 0, 0, 0] }
+          if (b.k === 'p') return { text: runs(b.c), color: INK_2, lineHeight: compact ? 1.16 : 1.22, margin: [0, top, 0, 0] }
+          const items = b.items.map(it => ({ text: runs(it), color: INK_2, lineHeight: compact ? 1.16 : 1.22, margin: [0, 1, 0, 1] }))
           return b.k === 'ul' ? { ul: items, markerColor: a, margin: [0, top, 0, 0] } : { ol: items, markerColor: a, margin: [0, top, 0, 0] }
         }),
-        margin: [0, 22, 0, 0],
+        margin: [0, gap(22), 0, 0],
       }
     : null
 
   // Tabla de conceptos (no la hay en las facturas «solo descripción»: la descripción explica el trabajo)
   const cols: Array<{ title: string, width: number | string, align: 'left' | 'right', cell: (l: PdfLine) => Node }> = [
-    ...(hasSku ? [{ title: 'Ref.', width: 48, align: 'left' as const, cell: (l: PdfLine) => ({ text: l.sku ?? '', color: MUTED, fontSize: 8.5 }) }] : []),
+    ...(hasSku ? [{ title: 'Ref.', width: 48, align: 'left' as const, cell: (l: PdfLine) => ({ text: l.sku ?? '', color: MUTED, fontSize: f(8.5) }) }] : []),
     {
       title: 'Concepto', width: '*', align: 'left',
       cell: (l) => {
@@ -373,8 +383,8 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
         return {
           stack: [
             { text: first, color: INK },
-            rest.join('\n').trim() ? { text: rest.join('\n').trim(), fontSize: 8.3, color: MUTED, margin: [0, 2, 0, 0] } : null,
-            !l.irpfApplies && doc.irpfRate ? { text: 'Sin retención', fontSize: 7.5, color: MUTED, margin: [0, 2, 0, 0] } : null,
+            rest.join('\n').trim() ? { text: rest.join('\n').trim(), fontSize: f(8.3), color: MUTED, margin: [0, 2, 0, 0] } : null,
+            !l.irpfApplies && doc.irpfRate ? { text: 'Sin retención', fontSize: f(7.5), color: MUTED, margin: [0, 2, 0, 0] } : null,
           ].filter(Boolean),
         }
       },
@@ -408,17 +418,17 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
       fillColor: (row: number) => (row === 0 ? t.table.headFill : t.table.zebra && row % 2 === 0 ? t.table.zebra : null),
       paddingLeft: (i: number) => (i === 0 && !t.table.grid && !t.table.headFill ? 0 : 7),
       paddingRight: (i: number, node: Node) => (i === node.table.widths.length - 1 && !t.table.grid && !t.table.headFill ? 0 : 7),
-      paddingTop: (row: number) => (row === 0 ? 7 : 6.5),
-      paddingBottom: (row: number) => (row === 0 ? 7 : 6.5),
+      paddingTop: (row: number) => pad(row === 0 ? 7 : 6.5),
+      paddingBottom: (row: number) => pad(row === 0 ? 7 : 6.5),
     },
-    margin: [0, 26, 0, 0],
+    margin: [0, gap(26), 0, 0],
   }
 
   // Totales
   const totalRows: Node[] = [
     [{ text: 'Base imponible', color: INK_2 }, { text: eur(totals.taxBase), alignment: 'right' }],
     ...totals.groups.map(g => [
-      { text: [`IVA ${num(g.vatRate)} %`, totals.groups.length > 1 ? { text: `  s/ ${eur(g.base)}`, fontSize: 8, color: MUTED } : ''], color: INK_2 },
+      { text: [`IVA ${num(g.vatRate)} %`, totals.groups.length > 1 ? { text: `  s/ ${eur(g.base)}`, fontSize: f(8), color: MUTED } : ''], color: INK_2 },
       { text: eur(g.vat), alignment: 'right' },
     ]),
     ...(totals.surchargeTotal ? [[{ text: 'Recargo de equivalencia', color: INK_2 }, { text: eur(totals.surchargeTotal), alignment: 'right' }]] : []),
@@ -428,8 +438,8 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
     table: {
       widths: ['*', 'auto'],
       body: [[
-        { text: 'Total', font: SEMI, fontSize: 11, color: t.total.color, margin: [0, 2, 0, 0] },
-        { text: eur(totals.total), font: SEMI, fontSize: t.total.size, color: t.total.color, alignment: 'right' },
+        { text: 'Total', font: SEMI, fontSize: f(11), color: t.total.color, margin: [0, 2, 0, 0] },
+        { text: eur(totals.total), font: SEMI, fontSize: f(t.total.size), color: t.total.color, alignment: 'right' },
       ]],
     },
     layout: {
@@ -437,13 +447,13 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
       vLineWidth: () => 0,
       hLineColor: () => INK,
       fillColor: () => t.total.fill,
-      paddingLeft: () => (t.total.fill ? 12 : 0), paddingRight: () => (t.total.fill ? 12 : 0), paddingTop: () => 9, paddingBottom: () => 9,
+      paddingLeft: () => (t.total.fill ? 12 : 0), paddingRight: () => (t.total.fill ? 12 : 0), paddingTop: () => pad(9), paddingBottom: () => pad(9),
     },
     margin: [0, 6, 0, 0],
   }
   const totalsBlock: Node = {
     stack: [
-      { table: { widths: ['*', 'auto'], body: totalRows }, layout: { hLineWidth: () => 0, vLineWidth: () => 0, paddingLeft: () => 0, paddingRight: () => 0, paddingTop: () => 3, paddingBottom: () => 3 } },
+      { table: { widths: ['*', 'auto'], body: totalRows }, layout: { hLineWidth: () => 0, vLineWidth: () => 0, paddingLeft: () => 0, paddingRight: () => 0, paddingTop: () => pad(3), paddingBottom: () => pad(3) } },
       totalBox,
     ],
   }
@@ -458,16 +468,16 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
         ...(doc.signature.label ? [label(doc.signature.label)] : []),
         { image: doc.signature.dataUrl, fit: [170, 60], margin: [0, 6, 0, 0] },
         { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 190, y2: 0, lineWidth: 0.6, lineColor: LINE }], margin: [0, 4, 0, 0] },
-        { text: doc.signature.signer, fontSize: 8, color: MUTED, margin: [0, 4, 0, 0] },
+        { text: doc.signature.signer, fontSize: f(8), color: MUTED, margin: [0, 4, 0, 0] },
       ],
-      margin: [0, notes ? 18 : 0, 0, 0],
+      margin: [0, notes ? gap(18) : 0, 0, 0],
     })
   }
 
   const bottom: Node = {
     columns: [{ width: '*', stack: left }, { width: 230, stack: [totalsBlock] }],
     columnGap: 36,
-    margin: [0, 22, 0, 0],
+    margin: [0, gap(22), 0, 0],
     unbreakable: true,
   }
 
@@ -482,7 +492,7 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
     if (pay.length) {
       paymentNode = {
         stack: [label('Datos de pago'), ...pay.map(p => ({ ...p, margin: [0, 2, 0, 0] }))],
-        margin: [0, 18, 0, 0],
+        margin: [0, gap(18), 0, 0],
         unbreakable: true,
       }
     }
@@ -492,35 +502,35 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
 
   const definition: Record<string, unknown> = {
     pageSize: 'A4',
-    pageMargins: [44, 50, 44, 62],
+    pageMargins: [side, top, side, compact ? 40 : 46],
     info: { title: `${title} ${numberText} · ${brand}`, author: brand, creator: 'NUMIQ', producer: 'NUMIQ' },
-    defaultStyle: { font: F, fontSize: 9.4, color: INK, lineHeight: 1.22 },
+    defaultStyle: { font: F, fontSize: f(9.4), color: INK, lineHeight: compact ? 1.16 : 1.2 },
     styles: {
-      label: { font: SEMI, fontSize: 6.8, characterSpacing: 0.7 },
-      brand: { font: SEMI, fontSize: 15, characterSpacing: -0.2 },
+      label: { font: SEMI, fontSize: f(6.8), characterSpacing: 0.7 },
+      brand: { font: SEMI, fontSize: f(15), characterSpacing: -0.2 },
     },
     background: (page: number, size: { width: number }) => {
       if (page !== 1) return null
-      if (t.header === 'band') return { canvas: [{ type: 'rect', x: 0, y: 0, w: size.width, h: 150, color: a }] }
+      if (t.header === 'band') return { canvas: [{ type: 'rect', x: 0, y: 0, w: size.width, h: bandH, color: a }] }
       if (t.accentBar) return { canvas: [{ type: 'rect', x: 0, y: 0, w: size.width, h: 6, color: a }] }
       return null
     },
     header: (page: number) => (page === 1
       ? null
-      : { columns: [{ text: brand, font: SEMI, fontSize: 8, color: MUTED }, { text: `${title} ${numberText}`, fontSize: 8, color: MUTED, alignment: 'right' }], margin: [44, 22, 44, 0] }),
+      : { columns: [{ text: brand, font: SEMI, fontSize: f(8), color: MUTED }, { text: `${title} ${numberText}`, fontSize: f(8), color: MUTED, alignment: 'right' }], margin: [side, 14, side, 0] }),
     footer: (page: number, pages: number) => ({
       stack: [
-        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 507, y2: 0, lineWidth: 0.5, lineColor: LINE }] },
+        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: contentW, y2: 0, lineWidth: 0.5, lineColor: LINE }] },
         {
           columns: [
-            { text: legal, fontSize: 7, color: MUTED, width: '*' },
-            { text: `Página ${page} de ${pages}`, fontSize: 7, color: MUTED, alignment: 'right', width: 70 },
+            { text: legal, fontSize: f(7), color: MUTED, width: '*' },
+            { text: `Página ${page} de ${pages}`, fontSize: f(7), color: MUTED, alignment: 'right', width: 70 },
           ],
           margin: [0, 6, 0, 0],
         },
-        page === pages && doc.verifactu ? { text: `Huella ${doc.verifactu.hash}`, fontSize: 5.8, color: '#a3a9b5', margin: [0, 3, 0, 0] } : null,
+        page === pages && doc.verifactu ? { text: `Huella ${doc.verifactu.hash}`, fontSize: f(5.8), color: '#a3a9b5', margin: [0, 3, 0, 0] } : null,
       ].filter(Boolean),
-      margin: [44, 16, 44, 0],
+      margin: [side, compact ? 10 : 12, side, 0],
     }),
     watermark: doc.status === 'draft' ? { text: 'BORRADOR', color: '#9aa1ae', opacity: 0.08, bold: true, font: F } : undefined,
     content: [header, meta, parties, rectNote, description, lineTable, bottom, paymentNode].filter(Boolean),

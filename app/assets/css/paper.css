@@ -230,6 +230,73 @@
   background: var(--p-accent);
 }
 
+/* ─── Compacto: letra algo menor y espacios más cortos (como el PDF compacto) ─── */
+.paper.dense {
+  font-size: 12.5px;
+  line-height: 1.42;
+}
+
+/* Solo en pantalla: al imprimir la hoja va sin márgenes propios */
+@media screen and (min-width: 768px) {
+  .paper.dense {
+    padding: 44px 52px 34px;
+  }
+
+  .paper.dense.l-bold .paper-head {
+    margin: -44px -52px 0;
+    padding: 34px 52px 26px;
+  }
+}
+
+.paper.dense .paper-meta {
+  margin-top: 24px;
+}
+
+.paper.dense .paper-meta > div {
+  padding: 7px 12px;
+}
+
+.paper.dense .paper-parties {
+  margin-top: 22px;
+}
+
+.paper.dense .paper-party-name {
+  font-size: 13.5px;
+}
+
+.paper.dense .paper-lines {
+  margin-top: 24px;
+}
+
+.paper.dense .paper-lines td {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+.paper.dense .paper-bottom {
+  margin-top: 20px;
+}
+
+.paper.dense .paper-totals .t-row {
+  padding: 4px 0;
+}
+
+.paper.dense .paper-totals .t-total {
+  padding: 10px 14px;
+}
+
+.paper.dense .paper-totals .t-total strong {
+  font-size: 19px;
+}
+
+.paper.dense .paper-title h2 {
+  font-size: 23px;
+}
+
+.paper.dense .paper-pay {
+  margin-top: 16px;
+}
+
 @media (max-width: 767px) {
   .l-bold .paper-head {
     margin: -32px -20px 0;

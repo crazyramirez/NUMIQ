@@ -5,6 +5,7 @@ export const designInputSchema = z.object({
   layout: z.enum(['modern', 'classic', 'minimal', 'bold']),
   accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Color no válido'),
   font: z.enum(['Inter', 'Lora', 'Manrope']),
+  density: z.enum(['normal', 'compact']).optional().default('normal'),
   showLogo: z.boolean(),
   discountColumn: z.enum(['auto', 'always']),
   lineColumns: z.enum(['auto', 'full', 'amount', 'concept']).optional().default('auto'),
