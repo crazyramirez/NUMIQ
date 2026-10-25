@@ -70,8 +70,11 @@ watch(q, (v) => {
   }, 250)
 })
 watch([status, account], () => (page.value = 1))
+const pageSize = usePageSize()
+// Al cambiar el tamaño, sigue a la vista lo primero que se estaba viendo
+watch(pageSize, (n, old) => (page.value = Math.floor(((page.value - 1) * old) / n) + 1))
 
-const query = computed(() => ({ status: status.value, account: account.value ?? undefined, q: qDebounced.value || undefined, page: page.value }))
+const query = computed(() => ({ status: status.value, account: account.value ?? undefined, q: qDebounced.value || undefined, page: page.value, size: pageSize.value }))
 const { data, refresh, status: loadStatus } = await useFetch<BankData>('/api/bank', { query, lazy: true })
 const firstLoad = computed(() => loadStatus.value === 'pending' && !data.value)
 const accounts = computed(() => data.value?.accounts ?? [])
@@ -617,7 +620,7 @@ const pages = computed(() => pageCount(data.value?.total ?? 0, data.value?.pageS
           </li>
         </ul>
 
-        <UiPager v-model="page" :pages="pages" />
+        <UiPager v-model="page" v-model:size="pageSize" :pages="pages" :total="data?.total" />
       </UiCard>
 
       <UiBulkBar

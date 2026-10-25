@@ -6,6 +6,7 @@ const query = z.object({
   account: z.coerce.number().int().positive().optional(),
   q: z.string().trim().max(100).optional(),
   page: z.coerce.number().int().min(1).max(5000).default(1),
+  size: z.coerce.number().int().refine(n => PAGE_SIZES.some(s => s === n)).default(PAGE_SIZE),
 })
 
 /** Cuentas, resumen y movimientos del banco (filtrados por estado, cuenta y texto) */
@@ -27,7 +28,7 @@ export default defineEventHandler(async (event) => {
     ...(input.q ? [or(like(t.description, `%${input.q}%`), like(t.counterparty, `%${input.q}%`), sql`cast(${t.amount} as char) like ${`%${input.q.replace(',', '.').replace(/[^\d.-]/g, '') || '§'}%`}`)] : []),
   )
   const [rows, [total]] = await Promise.all([
-    db.select().from(t).where(where).orderBy(desc(t.date), desc(t.id)).limit(PAGE_SIZE).offset((input.page - 1) * PAGE_SIZE),
+    db.select().from(t).where(where).orderBy(desc(t.date), desc(t.id)).limit(input.size).offset((input.page - 1) * input.size),
     db.select({ n: count() }).from(t).where(where),
   ])
 
@@ -56,7 +57,7 @@ export default defineEventHandler(async (event) => {
     stats: { pending: by('pending', input.account), matched: by('matched', input.account), ignored: by('ignored', input.account), ready },
     total: total?.n ?? 0,
     page: input.page,
-    pageSize: PAGE_SIZE,
+    pageSize: input.size,
     items: rows.map((r) => {
       const doc = r.salesDocumentId ? docs.find(d => d.id === r.salesDocumentId) : null
       const exp = r.expenseId ? exps.find(e => e.id === r.expenseId) : null

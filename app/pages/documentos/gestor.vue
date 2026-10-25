@@ -59,7 +59,7 @@ const { data: preview, pending: loadingPreview } = await useFetch<Preview>('/api
   immediate: true,
 })
 const { data: info, refresh: refreshInfo } = await useFetch<{ advisor: Advisor | null, mail: boolean, packs: Pack[] }>('/api/advisor', { default: () => ({ advisor: null, mail: true, packs: [] }) })
-const { page: packPage, pages: packPages, items: shownPacks } = usePaged(() => info.value.packs)
+const { page: packPage, pages: packPages, items: shownPacks, size: packSize, total: packTotal } = usePaged(() => info.value.packs)
 
 const granOptions = [
   { value: 'month', label: 'Mes' },
@@ -391,7 +391,7 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
               <button type="button" class="pk-btn" :aria-label="`Borrar ${p.label}`" @click="removePack(p)"><Icon name="ph:trash" /></button>
             </li>
           </ul>
-          <UiPager v-model="packPage" :pages="packPages" />
+          <UiPager v-model="packPage" v-model:size="packSize" :pages="packPages" :total="packTotal" />
         </UiCard>
       </aside>
     </div>
