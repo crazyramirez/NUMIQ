@@ -411,10 +411,6 @@ const moreItems = computed<MenuItem[]>(() => {
             <UiBadge :tone="status.tone">{{ status.label }}</UiBadge>
           </div>
           <p class="st-total num">{{ eur(doc.total) }}</p>
-          <p v-if="isQuote && doc.status === 'invoiced' && !doc.invoices.length" class="muted small">
-            No hay una factura vinculada a este presupuesto.
-            <button type="button" class="link" @click="linkOpen = true">Buscar su factura</button>
-          </p>
           <template v-if="!isQuote && doc.status !== 'draft'">
             <div class="bar" role="progressbar" :aria-valuenow="Math.round(paidPct)" aria-valuemin="0" aria-valuemax="100" aria-label="Cobrado">
               <span :style="{ width: `${paidPct}%` }" />
@@ -453,9 +449,14 @@ const moreItems = computed<MenuItem[]>(() => {
           </div>
         </section>
 
-        <section v-if="canLink && linkedDocs.length" class="card links">
+        <!-- Sin vínculo y sin sugerencia: el acceso a vincular sigue a mano, no solo en «Más acciones» -->
+        <section v-if="canLink && (linkedDocs.length || !suggestion)" class="card links">
           <h2 class="section-title">{{ isQuote ? (linkedDocs.length > 1 ? 'Facturas vinculadas' : 'Factura vinculada') : 'Presupuesto de origen' }}</h2>
-          <ul>
+          <template v-if="!linkedDocs.length">
+            <p class="muted small l-empty">{{ isQuote ? (doc.status === 'invoiced' ? 'Está facturado, pero sin factura vinculada.' : 'Aún no hay una factura vinculada.') : 'No sale de ningún presupuesto.' }}</p>
+            <button type="button" class="link small l-more" @click="linkOpen = true"><Icon name="ph:link" aria-hidden="true" /> {{ isQuote ? 'Vincular a una factura' : 'Vincular a un presupuesto' }}</button>
+          </template>
+          <ul v-else>
             <li v-for="l in linkedDocs" :key="l.id">
               <span class="l-ic" aria-hidden="true"><Icon :name="isQuote ? 'ph:receipt' : 'ph:file-text'" /></span>
               <NuxtLink :to="linkTo(l.id)" class="grow min0 l-doc">
@@ -465,7 +466,7 @@ const moreItems = computed<MenuItem[]>(() => {
               <UiButton variant="ghost" size="sm" square icon="ph:link-break" :aria-label="`Desvincular ${l.number ?? ''}`" title="Desvincular" :loading="busy === `unlink-${l.id}`" :disabled="!!busy" @click="unlinkDoc(l)" />
             </li>
           </ul>
-          <button v-if="isQuote" type="button" class="link small l-more" @click="linkOpen = true"><Icon name="ph:plus" aria-hidden="true" /> Vincular otra factura</button>
+          <button v-if="isQuote && linkedDocs.length" type="button" class="link small l-more" @click="linkOpen = true"><Icon name="ph:plus" aria-hidden="true" /> Vincular otra factura</button>
         </section>
 
         <section v-if="doc.verifactu" class="card vf">
@@ -860,6 +861,10 @@ const moreItems = computed<MenuItem[]>(() => {
 
 .l-doc:hover .strong {
   color: var(--brand-text);
+}
+
+.l-empty {
+  margin-top: var(--s-2);
 }
 
 .l-more {
