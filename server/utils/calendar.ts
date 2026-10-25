@@ -3,6 +3,7 @@ import type { H3Event } from 'h3'
 import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, notInArray, or, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import type { CalendarItem, CalendarLayer, EventRepeat } from '../../shared/utils/calendar'
+import type { FiscalDeadline, Quarter } from '../../shared/utils/fiscal'
 
 /**
  * Calendario de una empresa: todo lo que tiene fecha (facturas, gastos, plazos de Hacienda,
@@ -201,25 +202,34 @@ export async function calendarItems(company: Company, from: string, to: string, 
       if (!list.length) return
       const filings = await db.select({ model: tables.taxFilings.model, year: tables.taxFilings.year, period: tables.taxFilings.period, status: tables.taxFilings.status, result: tables.taxFilings.result })
         .from(tables.taxFilings).where(eq(tables.taxFilings.companyId, company.id))
-      for (const d of list) {
+      const required = await Promise.all(list.map(d => requiredModels(company, d)))
+      list.forEach((d, i) => {
         const k = filingKey(d.period)
-        const done = d.models.filter(m => filings.some(f => f.model === m && f.year === k.year && f.period === k.period && (f.status === 'filed' || f.status === 'paid')))
-        const pending = d.models.filter(m => !done.includes(m))
+        const filed = (m: string) => filings.some(f => f.model === m && f.year === k.year && f.period === k.period && (f.status === 'filed' || f.status === 'paid'))
+        const done = d.models.filter(filed)
+        // Lo presentado cuenta aunque no tocara; lo que no aplica (sin retenciones, módulos…) no se pide
+        const must = [...new Set([...required[i]!, ...done])]
+        const pending = must.filter(m => !done.includes(m))
+        const skipped = d.models.filter(m => !must.includes(m))
         const result = round2(filings.filter(f => d.models.includes(f.model) && f.year === k.year && f.period === k.period).reduce((s, f) => s + Math.max(0, f.result), 0))
-        const status = !pending.length ? 'done' : d.end < today ? 'overdue' : d.end === today ? 'today' : 'pending'
+        // La Renta se presenta fuera de NUMIQ: solo se recuerda el plazo, nunca sale como presentada o fuera de plazo
+        const reminder = d.models.every(m => UNTRACKED.has(m)) && !done.length
+        const status = reminder ? (d.end < today ? null : d.end === today ? 'today' : 'pending') : !pending.length ? 'done' : d.end < today ? 'overdue' : d.end === today ? 'today' : 'pending'
         const to_ = k.quarter ? `/impuestos/cerrar?anio=${k.year}&t=${k.quarter}` : '/impuestos'
-        const models = d.models.map(m => (MODEL_NAMES[m] ? `${m} ${MODEL_NAMES[m]}` : m))
+        const names = (list: string[]) => list.map(m => (MODEL_NAMES[m] ? `${m} ${MODEL_NAMES[m]}` : m)).join(' · ')
         const notes = [
           `Plazo: del ${fdateEs(d.start)} al ${fdateEs(d.end)}.`,
-          `Modelos: ${models.join(' · ')}.`,
+          reminder ? `${names(d.models)}: se presenta en Renta Web de la AEAT.` : must.length ? `Te toca: ${names(must)}.` : 'No tienes nada que presentar en este plazo.',
           done.length ? `Presentados: ${done.join(', ')}.` : '',
           pending.length && done.length ? `Por presentar: ${pending.join(', ')}.` : '',
+          skipped.length && must.length ? `Sin nada que declarar: ${skipped.join(', ')}.` : '',
         ].filter(Boolean).join('\n')
+        const subtitle = `${reminder ? `Modelo ${d.models.join(', ')}` : must.length ? `Modelos ${must.join(', ')}` : 'Nada que presentar'} · ${d.period}`
         if (d.end >= from && d.end <= to) {
-          out.push({ id: `tax-${d.period}-${d.models.join('')}`, layer: 'tax', type: 'deadline', title: `Fin de plazo · ${d.title}`, subtitle: `Modelos ${d.models.join(', ')} · ${d.period}`, date: d.end, amount: result || null, flow: result ? 'out' : null, status, color: 'red', icon: 'ph:bank', to: to_, notes })
+          out.push({ id: `tax-${d.period}-${d.models.join('')}`, layer: 'tax', type: 'deadline', title: `Fin de plazo · ${d.title}`, subtitle, date: d.end, amount: result || null, flow: result ? 'out' : null, status, color: 'red', icon: 'ph:bank', to: to_, notes })
         }
-        out.push({ id: `taxw-${d.period}-${d.models.join('')}`, layer: 'tax', type: 'window', title: `Plazo ${d.title}`, subtitle: `Modelos ${d.models.join(', ')} · ${d.period}`, date: d.start, endDate: d.end, status, color: 'red', icon: 'ph:calendar-dots', to: to_, notes })
-      }
+        out.push({ id: `taxw-${d.period}-${d.models.join('')}`, layer: 'tax', type: 'window', title: `Plazo ${d.title}`, subtitle, date: d.start, endDate: d.end, status, color: 'red', icon: 'ph:calendar-dots', to: to_, notes })
+      })
     })())
   }
 
@@ -319,6 +329,36 @@ export function expandEvent(ev: CalendarEvent, from: string, to: string, today: 
       to: ev.contactId && contactName ? `${isClient === false ? '/proveedores' : '/clientes'}/${ev.contactId}` : null,
     }
   })
+}
+
+/**
+ * Modelos de un plazo que de verdad hay que presentar, con los criterios de «Cerrar trimestre»:
+ * 111 y 115 solo con retenciones, 130 no en módulos ni sociedades, 202 solo si sale a ingresar,
+ * 190 y 180 si hubo retenciones en el año y 347 si alguien pasa de 3.005,06 €.
+ */
+/** Modelos que NUMIQ no calcula ni deja marcar como presentados */
+const UNTRACKED = new Set(['100'])
+
+async function requiredModels(company: Company, d: FiscalDeadline): Promise<string[]> {
+  const k = filingKey(d.period)
+  if (k.quarter) {
+    const { from, to } = quarterRange(k.year, k.quarter as Quarter)
+    const wh = await withholdings(company.id, from, to)
+    const has = (w: { result: number, recipients: number }) => w.recipients > 0 || w.result !== 0
+    return d.models.filter(m => (m === '111' ? has(wh.m111) : m === '115' ? has(wh.m115) : m === '130' ? company.kind !== 'sociedad' && company.taxRegime !== 'modulos' : true))
+  }
+  if (d.models.includes('202')) {
+    const n = Number(k.period.slice(0, 1))
+    const est = await corporateEstimate(company, k.year)
+    return (est.payments[n - 1]?.amount ?? 0) > 0 ? ['202'] : []
+  }
+  if (d.models.every(m => UNTRACKED.has(m))) return []
+  if (d.models.includes('347')) return (await model347(company.id, k.year)).length ? ['347'] : []
+  if (d.models.includes('390')) {
+    const wh = await withholdings(company.id, `${k.year}-01-01`, `${k.year}-12-31`)
+    return d.models.filter(m => (m === '190' ? wh.m111.recipients > 0 : m === '180' ? wh.m115.recipients > 0 : true))
+  }
+  return d.models
 }
 
 const fdateEs = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', timeZone: 'UTC' })

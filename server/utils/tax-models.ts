@@ -210,7 +210,7 @@ function addTo(map: Map<string, Party>, p: { nif: string | null, name: string, p
 }
 
 /** Modelo 347: clientes y proveedores con más de 3.005,06 € en el año (IVA incluido), sin operaciones con retención */
-async function model347(companyId: number, year: number) {
+export async function model347(companyId: number, year: number) {
   const db = useDb()
   const s = tables.salesDocuments
   const e = tables.expenses

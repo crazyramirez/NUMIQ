@@ -316,12 +316,12 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
     <section class="kpis rise" aria-label="Resumen">
       <div class="kpi">
         <p class="eyebrow"><span class="kdot" style="background: var(--cal-brand)" /> Por cobrar en {{ monthName(ym).toLowerCase() }}</p>
-        <p class="v num pos">+{{ eur(kpi.inflow, false) }}</p>
+        <p class="v num" :class="{ pos: Math.round(kpi.inflow) > 0 }">{{ Math.round(kpi.inflow) > 0 ? '+' : '' }}{{ eur(kpi.inflow, false) }}</p>
         <p class="s">{{ kpi.inCount ? plural(kpi.inCount, 'vencimiento o cuota', 'vencimientos y cuotas') : 'Nada pendiente con fecha' }}</p>
       </div>
       <div class="kpi">
         <p class="eyebrow"><span class="kdot" style="background: var(--cal-amber)" /> Por pagar</p>
-        <p class="v num">−{{ eur(kpi.outflow, false) }}</p>
+        <p class="v num">{{ Math.round(kpi.outflow) > 0 ? '−' : '' }}{{ eur(kpi.outflow, false) }}</p>
         <p class="s">{{ kpi.outCount ? plural(kpi.outCount, 'pago previsto', 'pagos previstos') : 'Sin pagos previstos' }}</p>
       </div>
       <button type="button" class="kpi kpi-tax" :class="{ hot: deadlineDays !== null && deadlineDays <= 5 }" :disabled="!nextDeadline" @click="nextDeadline && (onSelect(nextDeadline.date), openItem(nextDeadline))">
@@ -337,7 +337,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
       </button>
       <div class="kpi">
         <p class="eyebrow"><span class="kdot" style="background: var(--cal-green)" /> Agenda</p>
-        <p class="v num">{{ kpi.events }}<span class="per"> {{ kpi.events === 1 ? 'evento' : 'eventos' }}</span></p>
+        <p class="v num">{{ kpi.events }}<span class="per">{{ kpi.events === 1 ? 'evento' : 'eventos' }}</span></p>
         <p class="s">
           <template v-if="kpi.tasks">{{ plural(kpi.tasks, 'tarea pendiente', 'tareas pendientes') }}</template>
           <template v-else-if="kpi.overdue"><span class="neg">{{ plural(kpi.overdue, 'vencido', 'vencidos') }}</span></template>
@@ -549,6 +549,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 }
 
 .per {
+  margin-left: 0.35em;
   font-size: var(--text-sm);
   font-weight: 500;
   letter-spacing: 0;

@@ -27,7 +27,7 @@ const when = computed(() => {
 
 const countdown = computed(() => {
   const i = it.value
-  if (!i || i.status === 'done') return null
+  if (!i?.status || i.status === 'done') return null
   const target = i.type === 'window' ? i.endDate! : i.date
   const n = daysUntil(target)
   if (i.layer !== 'tax' && i.type !== 'due') return null

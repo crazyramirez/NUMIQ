@@ -83,6 +83,8 @@ const weeks = computed<Week[]>(() => {
   return out
 })
 
+// Sin barras no hay filas para ellas (repeat(0, …) invalidaría toda la plantilla)
+const rowsOf = (lanes: number) => `var(--num-h) ${lanes ? `repeat(${lanes}, var(--row-h)) ` : ''}auto`
 const dayNum = (iso: string) => Number(iso.slice(8))
 const inMonth = (iso: string) => iso.slice(0, 7) === props.ym
 const isWeekend = (i: number) => i >= 5
@@ -135,7 +137,7 @@ function onDragEnd() {
     </div>
 
     <div class="mg-body" role="grid" :aria-label="monthTitle(ym)">
-      <div v-for="w in weeks" :key="w.days[0]" class="wk" role="row" :style="{ '--lanes': w.lanes }">
+      <div v-for="w in weeks" :key="w.days[0]" class="wk" role="row">
         <!-- Fondo: los días (clic, doble clic para crear, soltar al arrastrar) -->
         <div class="wk-cells">
           <div
@@ -167,7 +169,7 @@ function onDragEnd() {
         </div>
 
         <!-- Encima: barras y etiquetas -->
-        <div v-if="!dots" class="wk-fg">
+        <div v-if="!dots" class="wk-fg" :style="{ gridTemplateRows: rowsOf(w.lanes) }">
           <button
             v-for="s in w.segments"
             :key="s.item.id"
@@ -369,7 +371,6 @@ function onDragEnd() {
   position: relative;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  grid-template-rows: var(--num-h) repeat(var(--lanes), var(--row-h)) auto;
   row-gap: var(--row-gap);
   padding-bottom: 6px;
   pointer-events: none;
