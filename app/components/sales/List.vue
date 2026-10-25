@@ -149,16 +149,79 @@ async function removeDoc(r: Row) {
   }
 }
 
-async function setRowStatus(r: Row, s: string) {
-  if (r.status === s) return
+async function changeRow(call: () => Promise<unknown>, ok: string) {
   try {
-    await $fetch(`/api/sales/${r.id}/status`, { method: 'POST', body: { status: s } })
-    toast.success(`Presupuesto ${r.number ?? ''} ${QUOTE_STATUS[s]?.label.toLowerCase()}`)
+    await call()
+    toast.success(ok)
     refresh()
   }
   catch (err) {
     toast.error('No se pudo cambiar el estado', errorMessage(err))
   }
+}
+
+// URL como string: con la plantilla tipada, TS se queda sin pila (TS2321)
+const post = (url: string, body?: Record<string, unknown>) => $fetch(url, { method: 'POST', body })
+const postStatus = (r: Row, s: string) => () => post(`/api/sales/${r.id}/status`, { status: s })
+
+function setRowStatus(r: Row, s: string) {
+  if (r.status === s) return
+  return changeRow(postStatus(r, s), `Presupuesto ${r.number ?? ''} ${QUOTE_STATUS[s]?.label.toLowerCase()}`)
+}
+
+// ─── Estado desde la etiqueta de la fila: emitir, pendiente, enviada, cobrada o borrador ───
+
+async function issueRow(r: Row) {
+  const ok = await confirm({
+    title: '¿Emitir la factura?',
+    body: `Total ${eur(r.total)}. Se le asignará número correlativo y quedará lista para enviar.`,
+    confirmLabel: 'Emitir',
+  })
+  if (ok) await changeRow(() => post(`/api/sales/${r.id}/issue`), 'Factura emitida')
+}
+
+async function pendingRow(r: Row) {
+  if (r.status === 'issued') return
+  const label = `Factura ${r.number ?? ''} pendiente de cobro`
+  // Enviada sin cobros: solo se desmarca el envío
+  if (r.status === 'sent') return changeRow(postStatus(r, 'issued'), label)
+  const ok = await confirm({
+    title: '¿Marcar la factura como pendiente de cobro?',
+    body: 'Se quitarán sus cobros registrados y quedará todo el importe pendiente. Los movimientos bancarios vinculados se conservarán y quedarán pendientes de conciliar.',
+    confirmLabel: 'Marcar como pendiente',
+  })
+  if (ok) await changeRow(postStatus(r, 'pending'), label)
+}
+
+function payToday(r: Row) {
+  return changeRow(() => post(`/api/sales/${r.id}/payments`, {}), `Factura ${r.number ?? ''} cobrada · ${eur(r.total - r.paidTotal)}`)
+}
+
+function statusItems(r: Row): MenuItem[] {
+  if (isQuote.value) {
+    if (r.status === 'invoiced') return []
+    return [{ heading: 'Cambiar estado' }, ...QUOTE_STATUS_OPTIONS.map(o => ({ label: o.label, icon: o.icon, active: r.status === o.value, onClick: () => setRowStatus(r, o.value) }))]
+  }
+  if (r.status === 'cancelled') return []
+  if (r.status === 'draft') {
+    return [
+      { heading: 'Borrador' },
+      { label: 'Emitir…', icon: 'ph:seal-check', onClick: () => issueRow(r) },
+      { label: 'Editar', icon: 'ph:pencil-simple', to: `${base.value}/${r.id}/editar` },
+    ]
+  }
+  const paid = r.status === 'paid'
+  const items: MenuItem[] = [
+    { heading: 'Cambiar estado' },
+    { label: 'Pendiente de cobro', icon: 'ph:clock', active: r.status === 'issued', onClick: () => pendingRow(r) },
+  ]
+  // Con cobros, la factura conserva su estado de cobro: «enviada» solo se marca sin ellos
+  if (['issued', 'sent'].includes(r.status)) items.push({ label: 'Enviada', icon: 'ph:paper-plane-tilt', active: r.status === 'sent', onClick: () => r.status !== 'sent' && changeRow(postStatus(r, 'sent'), `Factura ${r.number ?? ''} enviada`) })
+  if (r.status === 'partial') items.push({ label: 'Cobro parcial', hint: `pend. ${eur(r.total - r.paidTotal)}`, icon: 'ph:circle-half', active: true })
+  items.push({ label: paid ? 'Cobrada' : 'Cobrada hoy', hint: paid ? undefined : eur(r.total - r.paidTotal), icon: 'ph:hand-coins', active: paid, onClick: () => !paid && payToday(r) })
+  if (!paid) items.push({ label: 'Cobro con otra fecha o importe…', icon: 'ph:calendar-dots', onClick: () => { payDoc.value = r } })
+  items.push({ divider: true }, { label: 'Pasar a borrador…', icon: 'ph:pencil-simple-line', onClick: () => markDraft([r]) })
+  return items
 }
 
 function rowMenu(r: Row): MenuItem[] {
@@ -239,8 +302,8 @@ async function deleteBulk() {
 const fem = computed(() => !isQuote.value)
 const done = (n: number, f: string, m: string) => `${n} ${noun(n)} ${n === 1 ? (fem.value ? f : m) : `${fem.value ? f : m}s`}`
 
-async function runStatus(body: Record<string, unknown>, ok: (n: number) => string) {
-  const ids = [...selected.value]
+async function runStatus(body: Record<string, unknown>, ok: (n: number) => string, only?: number[]) {
+  const ids = only ?? [...selected.value]
   if (!ids.length) return
   busy.value = true
   try {
@@ -252,7 +315,8 @@ async function runStatus(body: Record<string, unknown>, ok: (n: number) => strin
       if (already) toast.info(title, why)
       else toast.error(title, why)
     }
-    clear()
+    // Una sola fila (desde su etiqueta) no toca la selección
+    if (!only) clear()
   }
   catch (err) {
     toast.error('No se pudo cambiar el estado', errorMessage(err))
@@ -283,8 +347,8 @@ async function markPending() {
   return runStatus({ action: 'pending' }, n => done(n, 'pendiente', 'pendiente'))
 }
 
-async function markDraft() {
-  const picked = selectedRows.value.filter(r => r.status !== 'draft')
+async function markDraft(from?: Row[]) {
+  const picked = (from ?? selectedRows.value).filter(r => r.status !== 'draft')
   if (!picked.length) return toast.info('Ya son borradores')
   const n = picked.length
   const charged = picked.some(r => r.paidTotal !== 0)
@@ -299,7 +363,7 @@ async function markDraft() {
     danger: fem.value,
   })
   if (!ok) return
-  return runStatus({ action: 'draft' }, m => `${m} ${noun(m)} en borrador`)
+  return runStatus({ action: 'draft' }, m => `${m} ${noun(m)} en borrador`, from && picked.map(r => r.id))
 }
 
 function setDue(body: { dueDays?: number, dueDate?: string | null }) {
@@ -321,7 +385,7 @@ const statusMenu = computed<MenuItem[]>(() => isQuote.value
       { label: 'Cobradas…', icon: 'ph:hand-coins', onClick: () => (paidOpen.value = true) },
       { label: 'Pendientes de cobro', icon: 'ph:clock', onClick: markPending },
       { label: 'Enviadas', icon: 'ph:paper-plane-tilt', onClick: () => runStatus({ action: 'sent' }, n => done(n, 'enviada', 'enviado')) },
-      { label: 'Borradores', icon: 'ph:pencil-simple-line', onClick: markDraft },
+      { label: 'Borradores', icon: 'ph:pencil-simple-line', onClick: () => markDraft() },
       { divider: true },
       { label: 'Vencimiento…', hint: 'Vencidas', icon: 'ph:calendar-x', onClick: () => (dueOpen.value = true) },
     ])
@@ -560,9 +624,9 @@ const bulkActions = computed<BulkAction[]>(() => [
                   <template v-else>{{ fdate(r.dueDate) }}</template>
                 </td>
                 <td class="r col-total num strong">{{ eur(amountOf(r)) }}<span v-if="r.status === 'partial'" class="sub">pend. {{ eur(r.total - r.paidTotal) }}</span></td>
-                <td class="col-status">
+                <td class="col-status" @click.stop @keydown.stop>
                   <span class="st-wrap">
-                    <UiBadge v-bind="{ tone: salesStatus(r.kind, r.status, r.overdue).tone }" dot>{{ salesStatus(r.kind, r.status, r.overdue).label }}</UiBadge>
+                    <UiBadgeMenu :items="statusItems(r)" :tone="salesStatus(r.kind, r.status, r.overdue).tone" dot :label="`Cambiar el estado de ${r.number ?? 'borrador'}`">{{ salesStatus(r.kind, r.status, r.overdue).label }}</UiBadgeMenu>
                     <Icon v-if="seen(r)" name="ph:eye-fill" class="seen" :title="`Vista por el cliente ${relTime(r.viewedAt!)}`" :aria-label="`Vista por el cliente ${relTime(r.viewedAt!)}`" />
                   </span>
                 </td>
@@ -599,7 +663,7 @@ const bulkActions = computed<BulkAction[]>(() => [
                 <template v-if="r.number"><span class="mono">{{ r.number }}</span> · </template>{{ fdate(r.issueDate) }}
               </template>
               <template #status>
-                <UiBadge :tone="salesStatus(r.kind, r.status, r.overdue).tone" size="sm" dot>{{ salesStatus(r.kind, r.status, r.overdue).label }}</UiBadge>
+                <UiBadgeMenu :items="statusItems(r)" :disabled="selecting" :tone="salesStatus(r.kind, r.status, r.overdue).tone" size="sm" dot :label="`Cambiar el estado de ${r.number ?? 'borrador'}`">{{ salesStatus(r.kind, r.status, r.overdue).label }}</UiBadgeMenu>
                 <span v-if="seen(r)" class="seen-m"><Icon name="ph:eye-fill" aria-hidden="true" /> Vista</span>
               </template>
               <template #amount>

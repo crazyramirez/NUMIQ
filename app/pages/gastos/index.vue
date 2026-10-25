@@ -447,8 +447,8 @@ const categoryMenu = computed<MenuItem[]>(() => [
 const paidOpen = ref(false)
 const dueOpen = ref(false)
 
-async function runStatus(body: Record<string, unknown>, ok: (n: number) => string) {
-  const ids = [...selected.value]
+async function runStatus(body: Record<string, unknown>, ok: (n: number) => string, only?: number[]) {
+  const ids = only ?? [...selected.value]
   if (!ids.length) return
   applying.value = true
   try {
@@ -459,7 +459,8 @@ async function runStatus(body: Record<string, unknown>, ok: (n: number) => strin
       if (already) toast.info(`${plural(res.skipped.length)} sin cambiar`, why)
       else toast.error(`${plural(res.skipped.length)} sin cambiar`, why)
     }
-    stopSelecting()
+    // Una sola fila (desde su etiqueta) no toca la selección
+    if (!only) stopSelecting()
   }
   catch (err) {
     toast.error('No se pudo cambiar', errorMessage(err))
@@ -490,6 +491,43 @@ const statusMenu = computed<MenuItem[]>(() => [
   { divider: true },
   { label: 'Vencimiento…', hint: 'Vencidos', icon: 'ph:calendar-x', onClick: () => (dueOpen.value = true) },
 ])
+
+// ─── Estado desde la etiqueta de la fila: pendiente, pagado (hoy u otra fecha) o aprobación ───
+
+const paidFor = ref<ExpenseRow | null>(null)
+const paidOneOpen = ref(false)
+
+async function pendingOne(e: ExpenseRow) {
+  if (e.status === 'pending') return
+  const ok = await confirm({
+    title: '¿Dejar el gasto pendiente de pago?',
+    body: 'Se borrarán sus pagos registrados. Los movimientos del banco conciliados con él volverán a quedar pendientes de conciliar; el gasto se conserva.',
+    confirmLabel: 'Dejar pendiente',
+  })
+  if (ok) await runStatus({ action: 'pending' }, () => 'Gasto pendiente de pago', [e.id])
+}
+
+function statusItems(e: ExpenseRow): MenuItem[] {
+  if (e.approval === 'pending') {
+    return canApprove.value
+      ? [
+          { heading: 'Aprobación' },
+          { label: 'Aprobar', icon: 'ph:check-bold', onClick: () => decide([e.id], 'approve') },
+          { label: 'Rechazar…', icon: 'ph:x-bold', onClick: () => decide([e.id], 'reject') },
+        ]
+      : []
+  }
+  if (e.approval === 'rejected') return []
+  const paid = e.status === 'paid'
+  const left = eur(e.total - (e.paidTotal ?? 0))
+  return [
+    { heading: 'Cambiar estado' },
+    { label: 'Pendiente de pago', icon: 'ph:clock', active: e.status === 'pending', onClick: () => pendingOne(e) },
+    ...(e.status === 'partial' ? [{ label: 'Pago parcial', hint: `pend. ${left}`, icon: 'ph:circle-half', active: true }] : []),
+    { label: paid ? 'Pagado' : 'Pagado hoy', hint: paid ? undefined : left, icon: 'ph:check-circle', active: paid, onClick: () => !paid && markPaid(e) },
+    ...(paid ? [] : [{ label: 'Pagado otro día…', icon: 'ph:calendar-dots', onClick: () => { paidFor.value = e; paidOneOpen.value = true } }]),
+  ]
+}
 
 const bulkActions = computed<BulkAction[]>(() => [
   ...(canApprove.value && approvalFilter.value === 'pending'
@@ -882,8 +920,8 @@ function savePartial() {
                 <td class="r num strong">{{ eur(e.total) }}</td>
                 <td @click.stop>
                   <div class="st-cell">
-                    <UiBadge v-if="approvalBadge(e)" :tone="approvalBadge(e)!.tone" dot :title="e.rejectReason ?? (e.createdByName ? `Registrado por ${e.createdByName}` : undefined)">{{ approvalBadge(e)!.label }}</UiBadge>
-                    <UiBadge v-else :tone="statusOf(e).tone" dot>{{ statusOf(e).label }}</UiBadge>
+                    <UiBadgeMenu v-if="approvalBadge(e)" :items="statusItems(e)" :tone="approvalBadge(e)!.tone" dot :title="e.rejectReason ?? (e.createdByName ? `Registrado por ${e.createdByName}` : undefined)">{{ approvalBadge(e)!.label }}</UiBadgeMenu>
+                    <UiBadgeMenu v-else :items="statusItems(e)" :tone="statusOf(e).tone" dot :label="`Cambiar el estado de ${nameOf(e)}`">{{ statusOf(e).label }}</UiBadgeMenu>
                     <template v-if="canApprove && e.approval === 'pending'">
                       <UiButton size="sm" variant="ghost" square icon="ph:check-bold" :aria-label="`Aprobar ${e.supplierName ?? 'gasto'}`" title="Aprobar" :loading="approvalBusy === `approve-${e.id}`" @click="decide([e.id], 'approve')" />
                       <UiButton size="sm" variant="ghost" square icon="ph:x-bold" :aria-label="`Rechazar ${e.supplierName ?? 'gasto'}`" title="Rechazar" :loading="approvalBusy === `reject-${e.id}`" @click="decide([e.id], 'reject')" />
@@ -918,8 +956,8 @@ function savePartial() {
                 </div>
               </template>
               <template #status>
-                <UiBadge v-if="approvalBadge(e)" :tone="approvalBadge(e)!.tone" size="sm" dot>{{ approvalBadge(e)!.label }}</UiBadge>
-                <UiBadge v-else :tone="statusOf(e).tone" size="sm" dot>{{ statusOf(e).label }}</UiBadge>
+                <UiBadgeMenu v-if="approvalBadge(e)" :items="statusItems(e)" :disabled="selecting" :tone="approvalBadge(e)!.tone" size="sm" dot>{{ approvalBadge(e)!.label }}</UiBadgeMenu>
+                <UiBadgeMenu v-else :items="statusItems(e)" :disabled="selecting" :tone="statusOf(e).tone" size="sm" dot :label="`Cambiar el estado de ${nameOf(e)}`">{{ statusOf(e).label }}</UiBadgeMenu>
                 <UiBadge v-if="!e.reviewed" tone="ai" size="sm" icon="ph:sparkle-fill">{{ e.reviewNotes?.length ? REVIEW_LABEL[reviewKind(e.reviewNotes[0]!) ?? 'reading'] : 'Revisar' }}</UiBadge>
                 <span v-if="levelOf(e) !== 'full'" class="ded-mini" :class="levelOf(e)">
                   <Icon :name="levelOf(e) === 'partial' ? 'ph:circle-half-fill' : 'ph:prohibit'" aria-hidden="true" />
@@ -954,6 +992,15 @@ function savePartial() {
       :confirm-label="`Marcar ${selected.length} como pagados`"
       what="pago"
       @apply="({ date, method }) => runStatus({ action: 'paid', date, method }, n => `${plural(n)} ${n === 1 ? 'pagado' : 'pagados'}`)"
+    />
+
+    <BulkPaidModal
+      v-model="paidOneOpen"
+      title="Marcar como pagado"
+      :subtitle="paidFor ? `${nameOf(paidFor)} · ${eur(paidFor.total - (paidFor.paidTotal ?? 0))}` : undefined"
+      confirm-label="Marcar como pagado"
+      what="pago"
+      @apply="({ date, method }) => paidFor && runStatus({ action: 'paid', date, method }, () => 'Marcado como pagado', [paidFor.id])"
     />
 
     <BulkDueModal
