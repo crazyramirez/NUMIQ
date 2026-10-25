@@ -272,6 +272,18 @@ const linkUrl = computed(() => {
   display: flex;
   align-items: center;
   gap: var(--s-3);
+  min-width: 0;
+}
+
+/* El motivo de un movimiento ignorado puede ser largo («Pago o devolución de impuestos»): parte línea */
+.amt-status {
+  min-width: 0;
+}
+
+.amt-status :deep(.badge) {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
 }
 
 .amt-symbol {
@@ -495,8 +507,9 @@ const linkUrl = computed(() => {
 
 .match-top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--s-2);
+  gap: 2px var(--s-2);
   font-size: var(--text-xs);
 }
 
@@ -570,8 +583,15 @@ const linkUrl = computed(() => {
 /* Móvil: los datos pasan a una ficha con filas etiqueta / valor y las propuestas apilan sus botones */
 @container (max-width: 520px) {
   .amt-hero {
+    flex-wrap: wrap;
     align-items: flex-start;
     padding: var(--s-4);
+  }
+
+  /* El estado, bajo el importe y alineado con su texto */
+  .amt-status {
+    flex: 1 1 100%;
+    padding-left: calc(36px + var(--s-3));
   }
 
   .amt-symbol {
