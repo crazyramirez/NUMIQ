@@ -133,7 +133,7 @@ function place(i: number) {
 async function openChild(level: number, index: number, focus = false) {
   const item = levels.value[level]?.items[index]
   if (!item?.children?.length) return
-  const from = (sheet.value ? undefined : panels.value[level]?.querySelectorAll<HTMLElement>('[data-i]')[index]?.getBoundingClientRect())
+  const from = (sheet.value ? undefined : panels.value[level]?.querySelector<HTMLElement>(`[data-i="${index}"]`)?.getBoundingClientRect())
   levels.value = [...levels.value.slice(0, level + 1), { items: item.children, label: item.label, from, style: { visibility: 'hidden' }, origin: 'top left' }]
   active.value = [...active.value.slice(0, level + 1), focus || sheet.value ? firstUsable(item.children) : -1]
   await nextTick()
