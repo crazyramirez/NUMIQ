@@ -357,14 +357,27 @@ const thumbKind = (f: ViewerFile) => kindOf(f.name ?? '', f.mime ?? '')
 
 // ─── Clic derecho / pulsación larga: zoom, giro, recorrer, descargar, copiar… como un visor de escritorio ───
 
-// Cerrar el menú haciendo clic fuera no cierra además el visor (el mousedown del fondo llega justo después)
+// Un clic (o toque) fuera del documento cierra el visor, como un visor de fotos. No cuenta si arrastra
+// (desplazar, mover con zoom, seleccionar texto), si cae en la barra de desplazamiento o si solo cierra
+// el menú contextual o quita una selección de texto
+const DOCUMENT = '.pg, .img, .fv-paper, .fv-card, .fv-nav, .fv-pages, .ghost-page'
 const { state: ctxState } = useContextMenu()
 let ctxClosedAt = 0
 watch(() => !!ctxState.value, (v, was) => {
   if (was && !v) ctxClosedAt = performance.now()
 }, { flush: 'sync' })
-function onBackdrop(e: MouseEvent) {
-  if (e.button !== 0 || performance.now() - ctxClosedAt < 300) return
+let backdropDown: { x: number, y: number } | null = null
+function onBackdropDown(e: PointerEvent) {
+  const selecting = !!window.getSelection()?.toString()
+  const menu = !!ctxState.value || performance.now() - ctxClosedAt < 300
+  backdropDown = e.button === 0 && e.isPrimary && !selecting && !menu ? { x: e.clientX, y: e.clientY } : null
+}
+function onBackdropClick(e: MouseEvent) {
+  const down = backdropDown
+  backdropDown = null
+  if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 || zoom.value > 1.01) return
+  const t = e.target as HTMLElement
+  if (t.closest(DOCUMENT) || e.offsetX > t.clientWidth || e.offsetY > t.clientHeight) return
   close()
 }
 
@@ -496,9 +509,9 @@ function viewerMenu(): CtxSpec {
           </div>
         </header>
 
-        <div v-ctx="viewerMenu" class="fv-body" @touchstart.passive="onTouchStart" @touchend.passive="onTouchEnd" @mousedown.self="onBackdrop">
+        <div v-ctx="viewerMenu" class="fv-body" @touchstart.passive="onTouchStart" @touchend.passive="onTouchEnd" @pointerdown="onBackdropDown" @click="onBackdropClick">
           <Transition :name="`fv-${direction}`" mode="out-in">
-            <div :key="`${index}-${item?.url}`" class="fv-slot" @mousedown.self="onBackdrop">
+            <div :key="`${index}-${item?.url}`" class="fv-slot">
               <div v-if="status === 'loading'" class="fv-wait" role="status" aria-live="polite">
                 <span class="fv-spin" aria-hidden="true" />
                 <span>Abriendo {{ item?.name ?? 'el documento' }}…</span>
