@@ -339,7 +339,6 @@ const moreItems = computed<MenuItem[]>(() => {
   const d = doc.value
   if (!d) return []
   const items: MenuItem[] = [
-    { label: 'Ver PDF', icon: 'ph:file-pdf', onClick: viewPdf },
     { label: 'Imprimir', icon: 'ph:printer', onClick: print },
     { label: d.signature ? 'Quitar la firma' : 'Firmar el documento', icon: 'ph:signature', onClick: toggleSign },
   ]
@@ -391,7 +390,10 @@ function paperCtx(): CtxSpec | null {
   if (d.status !== 'draft') main.push({ label: alreadySent.value ? 'Reenviar por email…' : 'Enviar por email…', icon: alreadySent.value ? 'ph:arrow-clockwise' : 'ph:paper-plane-tilt', onClick: () => openSend() })
   if (!isQuote.value && isOpen.value) main.push({ label: 'Registrar cobro…', icon: 'ph:hand-coins', sub: `Pendiente ${eur(remaining.value)}`, onClick: () => openPayment() })
   if (isQuote.value && !['invoiced', 'rejected', 'draft'].includes(d.status)) main.push({ label: 'Convertir en factura', icon: 'ph:receipt', onClick: convert })
-  if (d.status !== 'draft') main.push({ label: 'Descargar PDF', icon: 'ph:download-simple', onClick: () => window.open(`${pdfUrl.value}?download=1`, '_blank') })
+  main.push(
+    { label: 'Ver PDF', icon: 'ph:file-pdf', onClick: viewPdf },
+    { label: 'Descargar PDF', icon: 'ph:download-simple', onClick: () => window.open(`${pdfUrl.value}?download=1`, '_blank') },
+  )
   const copy: CtxItem[] = [
     ...(d.number ? [{ label: 'Número', sub: d.number, icon: 'ph:hash', onClick: () => copyText(d.number, 'Número') }] : []),
     { label: 'Importe total', sub: eur(d.total), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(d.total), 'Importe') },
@@ -457,13 +459,12 @@ function paperCtx(): CtxSpec | null {
         <template v-if="canEdit">
           <UiButton icon="ph:pencil-simple" :to="`${base}/${doc.id}/editar`">Editar</UiButton>
         </template>
-        <template v-if="doc.status !== 'draft'">
-          <UiButton icon="ph:download-simple" :to="`${pdfUrl}?download=1`" external class="hide-sm">PDF</UiButton>
-          <UiButton :icon="alreadySent ? 'ph:arrow-clockwise' : 'ph:paper-plane-tilt'" @click="openSend()">{{ alreadySent ? 'Reenviar' : 'Enviar' }}</UiButton>
-        </template>
+        <UiButton icon="ph:file-pdf" :title="doc.status === 'draft' ? 'Ver el PDF (con la marca BORRADOR)' : 'Ver el PDF'" @click="viewPdf"><span class="hide-sm">Ver&nbsp;</span>PDF</UiButton>
+        <UiButton icon="ph:download-simple" :to="`${pdfUrl}?download=1`" external title="Descargar PDF">Descargar</UiButton>
+        <UiButton v-if="doc.status !== 'draft'" :icon="alreadySent ? 'ph:arrow-clockwise' : 'ph:paper-plane-tilt'" @click="openSend()">{{ alreadySent ? 'Reenviar' : 'Enviar' }}</UiButton>
         <UiButton v-if="doc.status === 'draft'" variant="primary" icon="ph:seal-check" :loading="busy === 'issue'" @click="issue">Emitir</UiButton>
         <UiButton v-else-if="!isQuote && isOpen" variant="primary" icon="ph:hand-coins" @click="openPayment()">Registrar cobro</UiButton>
-        <UiButton v-else-if="!isQuote && doc.status === 'paid'" icon="ph:arrow-u-up-left" :loading="busy === 'pending'" @click="markPending">Marcar como pendiente</UiButton>
+        <UiButton v-else-if="!isQuote && doc.status === 'paid'" class="act-wide" icon="ph:arrow-u-up-left" :loading="busy === 'pending'" @click="markPending">Marcar como pendiente</UiButton>
         <UiButton v-else-if="isQuote && !['invoiced', 'rejected'].includes(doc.status)" variant="primary" icon="ph:receipt" :loading="busy === 'convert'" @click="convert">Convertir en factura</UiButton>
         <UiMenu :items="moreItems" :width="240">
           <template #default="{ toggle }">
@@ -995,14 +996,31 @@ function paperCtx(): CtxSpec | null {
     width: 100%;
   }
 
-  /* La acción principal (Emitir, Registrar cobro, Convertir…) arriba y a todo el ancho; las demás debajo */
-  .v-head .page-actions > .btn {
-    flex: 1;
+  /* La acción principal (Emitir, Registrar cobro, Convertir…) arriba y a todo el ancho */
+  .v-head .page-actions > .btn-primary,
+  .v-head .page-actions > .act-wide {
+    order: -1;
+    flex: 1 1 100%;
   }
 
-  .v-head .page-actions > .btn-primary {
-    order: -1;
-    flex-basis: 100%;
+  /* Debajo, Editar · PDF · Descargar · Enviar · Más en una sola fila: icono encima del texto */
+  .v-head .page-actions > .btn:not(.btn-primary, .act-wide) {
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    height: 58px;
+    padding: 0 4px;
+    font-size: var(--text-xs);
+  }
+
+  .v-head .page-actions > :deep(.menu) {
+    flex: none;
+  }
+
+  .v-head .page-actions > :deep(.menu) .btn {
+    width: 44px;
+    height: 58px;
   }
 
   .pager-btn {

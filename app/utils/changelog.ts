@@ -19,6 +19,8 @@ export interface ChangeEntry {
 }
 
 export const CHANGELOG: readonly ChangeEntry[] = Object.freeze([
+  // ─── 26 de octubre de 2026 ───
+  { at: '2026-10-26T00:10', kind: 'improved', area: 'Facturas', icon: 'ph:file-pdf', title: 'Ver PDF, a un toque en cada factura', body: 'Arriba de cada factura y presupuesto tienes Editar, Ver PDF, Descargar y Enviar. Los borradores también se ven y se descargan en PDF, con la marca BORRADOR. En el móvil caben todos en una fila.', to: '/facturas' },
   // ─── 25 de octubre de 2026 ───
   { at: '2026-10-25T23:15', kind: 'new', area: 'Asistente IA', icon: 'ph:envelope-simple', title: 'El asistente envía facturas por email', body: 'Pídele «envíamela para verla en PDF», «mándala al email de la empresa» o «envíasela al cliente» y prepara el correo con el PDF: ves a quién va, el asunto y el texto, y sale cuando pulsas Enviar. Los borradores solo te llegan a ti, con la marca BORRADOR. También envía presupuestos, recordatorios de pago y copias a tu gestor.', to: '/asistente' },
   { at: '2026-10-25T23:10', kind: 'improved', area: 'Listas', icon: 'ph:dots-three-circle', title: 'Los tres puntos, con todas las opciones', body: 'El botón «⋯» de cada fila abre el mismo menú completo que el clic derecho, ahora también en gastos. En facturas, «Cobrada hoy» y «Registrar cobro…» pasan a ese menú y la fila queda más limpia.', to: '/gastos' },
