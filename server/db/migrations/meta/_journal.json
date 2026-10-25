@@ -183,6 +183,13 @@
       "when": 1792938734126,
       "tag": "0025_calendar_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1792940502797,
+      "tag": "0026_drop_calendar_sync",
+      "breakpoints": true
     }
   ]
 }

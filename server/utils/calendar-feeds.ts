@@ -38,12 +38,11 @@ function privateAddress(ip: string) {
   return v === '::' || v === '::1' || v.startsWith('fc') || v.startsWith('fd') || v.startsWith('fe80') || v.startsWith('ff')
 }
 
-/** Solo servidores públicos: nunca la red interna (salvo NUXT_CALDAV_ALLOW_PRIVATE=true para un CalDAV propio en la LAN) */
-export async function assertPublicHost(url: URL, allowPrivate = false) {
+async function assertPublicHost(url: URL) {
   const host = url.hostname.replace(/^\[|\]$/g, '')
   const addresses = isIP(host) ? [host] : (await lookup(host, { all: true }).catch(() => [])).map(a => a.address)
   if (!addresses.length) throw new Error('No se encuentra el servidor de ese calendario')
-  if (!allowPrivate && addresses.some(privateAddress)) throw new Error('Esa dirección no es pública')
+  if (addresses.some(privateAddress)) throw new Error('Esa dirección no es pública')
 }
 
 /** Descarga el .ics siguiendo hasta 3 redirecciones, cada una comprobada */

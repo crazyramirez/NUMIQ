@@ -8,10 +8,10 @@ import type { FeedEvent } from '../db/schema'
 
 // ─── Escritura ───
 
-export const icsEscape = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n')
+const icsEscape = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n')
 
 /** Líneas de 75 octetos como máximo; las siguientes empiezan por un espacio */
-export function icsFold(line: string) {
+function icsFold(line: string) {
   const bytes = Buffer.from(line, 'utf8')
   if (bytes.length <= 75) return line
   const parts: string[] = []
@@ -35,7 +35,7 @@ const compact = (iso: string) => iso.replace(/-/g, '')
 const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
 
 /** Zona de Madrid con sus reglas de horario de verano (para las horas de los eventos) */
-export const ICS_VTIMEZONE = [
+const ICS_VTIMEZONE = [
   'BEGIN:VTIMEZONE',
   'TZID:Europe/Madrid',
   'BEGIN:DAYLIGHT',
@@ -58,7 +58,7 @@ export const ICS_VTIMEZONE = [
 const eurText = (n: number) => `${n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: 'always' } as Intl.NumberFormatOptions)} €`
 
 /** Título en el calendario del móvil: con importe y una marca para distinguir de un vistazo */
-export function icsSummary(it: CalendarItem) {
+function icsSummary(it: CalendarItem) {
   const mark = it.status === 'done' ? '✓ ' : it.layer === 'tax' ? '⚠ ' : ''
   const amount = it.amount ? ` · ${it.flow === 'out' ? '−' : it.flow === 'in' ? '+' : ''}${eurText(it.amount)}` : ''
   return `${mark}${it.title}${amount}`

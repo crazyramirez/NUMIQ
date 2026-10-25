@@ -170,7 +170,7 @@ const upcoming = computed(() => soonItems.value
 const detail = ref<CalendarItem | null>(null)
 const detailOpen = ref(false)
 const editor = ref({ open: false, id: null as number | null, date: null as string | null, time: null as string | null })
-const connect = ref({ open: false, tab: 'sync' as 'sync' | 'out' | 'in' })
+const connect = ref({ open: false, tab: 'out' as 'out' | 'in' })
 
 function openItem(it: CalendarItem) {
   detail.value = it
@@ -243,23 +243,8 @@ function onSaved() {
 // Clic derecho (o pulsación larga) en días, eventos y meses: crear, mover, marcar, copiar…
 provideCalendarMenus({ canEdit, today, view, selected, items, openItem, create, edit, toggleDone, move, select: onSelect, goToday, reload: reloadAll })
 
-// Calendarios conectados para escribir: el botón de la cabecera lo dice
-const { data: syncData, refresh: refreshSync } = useFetch<{ accounts: Array<{ active: boolean, lastError: string | null }> }>('/api/calendar/accounts', { key: 'calendar-accounts', lazy: true, server: false })
-const synced = computed(() => (syncData.value?.accounts ?? []).some(a => a.active && !a.lastError))
-function onConnectChanged() {
-  void reloadAll()
-  void refreshSync()
-}
 
-// ─── Enlaces: ?nuevo=1, ?evento=ID, ?conectar=1|externo|suscripcion|sincronizado|error ───
-
-const CONNECT_ERRORS: Record<string, string> = {
-  'cancelado': 'Cancelaste el permiso en Google.',
-  'caducado': 'La conexión tardó demasiado. Vuelve a intentarlo.',
-  'permiso': 'Google no dio permiso permanente. Quita NUMIQ en myaccount.google.com/permissions y vuelve a conectar.',
-  'google': 'Google Calendar no está activado en este servidor.',
-  'google-error': 'Google no respondió bien. Inténtalo en unos minutos.',
-}
+// ─── Enlaces: ?nuevo=1, ?evento=ID, ?conectar=1|externo ───
 
 watch(() => [route.query.nuevo, route.query.evento, route.query.conectar], () => {
   if (route.query.nuevo && canEdit.value) {
@@ -272,12 +257,8 @@ watch(() => [route.query.nuevo, route.query.evento, route.query.conectar], () =>
     navigateTo({ query: { ...route.query, evento: undefined } }, { replace: true })
   }
   if (route.query.conectar) {
-    const c = String(route.query.conectar)
-    connect.value = { open: true, tab: c === 'externo' ? 'in' : c === 'suscripcion' ? 'out' : 'sync' }
-    // Vuelta de Google: conectado o por qué no
-    if (c === 'sincronizado') toast.success('Google Calendar conectado', 'Tus eventos se están copiando a tu calendario «NUMIQ»')
-    if (c === 'error') toast.error('No se pudo conectar', CONNECT_ERRORS[String(route.query.motivo)] ?? 'Inténtalo de nuevo')
-    navigateTo({ query: { ...route.query, conectar: undefined, motivo: undefined } }, { replace: true })
+    connect.value = { open: true, tab: route.query.conectar === 'externo' ? 'in' : 'out' }
+    navigateTo({ query: { ...route.query, conectar: undefined } }, { replace: true })
   }
 }, { immediate: true })
 
@@ -330,7 +311,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
         <p class="sub">Cobros, pagos, plazos de Hacienda y tus citas, en un solo sitio.</p>
       </div>
       <div class="page-actions">
-        <UiButton :icon="synced ? 'ph:check-circle-fill' : 'ph:link-simple-horizontal'" :class="{ synced }" compact @click="connect = { open: true, tab: 'sync' }">{{ synced ? 'Sincronizado' : 'Conectar' }}</UiButton>
+        <UiButton icon="ph:link-simple-horizontal" compact @click="connect = { open: true, tab: 'out' }">Conectar</UiButton>
         <UiButton v-if="canEdit" variant="primary" icon="ph:plus-bold" compact @click="create()">Nuevo evento</UiButton>
       </div>
     </header>
@@ -502,11 +483,11 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
         </section>
 
         <!-- Conectar (si aún no se ha usado) -->
-        <button v-if="!synced" type="button" class="card connect-cta rise" style="--i: 4" @click="connect = { open: true, tab: 'sync' }">
+        <button type="button" class="card connect-cta rise" style="--i: 4" @click="connect = { open: true, tab: 'out' }">
           <span class="cc-ic" aria-hidden="true"><Icon name="ph:device-mobile-camera" /></span>
           <span class="cc-t">
             <strong>Llévalo en el móvil</strong>
-            <span>Sincroniza con Google Calendar o iCloud: lo que añadas aquí aparece allí al momento, con los avisos de Hacienda.</span>
+            <span>Añádelo a Google Calendar, Apple Calendar u Outlook con un toque: tus eventos, tareas y avisos de Hacienda aparecen allí solos.</span>
           </span>
           <Icon name="ph:arrow-right" class="cc-go" aria-hidden="true" />
         </button>
@@ -518,7 +499,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 
     <CalendarItemModal v-model="detailOpen" :item="detail" :can-edit="canEdit" @edit="edit" @toggle="toggleDone" />
     <CalendarEventModal v-model="editor.open" :event-id="editor.id" :date="editor.date" :time="editor.time" @saved="onSaved" @deleted="onSaved" />
-    <CalendarConnectModal v-model="connect.open" :feeds="feeds" :initial-tab="connect.tab" @changed="onConnectChanged" />
+    <CalendarConnectModal v-model="connect.open" :feeds="feeds" :initial-tab="connect.tab" @changed="reloadAll" />
   </div>
 </template>
 
@@ -545,11 +526,6 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
   border: 1px solid var(--border);
   border-radius: var(--r-xl);
   box-shadow: var(--shadow-xs);
-}
-
-.page-actions :deep(.synced) {
-  color: var(--success);
-  border-color: color-mix(in srgb, var(--success-solid) 35%, var(--border));
 }
 
 .kpi .eyebrow {

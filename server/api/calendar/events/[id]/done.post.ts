@@ -14,6 +14,5 @@ export default defineEventHandler(async (event) => {
   // Solo se guardan las más recientes: una tarea semanal no crece sin fin
   const doneDates = [...set].sort().slice(-400)
   await useDb().update(tables.calendarEvents).set({ doneDates }).where(and(eq(tables.calendarEvents.id, ev.id), eq(tables.calendarEvents.companyId, company.id)))
-  scheduleCalendarPush(company.id)
   return { ok: true, doneDates }
 })

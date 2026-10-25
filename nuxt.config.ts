@@ -122,10 +122,6 @@ export default defineNuxtConfig({
     verifactuProducerNif: '',
     // URL pública para los enlaces de los correos (sin barra final)
     siteUrl: '',
-    // Google Calendar (OAuth de Google Cloud): escribir los eventos de NUMIQ en el calendario del usuario.
-    // Sin ellas, la opción de Google sigue disponible como suscripción y iCloud/CalDAV funciona igual
-    googleClientId: '',
-    googleClientSecret: '',
     // Correo: Gmail con contraseña de aplicación (GOOGLE_APP_EMAIL / GOOGLE_APP_PASSWORD) u otro SMTP/IMAP
     mail: {
       smtpHost: 'smtp.gmail.com',

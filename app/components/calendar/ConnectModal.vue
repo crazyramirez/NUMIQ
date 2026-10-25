@@ -8,7 +8,7 @@ import type { CalendarColor, CalendarLayer } from '#shared/utils/calendar'
  */
 export interface FeedRow { id: number, name: string, color: string, active: boolean, lastSyncAt: string | null, lastError: string | null }
 
-const props = defineProps<{ feeds: FeedRow[], initialTab?: 'sync' | 'out' | 'in' }>()
+const props = defineProps<{ feeds: FeedRow[], initialTab?: 'out' | 'in' }>()
 const emit = defineEmits<{ changed: [] }>()
 const open = defineModel<boolean>({ default: false })
 
@@ -17,18 +17,17 @@ const { confirm } = useConfirm()
 
 interface Link { https: string, webcal: string, google: string, outlook: string, office: string, name: string, layers: CalendarLayer[], lastUsedAt: string | null, local: boolean }
 
-const tab = ref<'sync' | 'out' | 'in'>('sync')
+const tab = ref<'out' | 'in'>('out')
 const tabs = [
-  { value: 'sync', label: 'Sincronizar' },
-  { value: 'out', label: 'Suscripción' },
-  { value: 'in', label: 'Tus calendarios' },
+  { value: 'out', label: 'En tu calendario' },
+  { value: 'in', label: 'Tus calendarios aquí' },
 ]
 const link = ref<Link | null>(null)
 const loading = ref(false)
 
 watch(open, async (v) => {
   if (!v) return
-  tab.value = props.initialTab ?? 'sync'
+  tab.value = props.initialTab ?? 'out'
   resetForm()
   if (link.value) return
   loading.value = true
@@ -195,18 +194,15 @@ const nextColor = (c: string) => {
     <div class="cn">
       <UiSegmented v-model="tab" :options="tabs" label="Sentido" />
 
-      <!-- ─── Sincronizar al momento (Google, iCloud, CalDAV) ─── -->
-      <CalendarSyncPanel v-if="tab === 'sync'" @changed="emit('changed')" />
-
-      <!-- ─── Suscripción: NUMIQ en tu calendario, solo lectura ─── -->
-      <template v-else-if="tab === 'out'">
-        <p class="cn-sub">Solo lectura: tu calendario consulta NUMIQ cada cierto tiempo (Apple y Outlook, cada hora; Google, cada pocas horas). Para verlo al momento, usa «Sincronizar».</p>
+      <!-- ─── NUMIQ en tu calendario ─── -->
+      <template v-if="tab === 'out'">
+        <p class="cn-sub">Un toque y listo: lo nuevo de NUMIQ, también tus eventos y tareas, aparece solo en tu calendario. Apple y Outlook lo actualizan cada hora; Google, cada pocas horas.</p>
         <div v-if="loading || !link" class="cn-loading">
           <div v-for="i in 4" :key="i" class="skeleton" style="height: 64px; border-radius: 14px" />
         </div>
         <template v-else>
           <p v-if="link.local" class="cn-warn">
-            <Icon name="ph:info-fill" aria-hidden="true" />
+            <Icon name="ph:info" aria-hidden="true" />
             <span>Estás usando NUMIQ en local. Google, Apple y Outlook solo pueden leer una dirección pública: funcionará cuando NUMIQ esté publicado en su dominio.</span>
           </p>
 
