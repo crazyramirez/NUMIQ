@@ -17,5 +17,6 @@ export default defineEventHandler(async (event) => {
     doneDates: (ev.doneDates ?? []).map(d => shiftDays(d, days)),
     remindedFor: null,
   }).where(and(eq(tables.calendarEvents.id, ev.id), eq(tables.calendarEvents.companyId, company.id)))
+  scheduleCalendarPush(company.id)
   return { ok: true }
 })

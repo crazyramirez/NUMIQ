@@ -11,5 +11,6 @@ export default defineEventHandler(async (event) => {
   const remindedFor = values.startDate !== ev.startDate || values.startTime !== ev.startTime || values.remindMinutes !== ev.remindMinutes ? null : ev.remindedFor
   await useDb().update(tables.calendarEvents).set({ ...values, remindedFor }).where(and(eq(tables.calendarEvents.id, ev.id), eq(tables.calendarEvents.companyId, company.id)))
   await audit(event, { companyId: company.id, userId: user.id, action: 'calendar.update', entity: 'calendar_event', entityId: ev.id })
+  scheduleCalendarPush(company.id)
   return { ok: true }
 })

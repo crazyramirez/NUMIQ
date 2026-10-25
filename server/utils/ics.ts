@@ -8,10 +8,10 @@ import type { FeedEvent } from '../db/schema'
 
 // ─── Escritura ───
 
-const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n')
+export const icsEscape = (s: string) => s.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n')
 
 /** Líneas de 75 octetos como máximo; las siguientes empiezan por un espacio */
-function fold(line: string) {
+export function icsFold(line: string) {
   const bytes = Buffer.from(line, 'utf8')
   if (bytes.length <= 75) return line
   const parts: string[] = []
@@ -35,7 +35,7 @@ const compact = (iso: string) => iso.replace(/-/g, '')
 const stamp = (d: Date) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
 
 /** Zona de Madrid con sus reglas de horario de verano (para las horas de los eventos) */
-const VTIMEZONE = [
+export const ICS_VTIMEZONE = [
   'BEGIN:VTIMEZONE',
   'TZID:Europe/Madrid',
   'BEGIN:DAYLIGHT',
@@ -58,7 +58,7 @@ const VTIMEZONE = [
 const eurText = (n: number) => `${n.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: 'always' } as Intl.NumberFormatOptions)} €`
 
 /** Título en el calendario del móvil: con importe y una marca para distinguir de un vistazo */
-function summaryOf(it: CalendarItem) {
+export function icsSummary(it: CalendarItem) {
   const mark = it.status === 'done' ? '✓ ' : it.layer === 'tax' ? '⚠ ' : ''
   const amount = it.amount ? ` · ${it.flow === 'out' ? '−' : it.flow === 'in' ? '+' : ''}${eurText(it.amount)}` : ''
   return `${mark}${it.title}${amount}`
@@ -72,15 +72,15 @@ export function itemsToIcs(items: CalendarItem[], opts: { name: string, site: st
     'PRODID:-//NUMIQ//Calendario//ES',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
-    `X-WR-CALNAME:${esc(opts.name)}`,
-    `NAME:${esc(opts.name)}`,
+    `X-WR-CALNAME:${icsEscape(opts.name)}`,
+    `NAME:${icsEscape(opts.name)}`,
     'X-WR-TIMEZONE:Europe/Madrid',
-    ...(opts.description ? [`X-WR-CALDESC:${esc(opts.description)}`] : []),
+    ...(opts.description ? [`X-WR-CALDESC:${icsEscape(opts.description)}`] : []),
     // Cada hora (Google lo actualiza a su ritmo, Apple y Outlook lo respetan)
     'REFRESH-INTERVAL;VALUE=DURATION:PT1H',
     'X-PUBLISHED-TTL:PT1H',
     'COLOR:indigo',
-    ...VTIMEZONE,
+    ...ICS_VTIMEZONE,
   ]
   for (const it of items) {
     // La franja del plazo no se publica: en el móvil basta el último día con su aviso
@@ -96,13 +96,13 @@ export function itemsToIcs(items: CalendarItem[], opts: { name: string, site: st
     else {
       ev.push(`DTSTART;VALUE=DATE:${compact(it.date)}`, `DTEND;VALUE=DATE:${compact(shiftDays(it.endDate ?? it.date, 1))}`, 'TRANSP:TRANSPARENT')
     }
-    ev.push(`SUMMARY:${esc(summaryOf(it))}`)
+    ev.push(`SUMMARY:${icsEscape(icsSummary(it))}`)
     const url = it.to ? `${opts.site}${it.to}` : null
     const desc = [it.subtitle, it.notes, url ? `Abrir en NUMIQ: ${url}` : null].filter(Boolean).join('\n\n')
-    if (desc) ev.push(`DESCRIPTION:${esc(desc)}`)
+    if (desc) ev.push(`DESCRIPTION:${icsEscape(desc)}`)
     if (url) ev.push(`URL:${url}`)
-    if (it.location) ev.push(`LOCATION:${esc(it.location)}`)
-    ev.push(`CATEGORIES:${esc(LAYER_NAMES[it.layer] ?? 'NUMIQ')}`)
+    if (it.location) ev.push(`LOCATION:${icsEscape(it.location)}`)
+    ev.push(`CATEGORIES:${icsEscape(LAYER_NAMES[it.layer] ?? 'NUMIQ')}`)
     if (it.status === 'done' && it.layer === 'event') ev.push('STATUS:CONFIRMED')
     // Avisos en el dispositivo: plazos de Hacienda a 5 días y el mismo día; vencimientos el día antes
     if (it.layer === 'tax' && it.status !== 'done') ev.push(...alarm('-P5D', it.title), ...alarm('-PT15H', it.title))
@@ -111,12 +111,12 @@ export function itemsToIcs(items: CalendarItem[], opts: { name: string, site: st
     lines.push(...ev)
   }
   lines.push('END:VCALENDAR')
-  return `${lines.map(fold).join('\r\n')}\r\n`
+  return `${lines.map(icsFold).join('\r\n')}\r\n`
 }
 
 const LAYER_NAMES: Record<string, string> = { income: 'Cobros', expense: 'Pagos', tax: 'Hacienda', quote: 'Presupuestos', recurring: 'Recurrentes', event: 'Eventos', holiday: 'Festivos', feed: 'Externo' }
 
-const alarm = (trigger: string, text: string) => ['BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${esc(text)}`, `TRIGGER:${trigger}`, 'END:VALARM']
+const alarm = (trigger: string, text: string) => ['BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEscape(text)}`, `TRIGGER:${trigger}`, 'END:VALARM']
 
 function addMinutes(hhmm: string, minutes: number) {
   const [h, m] = hhmm.split(':').map(Number)

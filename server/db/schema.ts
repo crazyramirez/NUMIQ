@@ -698,6 +698,49 @@ export const calendarFeeds = mysqlTable('calendar_feeds', {
   createdAt: createdAt(),
 }, t => [index('cal_feeds_user_idx').on(t.companyId, t.userId)])
 
+/**
+ * Calendario conectado para escribir en él (Google Calendar por OAuth, iCloud u otro CalDAV):
+ * lo nuevo de NUMIQ aparece allí al momento. Una cuenta por persona y empresa.
+ */
+export const calendarAccounts = mysqlTable('calendar_accounts', {
+  id: int('id').autoincrement().primaryKey(),
+  companyId: int('company_id').notNull(),
+  userId: int('user_id').notNull(),
+  provider: mysqlEnum('provider', ['google', 'caldav']).notNull(),
+  /** Cuenta visible: correo de Google o Apple ID */
+  label: varchar('label', { length: 200 }).notNull(),
+  /** CalDAV: dirección del servidor tal como se dio (icloud, nextcloud…) */
+  server: varchar('server', { length: 500 }),
+  /** Calendario donde se escribe: id de Google o URL de la colección CalDAV */
+  calendarRef: varchar('calendar_ref', { length: 1000 }),
+  /** NUMIQ creó ese calendario (se borra al desconectar) */
+  ownsCalendar: boolean('owns_calendar').notNull().default(true),
+  /** Credenciales cifradas (AES-256-GCM, base64): token de refresco de Google o usuario y contraseña de app */
+  secret: text('secret').notNull(),
+  layers: jsonText<string[]>('layers'),
+  active: boolean('active').notNull().default(true),
+  lastSyncAt: datetime('last_sync_at'),
+  lastError: varchar('last_error', { length: 400 }),
+  /** Eventos que hay ahora en el calendario conectado */
+  syncedCount: int('synced_count').notNull().default(0),
+  createdAt: createdAt(),
+}, t => [uniqueIndex('cal_accounts_user_uq').on(t.companyId, t.userId, t.provider), index('cal_accounts_company_idx').on(t.companyId)])
+
+/** Qué evento de NUMIQ es cada evento creado en el calendario conectado */
+export const calendarSyncItems = mysqlTable('calendar_sync_items', {
+  id: int('id').autoincrement().primaryKey(),
+  accountId: int('account_id').notNull(),
+  /** ev-12 (evento propio, con sus repeticiones) o el id del elemento (tax-…, inv-…-due) */
+  itemKey: varchar('item_key', { length: 160 }).notNull(),
+  /** Id del evento en Google o URL del .ics en CalDAV */
+  remoteId: varchar('remote_id', { length: 1000 }).notNull(),
+  /** Huella de lo enviado: si no cambia, no se vuelve a escribir */
+  hash: varchar('hash', { length: 64 }).notNull(),
+  /** Fecha del elemento: lo que ya pasó no se borra del calendario conectado */
+  date: day('date'),
+  updatedAt: updatedAt(),
+}, t => [uniqueIndex('cal_sync_item_uq').on(t.accountId, t.itemKey)])
+
 // ─── VeriFactu: registros de facturación encadenados ─────────────────────────
 
 export const verifactuRecords = mysqlTable('verifactu_records', {

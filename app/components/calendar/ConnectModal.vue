@@ -8,7 +8,7 @@ import type { CalendarColor, CalendarLayer } from '#shared/utils/calendar'
  */
 export interface FeedRow { id: number, name: string, color: string, active: boolean, lastSyncAt: string | null, lastError: string | null }
 
-const props = defineProps<{ feeds: FeedRow[], initialTab?: 'out' | 'in' }>()
+const props = defineProps<{ feeds: FeedRow[], initialTab?: 'sync' | 'out' | 'in' }>()
 const emit = defineEmits<{ changed: [] }>()
 const open = defineModel<boolean>({ default: false })
 
@@ -17,17 +17,18 @@ const { confirm } = useConfirm()
 
 interface Link { https: string, webcal: string, google: string, outlook: string, office: string, name: string, layers: CalendarLayer[], lastUsedAt: string | null, local: boolean }
 
-const tab = ref<'out' | 'in'>('out')
+const tab = ref<'sync' | 'out' | 'in'>('sync')
 const tabs = [
-  { value: 'out', label: 'En tu calendario' },
-  { value: 'in', label: 'Tus calendarios aquí' },
+  { value: 'sync', label: 'Sincronizar' },
+  { value: 'out', label: 'Suscripción' },
+  { value: 'in', label: 'Tus calendarios' },
 ]
 const link = ref<Link | null>(null)
 const loading = ref(false)
 
 watch(open, async (v) => {
   if (!v) return
-  tab.value = props.initialTab ?? 'out'
+  tab.value = props.initialTab ?? 'sync'
   resetForm()
   if (link.value) return
   loading.value = true
@@ -190,12 +191,16 @@ const nextColor = (c: string) => {
 </script>
 
 <template>
-  <UiModal v-model="open" title="Conectar calendario" subtitle="Tus cobros, pagos y plazos de Hacienda en el móvil, y tus citas aquí" size="lg" no-touch-keyboard>
+  <UiModal v-model="open" title="Conectar calendario" subtitle="Lo que pasa en NUMIQ, en el calendario de tu móvil; y tus citas, aquí" size="lg" no-touch-keyboard>
     <div class="cn">
       <UiSegmented v-model="tab" :options="tabs" label="Sentido" />
 
-      <!-- ─── NUMIQ en tu calendario ─── -->
-      <template v-if="tab === 'out'">
+      <!-- ─── Sincronizar al momento (Google, iCloud, CalDAV) ─── -->
+      <CalendarSyncPanel v-if="tab === 'sync'" @changed="emit('changed')" />
+
+      <!-- ─── Suscripción: NUMIQ en tu calendario, solo lectura ─── -->
+      <template v-else-if="tab === 'out'">
+        <p class="cn-sub">Solo lectura: tu calendario consulta NUMIQ cada cierto tiempo (Apple y Outlook, cada hora; Google, cada pocas horas). Para verlo al momento, usa «Sincronizar».</p>
         <div v-if="loading || !link" class="cn-loading">
           <div v-for="i in 4" :key="i" class="skeleton" style="height: 64px; border-radius: 14px" />
         </div>
@@ -329,6 +334,13 @@ const nextColor = (c: string) => {
 .cn :deep(.seg) {
   align-self: flex-start;
   max-width: 100%;
+}
+
+.cn-sub {
+  margin-top: calc(-1 * var(--s-2));
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text-3);
 }
 
 .cn-loading {
