@@ -454,7 +454,12 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 
 @container dash (min-width: 1040px) {
   .row-main {
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+    /* Misma rejilla que .row-3: el Asesor mide exactamente lo que «Mejores clientes» */
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .row-main > :first-child {
+    grid-column: span 2;
   }
 }
 
