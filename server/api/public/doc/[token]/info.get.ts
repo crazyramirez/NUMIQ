@@ -55,6 +55,7 @@ export default defineEventHandler(async (event) => {
     },
     design,
     logoUrl: company.logoPath ? `${base}/logo` : null,
+    signature: full.signature ? { url: `${base}/signature`, label: full.signature.label, signer: (doc.issuer ?? companySnapshot(company)).name } : null,
     pdfUrl: base,
     payment: isInvoice
       ? {

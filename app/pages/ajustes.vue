@@ -571,7 +571,7 @@ function onDesignSaved(accent: string) {
           </div>
 
           <!-- ─── Diseño ─── -->
-          <SettingsSignaturesPanel v-if="section === 'firmas'" class="rise" style="--i: 2" />
+          <SettingsSignaturesPanel v-if="section === 'firmas'" class="rise" style="--i: 2" :can-edit="canEdit" />
           <SettingsInvoiceDesigner v-if="section === 'diseno'" class="rise" style="--i: 2" :can-edit="canEdit" @saved="onDesignSaved" />
 
           <!-- ─── Copia de seguridad ─── -->

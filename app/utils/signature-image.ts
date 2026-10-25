@@ -17,27 +17,38 @@ export const SIGNATURE_FONTS = [
   { id: 'caveat', label: 'Sencilla', family: 'Caveat', size: 1 },
 ] as const
 
-/** Recorta un lienzo a lo que tiene tinta (alfa > 8), con un margen. Null si está vacío */
-export function trimInk(src: HTMLCanvasElement, pad = 6): HTMLCanvasElement | null {
+/**
+ * Recorta un lienzo a lo que tiene tinta, con un margen. Null si está vacío. Con `minFrac`, una fila o
+ * columna solo cuenta si tiene esa fracción de píxeles con tinta: así las motas del papel de una foto
+ * no estiran el recorte y la firma queda centrada y grande.
+ */
+export function trimInk(src: HTMLCanvasElement, pad = 6, opts: { alphaMin?: number, minFrac?: number } = {}): HTMLCanvasElement | null {
   const ctx = src.getContext('2d', { willReadFrequently: true })!
   const { width: w, height: h } = src
   const data = ctx.getImageData(0, 0, w, h).data
-  let top = h
-  let left = w
-  let right = -1
-  let bottom = -1
+  const alphaMin = opts.alphaMin ?? 8
+  const rows = new Uint32Array(h)
+  const cols = new Uint32Array(w)
   for (let y = 0; y < h; y++) {
     const row = y * w * 4
     for (let x = 0; x < w; x++) {
-      if (data[row + x * 4 + 3]! > 8) {
-        if (x < left) left = x
-        if (x > right) right = x
-        if (y < top) top = y
-        bottom = y
+      if (data[row + x * 4 + 3]! > alphaMin) {
+        rows[y]!++
+        cols[x]!++
       }
     }
   }
-  if (right < 0) return null
+  const rowMin = Math.max(1, Math.round(w * (opts.minFrac ?? 0)))
+  const colMin = Math.max(1, Math.round(h * (opts.minFrac ?? 0)))
+  let top = 0
+  while (top < h && rows[top]! < rowMin) top++
+  let bottom = h - 1
+  while (bottom > top && rows[bottom]! < rowMin) bottom--
+  let left = 0
+  while (left < w && cols[left]! < colMin) left++
+  let right = w - 1
+  while (right > left && cols[right]! < colMin) right--
+  if (top >= h || left >= w) return null
   const x0 = Math.max(0, left - pad)
   const y0 = Math.max(0, top - pad)
   const x1 = Math.min(w, right + pad + 1)
@@ -46,6 +57,31 @@ export function trimInk(src: HTMLCanvasElement, pad = 6): HTMLCanvasElement | nu
   out.width = x1 - x0
   out.height = y1 - y0
   out.getContext('2d')!.drawImage(src, x0, y0, out.width, out.height, 0, 0, out.width, out.height)
+  return out
+}
+
+/** Reduce el lienzo para que quepa en maxW × maxH (nunca lo amplía), con suavizado de calidad */
+export function fitCanvas(src: HTMLCanvasElement, maxW: number, maxH: number) {
+  const k = Math.min(1, maxW / src.width, maxH / src.height)
+  if (k >= 1) return src
+  // A mitades sucesivas: reducir mucho de una vez deja el trazo dentado
+  const target = src.width * k
+  let cur = src
+  while (target < cur.width / 2) {
+    const half = document.createElement('canvas')
+    half.width = Math.max(1, Math.round(cur.width / 2))
+    half.height = Math.max(1, Math.round(cur.height / 2))
+    const c = half.getContext('2d')!
+    c.imageSmoothingQuality = 'high'
+    c.drawImage(cur, 0, 0, half.width, half.height)
+    cur = half
+  }
+  const out = document.createElement('canvas')
+  out.width = Math.max(1, Math.round(src.width * k))
+  out.height = Math.max(1, Math.round(src.height * k))
+  const c = out.getContext('2d')!
+  c.imageSmoothingQuality = 'high'
+  c.drawImage(cur, 0, 0, out.width, out.height)
   return out
 }
 
@@ -66,7 +102,7 @@ function hasTransparency(data: Uint8ClampedArray) {
  * fotos algo oscuras o papel amarillento. `ink` recolorea el trazo; null conserva su color.
  */
 export function signatureFromImage(img: CanvasImageSource & { width: number, height: number }, opts: { removeBackground: boolean, ink: string | null, maxSide?: number }) {
-  const max = opts.maxSide ?? 1600
+  const max = opts.maxSide ?? 2400
   const k = Math.min(1, max / Math.max(img.width, img.height))
   const canvas = document.createElement('canvas')
   canvas.width = Math.max(1, Math.round(img.width * k))
@@ -96,14 +132,17 @@ export function signatureFromImage(img: CanvasImageSource & { width: number, hei
       return 255
     }
     const paper = pct(0.6)
-    const ink = Math.min(pct(0.02), paper - 40)
+    // Percentil muy bajo: en una foto la firma puede ocupar menos del 1 % de los píxeles
+    const ink = Math.min(pct(0.002), paper - 40)
     // Rampa suave entre la tinta y el papel: bordes limpios sin dientes
     const hi = paper - (paper - ink) * 0.18
     const lo = ink + (paper - ink) * 0.25
     for (let i = 0, p = 0; i < d.length; i += 4, p++) {
       const l = lum[p]!
       const a = l >= hi ? 0 : l <= lo ? 1 : (hi - l) / (hi - lo)
-      d[i + 3] = Math.round(a * a * (3 - 2 * a) * 255)
+      // Lo casi transparente es textura o sombra del papel: fuera
+      const alpha = Math.round(a * a * (3 - 2 * a) * 255)
+      d[i + 3] = alpha < 28 ? 0 : alpha
       if (rgb) {
         d[i] = rgb[0]
         d[i + 1] = rgb[1]
@@ -125,8 +164,58 @@ export function signatureFromImage(img: CanvasImageSource & { width: number, hei
       d[i + 2] = rgb[2]
     }
   }
+  if (opts.removeBackground && !transparent) removeSpecks(d, canvas.width, canvas.height)
   ctx.putImageData(image, 0, 0)
-  return trimInk(canvas, 4) ?? canvas
+  // Recorte a la firma (ignorando motas sueltas) con un margen proporcional, y tamaño final acotado
+  const cleaned = (opts.removeBackground || transparent)
+    ? trimInk(canvas, Math.round(Math.max(canvas.width, canvas.height) * 0.012), { alphaMin: 60, minFrac: 0.002 }) ?? canvas
+    : canvas
+  return fitCanvas(cleaned, SIGNATURE_MAX.w, SIGNATURE_MAX.h)
+}
+
+/**
+ * Quita las motas sueltas (polvo, grano del papel, puntos de la foto): manchas de tinta aisladas y
+ * diminutas frente al trazo principal. Los puntos de las íes y los acentos se quedan.
+ */
+function removeSpecks(d: Uint8ClampedArray, w: number, h: number) {
+  const n = w * h
+  const label = new Int32Array(n)
+  const queue = new Int32Array(n)
+  const areas: number[] = [0]
+  for (let start = 0; start < n; start++) {
+    if (label[start] || d[start * 4 + 3]! <= 60) continue
+    const id = areas.length
+    let head = 0
+    let tail = 0
+    queue[tail++] = start
+    label[start] = id
+    while (head < tail) {
+      const p = queue[head++]!
+      const x = p % w
+      const y = (p - x) / w
+      for (let dy = -1; dy <= 1; dy++) {
+        const yy = y + dy
+        if (yy < 0 || yy >= h) continue
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx
+          if (xx < 0 || xx >= w) continue
+          const q = yy * w + xx
+          if (!label[q] && d[q * 4 + 3]! > 60) {
+            label[q] = id
+            queue[tail++] = q
+          }
+        }
+      }
+    }
+    areas.push(tail)
+  }
+  let largest = 0
+  for (const a of areas) if (a > largest) largest = a
+  const min = Math.max(16, largest * 0.004)
+  for (let p = 0; p < n; p++) {
+    const id = label[p]!
+    if (id && areas[id]! < min) d[p * 4 + 3] = 0
+  }
 }
 
 /** Firma escrita con una letra manuscrita, a buena resolución */
@@ -146,7 +235,8 @@ export async function typedSignature(text: string, family: string, color: string
   ctx.fillStyle = color
   ctx.textBaseline = 'alphabetic'
   ctx.fillText(text, px * 0.7, px * 1.55)
-  return trimInk(canvas, 8)
+  const trimmed = trimInk(canvas, 8)
+  return trimmed && fitCanvas(trimmed, SIGNATURE_MAX.w, SIGNATURE_MAX.h)
 }
 
 /** Sello de texto (la fecha de hoy) en tinta, para colocarlo junto a la firma */
@@ -180,3 +270,6 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
     img.src = src
   })
 }
+
+/** Tamaño final de una firma: nítida al imprimir y ligera (≈ 4,5 × 1,5 cm a 300 ppp) */
+export const SIGNATURE_MAX = { w: 1400, h: 520 }

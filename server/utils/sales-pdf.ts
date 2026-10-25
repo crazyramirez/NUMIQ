@@ -8,6 +8,14 @@ const pdfCompany = (c: Company): PdfCompany => ({
   legalName: c.legalName, tradeName: c.tradeName, nif: c.nif, email: c.email, phone: c.phone, website: c.website, iban: c.iban, invoiceFooter: c.invoiceFooter,
 })
 
+/** Firma para el PDF: la imagen en línea (pdfmake no lee archivos) y el nombre de quien firma */
+async function pdfSignature(companyId: number, signature: { id: number, label: string } | null, signer: string) {
+  if (!signature) return null
+  const row = await findSignature(companyId, signature.id).catch(() => null)
+  const png = row ? await readStoredFile(row.path).catch(() => null) : null
+  return png ? { dataUrl: `data:image/png;base64,${png.toString('base64')}`, label: signature.label, signer } : null
+}
+
 export function pdfFilename(kind: string, number: string | null) {
   return `${TITLE_SLUG[kind] ?? 'Documento'}-${(number ?? 'borrador').replace(/[^\w.-]+/g, '_')}.pdf`
 }
@@ -49,6 +57,7 @@ export async function salesPdf(company: Company, id: number, designOverride?: In
     customer: doc.customer ?? (doc.contact ? contactSnapshot(doc.contact) : null),
     lines: doc.lines.map(l => ({ ...l, sku: l.itemId ? skus.get(l.itemId) ?? null : null })),
     verifactu: doc.verifactu && opts.verifactu !== false ? { qrUrl: doc.verifactu.qrUrl, hash: doc.verifactu.hash } : null,
+    signature: await pdfSignature(company.id, doc.signature, (doc.issuer ?? companySnapshot(company)).name),
   }
   const logo = await companyLogo(company.logoPath)
   const comp = pdfCompany(company)
@@ -138,6 +147,9 @@ export async function designPreviewPdf(company: Company, design: InvoiceDesign, 
       ? { qrUrl: verifactuQrUrl({ issuerNif: company.nif, invoiceNumber: 'F2026-0001', invoiceDate: today, total: 1500 }), hash: '0'.repeat(64) }
       : null,
   }
+  // Ejemplo firmado si Ajustes firma este tipo de documento
+  const signing = await documentSignature(company.id, signingSettings(company), { kind: sample.kind, sign: null, signatureId: null })
+  sample.signature = await pdfSignature(company.id, signing.signature, company.legalName)
 
   const comp = pdfCompany(company)
   if (!isQuote && !comp.iban) {

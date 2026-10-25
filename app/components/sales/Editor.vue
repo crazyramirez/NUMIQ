@@ -5,6 +5,7 @@
  * Los totales se calculan con el mismo código que usa el servidor (shared/utils/tax.ts).
  */
 import type { CatalogItem } from './ConceptInput.vue'
+import type { DocSigning } from './SignControl.vue'
 import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 
 type Kind = 'invoice' | 'quote' | 'proforma' | 'rectifying'
@@ -62,6 +63,8 @@ interface SalesDoc {
   imported?: boolean
   verifactu?: unknown
   canEdit?: boolean
+  sign?: boolean | null
+  signatureId?: number | null
 }
 
 const props = defineProps<{ kind: Kind, id?: number }>()
@@ -134,6 +137,9 @@ const form = reactive({
   lines: [blankLine()] as Line[],
   // Presupuestos: pendiente, enviado, aceptado o rechazado (no tienen borrador)
   status: 'issued' as string,
+  // Firma: null = lo que diga Ajustes → Firmas
+  sign: null as boolean | null,
+  signatureId: null as number | null,
 })
 
 if (doc.value) {
@@ -155,6 +161,8 @@ if (doc.value) {
     rectificationReason: doc.value.rectificationReason ?? '',
     lines: doc.value.lines.map(({ id: _id, ...l }) => ({ ...l, key: ++keySeq })),
     status: doc.value.status === 'expired' ? 'rejected' : doc.value.status === 'draft' ? 'issued' : doc.value.status,
+    sign: doc.value.sign ?? null,
+    signatureId: doc.value.signatureId ?? null,
   })
 }
 else if (source.value) {
@@ -539,6 +547,8 @@ async function save(issue: boolean) {
       })),
       issue,
       status: canPickStatus.value ? form.status : undefined,
+      sign: form.sign,
+      signatureId: form.signatureId,
     }
     const r = props.id
       ? await $fetch<{ id: number, number: string | null }>(`/api/sales/${props.id}`, { method: 'PATCH', body })
@@ -593,6 +603,17 @@ const logoUrl = computed(() => (design.value?.design.showLogo ? design.value.log
 /** Título de observaciones o condiciones según el diseño (vacío: sin título en el documento) */
 const notesTitle = computed(() => (isQuote.value ? design.value?.design.termsLabel ?? 'Condiciones' : design.value?.design.notesLabel ?? 'Observaciones').trim())
 const issuerName = computed(() => company.value?.tradeName || company.value?.legalName || '')
+
+// Firma: tarjeta lateral y vista previa al pie de la hoja
+const signModel = computed<DocSigning>({
+  get: () => ({ sign: form.sign, signatureId: form.signatureId }),
+  set: (v) => {
+    form.sign = v.sign
+    form.signatureId = v.signatureId
+  },
+})
+const signPreview = ref<Signature | null>(null)
+const { settings: signingSettings } = useSignatures()
 const paperTitle = computed(() => ({ invoice: 'Factura', rectifying: 'Factura rectificativa', quote: 'Presupuesto', proforma: 'Factura proforma' }[kind.value]))
 const R_CODES = [
   { value: 'R1', label: 'R1 · Error fundado en derecho (art. 80.1, 80.2 y 80.6 LIVA)' },
@@ -851,6 +872,11 @@ const R_CODES = [
               <span class="paper-label" :class="{ 'no-title': !notesTitle }" :title="notesTitle ? undefined : 'Sin título en el documento: lo puedes cambiar en Ajustes → Diseño de factura'">{{ notesTitle || (isQuote ? 'Condiciones · sin título' : 'Observaciones · sin título') }}</span>
               <textarea v-if="isQuote" v-model="form.terms" class="cell area" rows="3" placeholder="Validez, plazos de entrega, forma de pago…" aria-label="Condiciones" />
               <textarea v-else v-model="form.notes" class="cell area" rows="3" placeholder="Notas para el cliente (opcional)" aria-label="Observaciones" />
+              <div v-if="signPreview" class="paper-sign spaced">
+                <span v-if="signingSettings?.label" class="paper-label">{{ signingSettings.label }}</span>
+                <img :src="signPreview.url" :alt="`Firma: ${signPreview.name}`" class="paper-sign-img">
+                <span class="paper-sign-name">{{ company?.legalName }}</span>
+              </div>
             </div>
 
             <div class="paper-totals">
@@ -889,6 +915,8 @@ const R_CODES = [
               <IrpfField v-model="form.irpfRate" label="Retención de IRPF" :hint="irpfHint ?? 'Solo cuando facturas a empresas o profesionales'" />
             </div>
           </UiCard>
+
+          <SalesSignControl v-model="signModel" :is-quote="isQuote" @resolved="signPreview = $event" />
 
           <!-- Lo que casi nunca hace falta, plegado: se abre solo si ya se está usando -->
           <details class="card more" :open="moreOpen">

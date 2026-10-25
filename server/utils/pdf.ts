@@ -84,6 +84,8 @@ export interface PdfDocument {
   customer: PartySnapshot | null
   lines: PdfLine[]
   verifactu: { qrUrl: string, hash: string } | null
+  /** Firma estampada (PNG transparente) con el texto de encima y el nombre de quien firma */
+  signature?: { dataUrl: string, label: string, signer: string } | null
 }
 
 export interface PdfCompany {
@@ -450,6 +452,17 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
   const notes = isQuote ? doc.terms : doc.notes
   const notesTitle = (isQuote ? design.termsLabel : design.notesLabel).trim()
   if (notes) left.push({ stack: [...(notesTitle ? [label(notesTitle)] : []), { text: notes, color: INK_2, margin: [0, notesTitle ? 3 : 0, 0, 0] }] })
+  if (doc.signature) {
+    left.push({
+      stack: [
+        ...(doc.signature.label ? [label(doc.signature.label)] : []),
+        { image: doc.signature.dataUrl, fit: [170, 60], margin: [0, 6, 0, 0] },
+        { canvas: [{ type: 'line', x1: 0, y1: 0, x2: 190, y2: 0, lineWidth: 0.6, lineColor: LINE }], margin: [0, 4, 0, 0] },
+        { text: doc.signature.signer, fontSize: 8, color: MUTED, margin: [0, 4, 0, 0] },
+      ],
+      margin: [0, notes ? 18 : 0, 0, 0],
+    })
+  }
 
   const bottom: Node = {
     columns: [{ width: '*', stack: left }, { width: 230, stack: [totalsBlock] }],

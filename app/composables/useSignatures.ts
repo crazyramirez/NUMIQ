@@ -52,5 +52,32 @@ export function useSignatures() {
     await load(true)
   }
 
-  return { list, loading, load, create, rename, makeDefault, remove }
+  // Firma por defecto en facturas y presupuestos (Ajustes → Firmas)
+  const settings = useState<SigningSettings | null>('signing-settings', () => null)
+  async function loadSettings(force = false) {
+    if (!settings.value || force) settings.value = await $fetch<SigningSettings>('/api/signatures/settings')
+    return settings.value
+  }
+  async function saveSettings(next: SigningSettings) {
+    const prev = settings.value
+    settings.value = next
+    try {
+      settings.value = await $fetch<SigningSettings>('/api/signatures/settings', { method: 'PUT', body: next })
+    }
+    catch (err) {
+      settings.value = prev
+      throw err
+    }
+  }
+
+  return { list, loading, load, create, rename, makeDefault, remove, settings, loadSettings, saveSettings }
+}
+
+export interface SigningSettings {
+  invoices: boolean
+  quotes: boolean
+  /** null = la principal */
+  signatureId: number | null
+  /** Texto sobre la firma; vacío = sin texto */
+  label: string
 }

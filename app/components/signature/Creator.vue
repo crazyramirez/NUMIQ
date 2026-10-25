@@ -355,8 +355,9 @@ defineExpose({ submit, ready })
 }
 
 .checker {
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   height: 196px;
   padding: 16px;
   background-color: #fff;
@@ -372,8 +373,8 @@ defineExpose({ submit, ready })
 }
 
 .up-img {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
 }
 

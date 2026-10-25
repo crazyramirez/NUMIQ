@@ -2,6 +2,7 @@
 import type { MenuItem } from '~/components/ui/Menu.vue'
 import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 import type { PaperDoc } from './Paper.vue'
+import type { DocSigning } from './SignControl.vue'
 import type { LinkCandidate, LinkCandidatesResult, SalesInvoiceLink, SalesSourceLink } from '#shared/types/sales-links'
 
 type Doc = PaperDoc & {
@@ -26,6 +27,10 @@ type Doc = PaperDoc & {
   emails: Array<{ id: number, kind: 'document' | 'reminder', to: string, subject: string, status: 'sent' | 'failed', error: string | null, withPdf: boolean, createdAt: string }>
   attachments: Array<{ id: number, originalName: string, mime: string, size: number, createdAt: string }>
   original: { id: number, originalName: string, mime: string, size: number } | null
+  sign: boolean | null
+  signatureId: number | null
+  signature: { id: number, name: string, url: string, label: string } | null
+  signDefault: boolean
   canEdit?: boolean
   hasVerifactu?: boolean
   prev?: { id: number, number: string | null } | null
@@ -115,6 +120,37 @@ const pdfUrl = computed(() => `/api/sales/${props.id}/pdf`)
 function openSend(reminder = false) {
   sendReminder.value = reminder
   sendOpen.value = true
+}
+
+// ─── Firma: se pone o se quita en cualquier estado (no cambia importes ni datos fiscales) ───
+const signing = computed<DocSigning>({
+  get: () => ({ sign: doc.value?.sign ?? null, signatureId: doc.value?.signatureId ?? null }),
+  set: v => setSigning(v),
+})
+const savingSign = ref(false)
+async function setSigning(v: DocSigning) {
+  if (!doc.value) return
+  savingSign.value = true
+  try {
+    await $fetch(`/api/sales/${doc.value.id}/signature`, { method: 'PUT', body: v })
+    await refresh()
+  }
+  catch (err) {
+    toast.error('No se pudo cambiar la firma', errorMessage(err))
+  }
+  finally {
+    savingSign.value = false
+  }
+}
+const paperSignature = computed(() => (doc.value?.signature
+  ? { url: doc.value.signature.url, label: doc.value.signature.label, signer: doc.value.issuer?.name ?? company.value?.legalName ?? '' }
+  : null))
+/** Atajo del menú: firmar o quitar la firma de este documento */
+function toggleSign() {
+  const d = doc.value
+  if (!d) return
+  const next = !d.signature
+  setSigning({ sign: next === d.signDefault ? null : next, signatureId: d.signatureId })
 }
 
 async function act(name: string, fn: () => Promise<unknown>, ok?: string) {
@@ -305,6 +341,7 @@ const moreItems = computed<MenuItem[]>(() => {
   const items: MenuItem[] = [
     { label: 'Ver PDF', icon: 'ph:file-pdf', onClick: viewPdf },
     { label: 'Imprimir', icon: 'ph:printer', onClick: print },
+    { label: d.signature ? 'Quitar la firma' : 'Firmar el documento', icon: 'ph:signature', onClick: toggleSign },
   ]
   if (canLink.value) {
     items.push({
@@ -437,7 +474,7 @@ function paperCtx(): CtxSpec | null {
 
     <div class="v-body">
       <div v-ctx="paperCtx" class="print-root">
-        <SalesPaper :doc="doc" :company="company as any" :design="design?.design" :logo-url="design?.logoUrl" />
+        <SalesPaper :doc="doc" :company="company as any" :design="design?.design" :logo-url="design?.logoUrl" :signature="paperSignature" />
       </div>
 
       <aside class="v-side no-print">
@@ -532,6 +569,8 @@ function paperCtx(): CtxSpec | null {
             <button v-if="doc.original && signableMime(doc.original.mime)" type="button" class="link small imp-link" @click="viewer.open(storedFile(doc.original), 0, { sign: true })"><Icon name="ph:signature" aria-hidden="true" /> Firmar</button>
           </div>
         </section>
+
+        <SalesSignControl v-model="signing" :is-quote="isQuote" :saving="savingSign" settings-link />
 
         <SalesAttachments :doc-id="doc.id" :items="doc.attachments" @changed="refresh" />
 

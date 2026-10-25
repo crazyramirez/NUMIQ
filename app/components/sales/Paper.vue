@@ -38,6 +38,8 @@ const props = defineProps<{
   /** Diseño a medida de la empresa (estructura, color, tipografía, logo) */
   design?: InvoiceDesign | null
   logoUrl?: string | null
+  /** Firma estampada al pie (texto de encima, imagen y nombre de quien firma) */
+  signature?: { url: string, label: string, signer: string } | null
 }>()
 
 const d = computed(() => props.design ?? normalizeDesign(null, props.company.brandColor))
@@ -151,11 +153,17 @@ const place = (p: PaperParty) => [[p.postalCode, p.city].filter(Boolean).join(' 
     </div>
 
     <div class="paper-bottom">
-      <div v-if="isQuote ? doc.terms : doc.notes">
-        <span v-if="notesTitle" class="paper-label">{{ notesTitle }}</span>
-        <p class="paper-notes">{{ isQuote ? doc.terms : doc.notes }}</p>
+      <div>
+        <template v-if="isQuote ? doc.terms : doc.notes">
+          <span v-if="notesTitle" class="paper-label">{{ notesTitle }}</span>
+          <p class="paper-notes">{{ isQuote ? doc.terms : doc.notes }}</p>
+        </template>
+        <div v-if="signature" class="paper-sign" :class="{ spaced: isQuote ? doc.terms : doc.notes }">
+          <span v-if="signature.label" class="paper-label">{{ signature.label }}</span>
+          <img :src="signature.url" :alt="`Firma de ${signature.signer}`" class="paper-sign-img">
+          <span class="paper-sign-name">{{ signature.signer }}</span>
+        </div>
       </div>
-      <div v-else />
       <div class="paper-totals">
         <div class="t-row"><span>Base imponible</span><span>{{ eur(totals.taxBase) }}</span></div>
         <div v-for="g in totals.groups" :key="`${g.vatRate}-${g.surchargeRate}`" class="t-row">

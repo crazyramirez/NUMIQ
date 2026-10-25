@@ -188,7 +188,8 @@ async function toCanvas() {
   ctx.setTransform(k, 0, 0, k, 0, 0)
   ctx.fillStyle = props.color
   for (const s of strokes.value) paintStroke(ctx, s, props.thickness)
-  return trimInk(c, 12)
+  const trimmed = trimInk(c, 12)
+  return trimmed && fitCanvas(trimmed, SIGNATURE_MAX.w, SIGNATURE_MAX.h)
 }
 
 function onKey(e: KeyboardEvent) {

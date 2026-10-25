@@ -345,6 +345,10 @@ export const salesDocuments = mysqlTable('sales_documents', {
   /** Importada de otro programa (facturas de años anteriores): no genera registro VeriFactu */
   imported: boolean('imported').notNull().default(false),
   fileId: int('file_id'),
+  /** Firma en el documento: null = lo que diga Ajustes → Firmas para su tipo; true/false = elegido en él */
+  sign: boolean('sign'),
+  /** Firma elegida para este documento (null = la de Ajustes o la principal) */
+  signatureId: int('signature_id'),
   /** Enlace público para ver/descargar la factura sin cuenta */
   publicToken: varchar('public_token', { length: 64 }),
   /** Primera vez que el cliente abrió el enlace y nº de visitas */

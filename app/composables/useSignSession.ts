@@ -181,6 +181,14 @@ export function createSignSession(root: Ref<HTMLElement | undefined>) {
     placements.value = placements.value.map(q => (q.id === p.id ? next : q))
   }
 
+  /** Cambia la imagen de una firma en lo colocado y en el historial (firma borrada: pasa a una copia local) */
+  function rewriteSrc(key: string, src: string) {
+    const fix = (list: Placement[]) => list.map(p => (p.key === key ? { ...p, src } : p))
+    placements.value = fix(placements.value)
+    past.splice(0, past.length, ...past.map(fix))
+    future.splice(0, future.length, ...future.map(fix))
+  }
+
   function clear() {
     placements.value = []
     selected.value = null
@@ -307,7 +315,7 @@ export function createSignSession(root: Ref<HTMLElement | undefined>) {
     gesture = null
   }
 
-  return { placements, selected, active, canUndo, canRedo, add, remove, duplicate, everyPage, nudge, undo, redo, clear, start, heightFrac, pageCount, dispose }
+  return { placements, selected, active, canUndo, canRedo, add, remove, duplicate, everyPage, nudge, undo, redo, clear, rewriteSrc, start, heightFrac, pageCount, dispose }
 }
 
 export type SignSession = ReturnType<typeof createSignSession>

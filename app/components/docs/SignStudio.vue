@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CreatedSignature } from '~/components/signature/Creator.vue'
+import type { CtxSpec } from '~/composables/useContextMenu'
 import type { StampSource } from '~/composables/useSignSession'
 
 /**
@@ -23,7 +24,7 @@ const emit = defineEmits<{ exit: [], saved: [file: SavedFile] }>()
 
 const session = inject(SIGN_SESSION)!
 const toast = useToast()
-const { list: saved, load, create } = useSignatures()
+const { list: saved, load, create, remove: removeSignature, makeDefault } = useSignatures()
 
 const failed = ref(false)
 onMounted(async () => {
@@ -180,6 +181,69 @@ async function useNew() {
   }
 }
 
+// ─── Eliminar firmas de la bandeja (las guardadas, con confirmación) ───
+const savedId = (s: StampSource) => (s.key.startsWith('sig:') ? Number(s.key.slice(4)) : null)
+const toDelete = ref<StampSource | null>(null)
+const deleting = ref(false)
+const usedCount = computed(() => (toDelete.value ? session.placements.value.filter(p => p.key === toDelete.value!.key).length : 0))
+
+function askDelete(s: StampSource) {
+  if (savedId(s)) toDelete.value = s
+  else temps.value = temps.value.filter(t => t.key !== s.key)
+}
+
+async function confirmDelete() {
+  const s = toDelete.value
+  const id = s ? savedId(s) : null
+  if (!s || !id || deleting.value) return
+  deleting.value = true
+  try {
+    // Lo ya colocado con esta firma sigue valiendo: su imagen pasa a una copia local de este documento
+    if (session.placements.value.some(p => p.key === s.key)) {
+      const blob = await (await fetch(s.src)).blob()
+      const src = URL.createObjectURL(blob)
+      urls.push(src)
+      blobs.set(s.key, blob)
+      session.rewriteSrc(s.key, src)
+    }
+    await removeSignature(id)
+    toDelete.value = null
+    toast.success('Firma eliminada', `«${s.label}» ya no está en tus firmas. Los documentos firmados con ella no cambian.`)
+  }
+  catch (err) {
+    toast.error('No se pudo eliminar la firma', errorMessage(err))
+  }
+  finally {
+    deleting.value = false
+  }
+}
+
+async function setMain(id: number, label: string) {
+  try {
+    await makeDefault(id)
+    toast.success(`«${label}» es tu firma principal`)
+  }
+  catch (err) {
+    toast.error('No se pudo cambiar', errorMessage(err))
+  }
+}
+
+function chipMenu(s: StampSource): CtxSpec {
+  const id = savedId(s)
+  const sig = id ? saved.value?.find(x => x.id === id) : null
+  return {
+    title: s.label,
+    subtitle: id ? (sig?.isDefault ? 'Firma principal' : 'Guardada en tus firmas') : 'Solo para este documento',
+    icon: 'ph:signature',
+    items: [
+      { label: 'Colocar en la página', icon: 'ph:plus-circle', onClick: () => place(s) },
+      ...(id && sig && !sig.isDefault ? [{ label: 'Usar como principal', icon: 'ph:star', onClick: () => setMain(id, s.label) }] : []),
+      { divider: true },
+      { label: id ? 'Eliminar firma…' : 'Quitar de la bandeja', icon: 'ph:trash', danger: true, onClick: () => askDelete(s) },
+    ],
+  }
+}
+
 // ─── Salir, descargar y guardar ───
 const askDiscard = ref(false)
 const busy = ref<'save' | 'download' | null>(null)
@@ -263,6 +327,19 @@ function handleKey(e: KeyboardEvent): boolean {
     creatorOpen.value = false
     return true
   }
+  if (toDelete.value) {
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      toDelete.value = null
+      return true
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      confirmDelete()
+      return true
+    }
+    return false
+  }
   if (e.key === 'Escape') {
     e.preventDefault()
     if (askDiscard.value) askDiscard.value = false
@@ -311,18 +388,28 @@ defineExpose({ handleKey, save, download, requestExit, busy, count, sources, pla
 
     <div class="sg-tray" role="toolbar" aria-label="Firmas">
       <div class="sg-list">
-        <button
-          v-for="s in sources"
-          :key="s.key"
-          type="button"
-          class="sg-chip"
-          :title="`Colocar «${s.label}»`"
-          @pointerdown="trayDown($event, s)"
-          @click="trayClick(s)"
-        >
-          <span class="sg-paper"><img :src="s.src" alt="" draggable="false"></span>
-          <span class="sg-label">{{ s.label }}</span>
-        </button>
+        <div v-for="s in sources" :key="s.key" v-ctx="() => chipMenu(s)" class="sg-item">
+          <button
+            type="button"
+            class="sg-chip"
+            :title="`Colocar «${s.label}»`"
+            @pointerdown="trayDown($event, s)"
+            @click="trayClick(s)"
+          >
+            <span class="sg-paper"><img :src="s.src" alt="" draggable="false"></span>
+            <span class="sg-label">{{ s.label }}</span>
+          </button>
+          <button
+            type="button"
+            class="sg-del"
+            :title="savedId(s) ? 'Eliminar firma' : 'Quitar de la bandeja'"
+            :aria-label="savedId(s) ? `Eliminar la firma «${s.label}»` : `Quitar «${s.label}» de la bandeja`"
+            @pointerdown.stop
+            @click.stop="askDelete(s)"
+          >
+            <Icon name="ph:trash-bold" />
+          </button>
+        </div>
         <button type="button" class="sg-chip sg-new" :class="{ alone: !sources.length }" @click="creatorOpen = true">
           <span class="sg-new-ic"><Icon name="ph:plus-bold" /></span>
           <span class="sg-label">{{ sources.length ? 'Nueva firma' : 'Crea tu firma' }}</span>
@@ -364,6 +451,24 @@ defineExpose({ handleKey, save, download, requestExit, busy, count, sources, pla
       <div class="sg-ask-acts">
         <button type="button" class="sg-pill ghost" @click="askDiscard = false">Seguir firmando</button>
         <button type="button" class="sg-pill danger" @click="emit('exit')">Descartar</button>
+      </div>
+    </div>
+  </Transition>
+
+  <!-- ¿Eliminar firma guardada? -->
+  <Transition name="sg-sheet">
+    <div v-if="toDelete" class="sg-sheet-wrap" @pointerdown.self="toDelete = null">
+      <div class="sg-confirm" role="alertdialog" aria-modal="true" aria-labelledby="sg-del-t" aria-describedby="sg-del-s">
+        <span class="sg-confirm-paper"><img :src="toDelete.src" alt=""></span>
+        <p id="sg-del-t" class="sg-confirm-t">¿Eliminar la firma «{{ toDelete.label }}»?</p>
+        <p id="sg-del-s" class="sg-confirm-s">
+          Desaparece de tus firmas en todos los documentos. Lo que ya firmaste con ella no cambia.
+          <template v-if="usedCount">{{ usedCount === 1 ? ' La que has colocado aquí se queda.' : ` Las ${usedCount} que has colocado aquí se quedan.` }}</template>
+        </p>
+        <div class="sg-confirm-acts">
+          <UiButton :disabled="deleting" @click="toDelete = null">Cancelar</UiButton>
+          <UiButton variant="danger" icon="ph:trash" :loading="deleting" @click="confirmDelete">Eliminar firma</UiButton>
+        </div>
       </div>
     </div>
   </Transition>
@@ -466,6 +571,117 @@ defineExpose({ handleKey, save, download, requestExit, busy, count, sources, pla
   display: none;
 }
 
+.sg-item {
+  position: relative;
+  flex: none;
+}
+
+/* Eliminar: aparece al pasar por encima (siempre visible en pantallas táctiles) */
+.sg-del {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  font-size: 12px;
+  color: #fff;
+  background: rgba(22, 25, 32, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity var(--t-fast), transform var(--t-fast), background var(--t-fast);
+}
+
+.sg-item:hover .sg-del,
+.sg-item:focus-within .sg-del {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.sg-del:hover {
+  background: #e5484d;
+  border-color: transparent;
+}
+
+.sg-del:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+@media (hover: none) {
+  .sg-del {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Confirmación de eliminar (los diálogos de la app quedarían detrás del visor) */
+.sg-confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(400px, 100%);
+  padding: 24px 22px 20px;
+  color: var(--text);
+  text-align: center;
+  background: var(--surface);
+  border-radius: 22px;
+  box-shadow: 0 40px 100px -20px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  color-scheme: light dark;
+}
+
+.sg-confirm-paper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 180px;
+  height: 64px;
+  margin-bottom: 16px;
+  padding: 8px 14px;
+  background: linear-gradient(180deg, #fff, #f6f6f3);
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.07);
+}
+
+.sg-confirm-paper img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.sg-confirm-t {
+  font-size: 16px;
+  font-weight: 680;
+  overflow-wrap: anywhere;
+}
+
+.sg-confirm-s {
+  margin-top: 6px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
+.sg-confirm-acts {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 20px;
+}
+
+.sg-confirm-acts > * {
+  flex: 1;
+}
+
 .sg-chip {
   display: flex;
   flex: none;
@@ -500,8 +716,9 @@ defineExpose({ handleKey, save, download, requestExit, busy, count, sources, pla
 }
 
 .sg-paper {
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   height: 50px;
   padding: 6px 10px;
@@ -511,8 +728,8 @@ defineExpose({ handleKey, save, download, requestExit, busy, count, sources, pla
 }
 
 .sg-paper img {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   pointer-events: none;
 }

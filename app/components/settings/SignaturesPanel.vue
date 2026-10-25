@@ -3,6 +3,7 @@ import type { CtxSpec } from '~/composables/useContextMenu'
 import type { CreatedSignature } from '~/components/signature/Creator.vue'
 
 /** Firmas de la empresa: se crean dibujando, escribiendo o subiendo una imagen y se estampan desde el visor */
+defineProps<{ canEdit: boolean }>()
 const toast = useToast()
 const { confirm } = useConfirm()
 const { list, load, create, rename, makeDefault, remove } = useSignatures()
@@ -80,14 +81,14 @@ async function setDefault(s: Signature) {
 }
 
 async function del(s: Signature) {
-  const ok = await confirm({ title: `¿Borrar «${s.name}»?`, body: 'Los documentos que ya firmaste con ella no cambian.', confirmLabel: 'Borrar firma', danger: true })
+  const ok = await confirm({ title: `¿Eliminar la firma «${s.name}»?`, body: 'Los documentos que ya firmaste con ella no cambian.', confirmLabel: 'Eliminar firma', danger: true })
   if (!ok) return
   try {
     await remove(s.id)
-    toast.success('Firma borrada')
+    toast.success('Firma eliminada')
   }
   catch (err) {
-    toast.error('No se pudo borrar', errorMessage(err))
+    toast.error('No se pudo eliminar', errorMessage(err))
   }
 }
 
@@ -111,93 +112,97 @@ function menu(s: Signature): CtxSpec {
       { divider: true },
       { label: 'Nueva firma…', icon: 'ph:plus', onClick: () => openCreator() },
       { divider: true },
-      { label: 'Borrar firma', icon: 'ph:trash', danger: true, onClick: () => del(s) },
+      { label: 'Eliminar firma…', icon: 'ph:trash', danger: true, onClick: () => del(s) },
     ],
   }
 }
 </script>
 
 <template>
-  <UiCard title="Firmas" icon="ph:signature" subtitle="Guarda tu firma una vez y estámpala en contratos, presupuestos aceptados o facturas recibidas desde el visor de documentos: ábrelo y pulsa «Firmar».">
-    <template v-if="items.length" #actions>
-      <UiButton size="sm" variant="primary" icon="ph:plus-bold" @click="openCreator()">Nueva firma</UiButton>
-    </template>
-
-    <div v-if="list === null && !failed" class="grid" aria-busy="true">
-      <div v-for="i in 2" :key="i" class="skeleton sk-card" />
-    </div>
-
-    <p v-else-if="failed" class="none">No se pudieron cargar las firmas.</p>
-
-    <div v-else-if="!items.length" class="empty">
-      <div class="empty-art" aria-hidden="true">
-        <svg viewBox="0 0 220 70" class="empty-sig"><path d="M8 52c14-6 22-34 30-36 7-2-3 38 4 38 8 0 14-30 22-30s-2 24 6 24c9 0 12-18 20-18 6 0 3 12 10 12 9 0 16-20 26-20 8 0 2 16 12 16 12 0 22-14 36-14 10 0 16 6 34 4" /></svg>
-        <span class="empty-line" />
-      </div>
-      <p class="empty-t">Aún no tienes ninguna firma</p>
-      <p class="empty-s">Elige cómo crearla. Tardas menos de un minuto y queda guardada para siempre.</p>
-      <div class="ways">
-        <button type="button" class="way" @click="openCreator('draw')">
-          <span class="way-ic"><Icon name="ph:pen-nib-duotone" /></span>
-          <span class="way-t">Dibujarla</span>
-          <span class="way-s">Con el ratón, el dedo o un lápiz</span>
-        </button>
-        <button type="button" class="way" @click="openCreator('type')">
-          <span class="way-ic"><Icon name="ph:text-aa-duotone" /></span>
-          <span class="way-t">Escribirla</span>
-          <span class="way-s">Tu nombre con letra manuscrita</span>
-        </button>
-        <button type="button" class="way" @click="openCreator('upload')">
-          <span class="way-ic"><Icon name="ph:camera-duotone" /></span>
-          <span class="way-t">Subir una foto</span>
-          <span class="way-s">Firma en papel: quitamos el fondo</span>
-        </button>
-      </div>
-    </div>
-
-    <TransitionGroup v-else tag="ul" name="sig" class="grid">
-      <li v-for="s in items" :key="s.id" v-ctx="() => menu(s)" class="sig" :class="{ fresh: fresh === s.id, main: s.isDefault }">
-        <div class="sig-paper">
-          <img :src="s.url" :alt="`Firma: ${s.name}`" class="sig-img" loading="lazy" draggable="false">
-          <span v-if="s.isDefault" class="main-badge"><Icon name="ph:star-fill" aria-hidden="true" /> Principal</span>
-        </div>
-        <div class="meta">
-          <div class="grow min0">
-            <input
-              v-if="editing === s.id"
-              :id="`sig-name-${s.id}`"
-              v-model="draft"
-              class="rename"
-              maxlength="60"
-              aria-label="Nombre de la firma"
-              @keydown.enter.prevent="commitRename(s)"
-              @keydown.esc.stop.prevent="editing = null"
-              @blur="commitRename(s)"
-            >
-            <button v-else type="button" class="name truncate" title="Cambiar nombre" @click="startRename(s)">{{ s.name }}</button>
-            <p class="kind"><Icon :name="KIND[s.kind]?.icon ?? 'ph:signature'" aria-hidden="true" /> {{ KIND[s.kind]?.label }} · {{ relTime(s.createdAt) }}</p>
-          </div>
-          <UiButton v-if="!s.isDefault" size="sm" variant="ghost" square icon="ph:star" :aria-label="`Usar «${s.name}» como principal`" title="Usar como principal" @click="setDefault(s)" />
-          <UiButton size="sm" variant="ghost" square icon="ph:trash" :aria-label="`Borrar «${s.name}»`" title="Borrar" @click="del(s)" />
-        </div>
-      </li>
-      <li key="add" class="sig add-card">
-        <button type="button" class="add" @click="openCreator()">
-          <span class="add-ic"><Icon name="ph:plus-bold" /></span>
-          <span>Nueva firma</span>
-          <span class="add-s">Firma completa, rúbrica o iniciales</span>
-        </button>
-      </li>
-    </TransitionGroup>
-
-    <UiModal v-model="creatorOpen" title="Nueva firma" subtitle="Dibújala, escríbela o sube una foto" size="lg" persistent no-touch-keyboard>
-      <SignatureCreator v-if="creatorOpen" ref="creator" :initial-tab="creatorTab" />
-      <template #footer>
-        <UiButton @click="creatorOpen = false">Cancelar</UiButton>
-        <UiButton variant="primary" icon="ph:check-bold" :loading="saving" :disabled="!creator?.ready" @click="saveNew">Guardar firma</UiButton>
+  <div class="stack gap-4">
+    <UiCard title="Firmas" icon="ph:signature" subtitle="Guarda tu firma una vez y estámpala en contratos, presupuestos aceptados o facturas recibidas desde el visor de documentos: ábrelo y pulsa «Firmar».">
+      <template v-if="items.length" #actions>
+        <UiButton size="sm" variant="primary" icon="ph:plus-bold" @click="openCreator()">Nueva firma</UiButton>
       </template>
-    </UiModal>
-  </UiCard>
+
+      <div v-if="list === null && !failed" class="grid" aria-busy="true">
+        <div v-for="i in 2" :key="i" class="skeleton sk-card" />
+      </div>
+
+      <p v-else-if="failed" class="none">No se pudieron cargar las firmas.</p>
+
+      <div v-else-if="!items.length" class="empty">
+        <div class="empty-art" aria-hidden="true">
+          <svg viewBox="0 0 220 70" class="empty-sig"><path d="M8 52c14-6 22-34 30-36 7-2-3 38 4 38 8 0 14-30 22-30s-2 24 6 24c9 0 12-18 20-18 6 0 3 12 10 12 9 0 16-20 26-20 8 0 2 16 12 16 12 0 22-14 36-14 10 0 16 6 34 4" /></svg>
+          <span class="empty-line" />
+        </div>
+        <p class="empty-t">Aún no tienes ninguna firma</p>
+        <p class="empty-s">Elige cómo crearla. Tardas menos de un minuto y queda guardada para siempre.</p>
+        <div class="ways">
+          <button type="button" class="way" @click="openCreator('draw')">
+            <span class="way-ic"><Icon name="ph:pen-nib-duotone" /></span>
+            <span class="way-t">Dibujarla</span>
+            <span class="way-s">Con el ratón, el dedo o un lápiz</span>
+          </button>
+          <button type="button" class="way" @click="openCreator('type')">
+            <span class="way-ic"><Icon name="ph:text-aa-duotone" /></span>
+            <span class="way-t">Escribirla</span>
+            <span class="way-s">Tu nombre con letra manuscrita</span>
+          </button>
+          <button type="button" class="way" @click="openCreator('upload')">
+            <span class="way-ic"><Icon name="ph:camera-duotone" /></span>
+            <span class="way-t">Subir una foto</span>
+            <span class="way-s">Firma en papel: quitamos el fondo</span>
+          </button>
+        </div>
+      </div>
+
+      <TransitionGroup v-else tag="ul" name="sig" class="grid">
+        <li v-for="s in items" :key="s.id" v-ctx="() => menu(s)" class="sig" :class="{ fresh: fresh === s.id, main: s.isDefault }">
+          <div class="sig-paper">
+            <img :src="s.url" :alt="`Firma: ${s.name}`" class="sig-img" loading="lazy" draggable="false">
+            <span v-if="s.isDefault" class="main-badge"><Icon name="ph:star-fill" aria-hidden="true" /> Principal</span>
+          </div>
+          <div class="meta">
+            <div class="grow min0">
+              <input
+                v-if="editing === s.id"
+                :id="`sig-name-${s.id}`"
+                v-model="draft"
+                class="rename"
+                maxlength="60"
+                aria-label="Nombre de la firma"
+                @keydown.enter.prevent="commitRename(s)"
+                @keydown.esc.stop.prevent="editing = null"
+                @blur="commitRename(s)"
+              >
+              <button v-else type="button" class="name truncate" title="Cambiar nombre" @click="startRename(s)">{{ s.name }}</button>
+              <p class="kind"><Icon :name="KIND[s.kind]?.icon ?? 'ph:signature'" aria-hidden="true" /> {{ KIND[s.kind]?.label }} · {{ relTime(s.createdAt) }}</p>
+            </div>
+            <UiButton v-if="!s.isDefault" size="sm" variant="ghost" square icon="ph:star" :aria-label="`Usar «${s.name}» como principal`" title="Usar como principal" @click="setDefault(s)" />
+            <UiButton size="sm" variant="ghost" square icon="ph:trash" :aria-label="`Eliminar «${s.name}»`" title="Eliminar" @click="del(s)" />
+          </div>
+        </li>
+        <li key="add" class="sig add-card">
+          <button type="button" class="add" @click="openCreator()">
+            <span class="add-ic"><Icon name="ph:plus-bold" /></span>
+            <span>Nueva firma</span>
+            <span class="add-s">Firma completa, rúbrica o iniciales</span>
+          </button>
+        </li>
+      </TransitionGroup>
+
+      <UiModal v-model="creatorOpen" title="Nueva firma" subtitle="Dibújala, escríbela o sube una foto" size="lg" persistent no-touch-keyboard>
+        <SignatureCreator v-if="creatorOpen" ref="creator" :initial-tab="creatorTab" />
+        <template #footer>
+          <UiButton @click="creatorOpen = false">Cancelar</UiButton>
+          <UiButton variant="primary" icon="ph:check-bold" :loading="saving" :disabled="!creator?.ready" @click="saveNew">Guardar firma</UiButton>
+        </template>
+      </UiModal>
+    </UiCard>
+
+    <SettingsSigningDefaults :can-edit="canEdit" @create="openCreator()" />
+  </div>
 </template>
 
 <style scoped>
@@ -245,8 +250,9 @@ function menu(s: Signature): CtxSpec {
 
 .sig-paper {
   position: relative;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   height: 118px;
   padding: 16px 22px;
   background: radial-gradient(120% 100% at 50% 0%, #fff, #f8f8f5);
@@ -254,8 +260,8 @@ function menu(s: Signature): CtxSpec {
 }
 
 .sig-img {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   user-select: none;
 }

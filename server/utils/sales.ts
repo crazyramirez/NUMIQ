@@ -36,6 +36,9 @@ export const salesInputSchema = z.object({
   rectificationCode: z.enum(['R1', 'R2', 'R3', 'R4', 'R5']).nullish(),
   rectificationReason: z.string().max(255).nullish(),
   lines: z.array(salesLineSchema).min(1, 'Añade al menos una línea').max(500),
+  /** Firma: null = lo que diga Ajustes; sin enviar = no se toca */
+  sign: z.boolean().nullable().optional(),
+  signatureId: z.number().int().positive().nullable().optional(),
 })
 
 export type SalesInput = z.infer<typeof salesInputSchema>
@@ -98,6 +101,11 @@ export async function saveSalesDraft(companyId: number, userId: number, input: S
     surchargeTotal: totals.surchargeTotal,
     irpfTotal: totals.irpfTotal,
     total: totals.total,
+  }
+  if (input.sign !== undefined) values.sign = input.sign
+  if (input.signatureId !== undefined) {
+    if (input.signatureId) await findSignature(companyId, input.signatureId)
+    values.signatureId = input.signatureId
   }
 
   return db.transaction(async (tx) => {
@@ -347,6 +355,7 @@ export async function loadSalesDocument(companyId: number, id: number) {
       : null,
     doc.fileId ? ownOriginal(companyId, id, doc.fileId) : null,
   ])
+  const signing = await documentSignature(companyId, signingSettings({ settings: owner?.settings ?? null }), doc)
   const production = owner ? verifactuSettings(owner).environment === 'production' : false
   const idx = siblings.findIndex(s => s.id === id)
   const prev = idx > 0 ? { id: siblings[idx - 1]!.id, number: siblings[idx - 1]!.number } : null
@@ -363,6 +372,9 @@ export async function loadSalesDocument(companyId: number, id: number) {
     attachments,
     /** Archivo importado o escaneado del que sale la factura (si no figura ya entre los adjuntos) */
     original,
+    /** Firma que se ve en el documento (null = sin firma) y si Ajustes la pone por defecto en su tipo */
+    signature: signing.signature,
+    signDefault: signing.byDefault,
     contact: contact ? contactView(contact) : null,
     hasVerifactu: false,
     canEdit: true,

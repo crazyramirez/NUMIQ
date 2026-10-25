@@ -463,6 +463,35 @@
   white-space: pre-line;
 }
 
+.paper-sign {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: min(260px, 100%);
+  break-inside: avoid;
+}
+
+.paper-sign.spaced {
+  margin-top: 22px;
+}
+
+.paper-sign-img {
+  display: block;
+  max-width: 230px;
+  max-height: 82px;
+  margin-top: 6px;
+  object-fit: contain;
+}
+
+.paper-sign-name {
+  align-self: stretch;
+  margin-top: 5px;
+  padding-top: 5px;
+  font-size: 0.86em;
+  color: var(--p-text-3);
+  border-top: 1px solid var(--p-line-strong);
+}
+
 .paper-pay {
   margin-top: 24px;
   break-inside: avoid;
