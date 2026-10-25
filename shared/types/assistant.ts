@@ -22,6 +22,8 @@ export type AiActionPreview = {
   rows: AiActionRow[]
   warnings: string[]
   undoable: boolean
+  /** Envíos por email: el asunto y el texto que se van a mandar (el del primero si son varios) */
+  email?: { subject: string, message: string, attachments: string[] } | null
 }
 
 export type AiActionSkipped = Array<{ id: number, label: string, reason: string }>

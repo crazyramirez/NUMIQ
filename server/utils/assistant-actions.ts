@@ -236,6 +236,7 @@ export function decisionReply(views: ActionView[], confirmed: boolean) {
   const lines = views.map((v) => {
     if (v.status === 'done') {
       const r = v.result!
+      if (!r.done && r.skipped.length) return `No he podido completar **${v.title}**: ${r.skipped[0]!.reason}.`
       const skipped = r.skipped.length ? ` ${r.skipped.length === 1 ? 'Uno no se pudo' : `${r.skipped.length} no se pudieron`} cambiar: lo ves en la tarjeta.` : ''
       return `Hecho: **${v.title}** (${r.done} de ${v.preview.count}).${skipped}${r.message ? ` ${r.message}` : ''}`
     }

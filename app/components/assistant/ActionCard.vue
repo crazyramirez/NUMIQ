@@ -31,8 +31,12 @@ const STATUS: Record<AiActionStatus, { label: string, tone: Tone, icon: string }
 }
 const status = computed(() => STATUS[a.value.status])
 
+const isEmail = computed(() => a.value.kind === 'ventas.enviar')
+const showMessage = ref(false)
+
 const icon = computed(() => {
   const k = a.value.kind
+  if (isEmail.value) return 'ph:envelope-simple'
   if (k.endsWith('.eliminar')) return 'ph:trash'
   if (k.endsWith('.crear')) return 'ph:plus'
   if (k.startsWith('banco.')) return 'ph:bank'
@@ -46,8 +50,9 @@ const skipped = computed(() => (a.value.status === 'undone' ? a.value.result?.re
 const outcome = computed(() => {
   const r = a.value.result
   if (a.value.status === 'done' && r) {
-    if (!r.done) return 'No se ha cambiado nada.'
+    if (!r.done) return isEmail.value ? 'No se ha enviado nada.' : 'No se ha cambiado nada.'
     const of = a.value.preview.count > 1 ? `${r.done} de ${a.value.preview.count}` : ''
+    if (isEmail.value) return of ? `Enviados ${of}.` : 'Enviado.'
     return of ? `Aplicado a ${of}.` : 'Aplicado.'
   }
   if (a.value.status === 'undone') return 'Deshecha: todo ha vuelto a como estaba.'
@@ -113,6 +118,20 @@ async function call(op: 'confirm' | 'cancel' | 'undo') {
     </button>
     <p v-if="expanded && extra > 0" class="ac-hint">Y {{ extra }} más que no caben aquí: también se incluyen.</p>
 
+    <div v-if="a.preview.email" class="ac-mail">
+      <p class="ac-mail-subject"><span>Asunto</span>{{ a.preview.email.subject }}</p>
+      <p class="ac-mail-body" :class="{ open: showMessage }">{{ showMessage ? a.preview.email.message : a.preview.email.message.replace(/\s*\n\s*/g, ' ') }}</p>
+      <div class="ac-mail-foot">
+        <span v-for="f in a.preview.email.attachments" :key="f" class="ac-mail-file">
+          <Icon :name="f.endsWith('.pdf') ? 'ph:file-pdf' : 'ph:paperclip'" aria-hidden="true" />{{ f }}
+        </span>
+        <button type="button" class="ac-more ac-mail-toggle" @click="showMessage = !showMessage">
+          <Icon :name="showMessage ? 'ph:caret-up' : 'ph:caret-down'" aria-hidden="true" />
+          {{ showMessage ? 'Ver menos' : 'Ver el mensaje' }}
+        </button>
+      </div>
+    </div>
+
     <ul v-if="a.status === 'pending' && a.preview.warnings.length" class="ac-warn">
       <li v-for="w in a.preview.warnings" :key="w"><Icon name="ph:warning-fill" aria-hidden="true" /><span>{{ w }}</span></li>
     </ul>
@@ -131,12 +150,12 @@ async function call(op: 'confirm' | 'cancel' | 'undo') {
           <UiButton
             :variant="a.risk === 'high' ? 'danger' : 'primary'"
             size="sm"
-            :icon="a.risk === 'high' ? 'ph:trash' : 'ph:check-bold'"
+            :icon="a.risk === 'high' ? 'ph:trash' : isEmail ? 'ph:paper-plane-tilt' : 'ph:check-bold'"
             :disabled="!!busy"
             :loading="busy === 'confirm'"
             @click="call('confirm')"
           >
-            {{ a.risk === 'high' ? 'Sí, eliminar' : 'Confirmar' }}
+            {{ a.risk === 'high' ? 'Sí, eliminar' : isEmail ? 'Enviar' : 'Confirmar' }}
           </UiButton>
         </div>
       </template>
@@ -157,7 +176,7 @@ async function call(op: 'confirm' | 'cancel' | 'undo') {
     <div v-if="skipped.length" class="ac-skip">
       <button type="button" class="ac-more" @click="showSkipped = !showSkipped">
         <Icon :name="showSkipped ? 'ph:caret-up' : 'ph:caret-down'" aria-hidden="true" />
-        {{ skipped.length === 1 ? '1 no se pudo cambiar' : `${skipped.length} no se pudieron cambiar` }}
+        {{ skipped.length === 1 ? `1 no se pudo ${isEmail ? 'enviar' : 'cambiar'}` : `${skipped.length} no se pudieron ${isEmail ? 'enviar' : 'cambiar'}` }}
       </button>
       <ul v-if="showSkipped" class="ac-skip-list">
         <li v-for="s in skipped" :key="s.id"><strong>{{ s.label }}</strong> · {{ s.reason }}</li>
@@ -356,6 +375,71 @@ a.ac-label:hover {
   margin: 0 16px;
   font-size: var(--text-xs);
   color: var(--text-3);
+}
+
+/* Correo que se va a enviar */
+
+.ac-mail {
+  margin: 10px 16px 0;
+  padding: 10px 12px;
+  font-size: var(--text-xs);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+
+.ac-mail-subject {
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.ac-mail-subject span {
+  margin-right: 6px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.ac-mail-body {
+  display: -webkit-box;
+  margin-top: 6px;
+  line-height: 1.5;
+  color: var(--text-2);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.ac-mail-body.open {
+  display: block;
+}
+
+.ac-mail-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ac-mail-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 8px;
+  color: var(--text-2);
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-full);
+  overflow-wrap: anywhere;
+}
+
+.ac-mail-toggle {
+  margin: 0 0 0 auto;
 }
 
 /* Avisos */

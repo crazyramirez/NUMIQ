@@ -13,9 +13,64 @@ export interface SalesEmailInput {
   attachmentIds: number[]
   /** Documento original importado o escaneado del que sale la factura */
   attachOriginal?: boolean
+  /**
+   * Copia para la propia empresa (su email o el del usuario): admite borradores, no cuenta como
+   * enviada al cliente ni lleva el enlace a la página pública (abrirla la marcaría como vista)
+   */
+  internal?: boolean
 }
 
 const KIND_TITLES: Record<string, string> = { invoice: 'Factura', rectifying: 'Factura rectificativa', quote: 'Presupuesto', proforma: 'Proforma' }
+
+const longDate = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
+
+/**
+ * Asunto y mensaje por defecto de un envío, con las plantillas del diseño si las hay. Los mismos
+ * textos que propone la ventana "Enviar"; la copia interna lleva un texto propio para revisarla.
+ */
+export function salesEmailTexts(
+  company: Company,
+  design: Pick<InvoiceDesign, 'defaultEmailSubject' | 'defaultEmailMessage' | 'defaultEmailSubjectQuote' | 'defaultEmailMessageQuote'>,
+  doc: { kind: string, status: string, number: string | null, total: number, paidTotal: number, dueDate: string | null, client: string | null },
+  contact: { name: string, kind: string } | null,
+  opts: { reminder: boolean, internal: boolean },
+) {
+  const brand = company.tradeName || company.legalName
+  const isQuote = doc.kind === 'quote' || doc.kind === 'proforma'
+  const label = (KIND_TITLES[doc.kind] ?? 'Documento').toLowerCase()
+  const n = doc.number ?? ''
+  const due = doc.dueDate ? longDate(doc.dueDate) : ''
+  if (opts.internal) {
+    const draft = doc.status === 'draft'
+    const what = draft ? `${label} en borrador` : `${label} ${n}`
+    return {
+      subject: `${draft ? 'Borrador para revisar' : 'Copia'} · ${capitalize(label)}${n ? ` ${n}` : ''}${doc.client ? ` · ${doc.client}` : ''}`,
+      message: `Hola:\n\nTe adjunto la ${what}${doc.client ? ` para ${doc.client}` : ''} por importe de ${eurText(doc.total)}${due ? ` (${isQuote ? 'válido hasta' : 'vence'} el ${due})` : ''}${draft ? ', para que la revises antes de emitirla. No se ha enviado al cliente' : ''}.\n\nUn saludo,\n${brand}`,
+    }
+  }
+  const firstName = contact?.kind === 'person' ? contact.name.split(' ')[0] ?? '' : ''
+  const hello = `Hola${firstName ? `, ${firstName}` : ''}:`
+  if (opts.reminder) {
+    const pending = round2(doc.total - doc.paidTotal)
+    return {
+      subject: `Recordatorio de pago · factura ${n}`,
+      message: `${hello}\n\nTe escribimos para recordarte que la factura ${n} tiene ${eurText(pending)} pendientes de pago${due ? ` desde el ${due}` : ''}.\n\nSi ya la has abonado, ignora este mensaje. Te adjuntamos de nuevo la factura por si la necesitas.\n\nUn saludo,\n${brand}`,
+    }
+  }
+  const tokens: Record<string, string> = { cliente: firstName || contact?.name || doc.client || '', numero: n, importe: eurText(doc.total), vencimiento: due, empresa: brand, tipo: label }
+  const subjectTpl = isQuote ? design.defaultEmailSubjectQuote : design.defaultEmailSubject
+  const messageTpl = isQuote ? design.defaultEmailMessageQuote : design.defaultEmailMessage
+  return {
+    subject: subjectTpl ? renderEmailTemplate(subjectTpl, tokens) : `${capitalize(label)} ${n} · ${brand}`,
+    message: messageTpl
+      ? renderEmailTemplate(messageTpl, tokens)
+      : isQuote
+        ? `${hello}\n\nTe enviamos el presupuesto ${n} por ${eurText(doc.total)}. Quedamos a tu disposición para cualquier duda o ajuste.\n\nUn saludo,\n${brand}`
+        : `${hello}\n\nTe enviamos la ${label} ${n} por importe de ${eurText(doc.total)}${due ? `, con vencimiento el ${due}` : ''}.\n\nGracias por tu confianza.\n\nUn saludo,\n${brand}`,
+  }
+}
+
+const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 /**
  * Envía una factura o presupuesto (o un recordatorio de pago) desde el Gmail de la app y lo anota
@@ -25,7 +80,7 @@ export async function sendSalesEmail(company: Company, userId: number | null, id
   if (!mailEnabled()) throw createError({ statusCode: 503, statusMessage: 'El correo no está configurado: añade GOOGLE_APP_EMAIL y GOOGLE_APP_PASSWORD' })
 
   const { buffer, filename, doc } = await salesPdf(company, id)
-  if (doc.status === 'draft') throw createError({ statusCode: 409, statusMessage: 'Emite el documento antes de enviarlo' })
+  if (doc.status === 'draft' && !input.internal) throw createError({ statusCode: 409, statusMessage: 'Emite el documento antes de enviarlo' })
 
   const brand = company.tradeName || company.legalName
   const design = await getCompanyDesign(company)
@@ -44,7 +99,7 @@ export async function sendSalesEmail(company: Company, userId: number | null, id
     lines: input.message.split(/\n{2,}/),
     details,
     // Página pública: ver y descargar o consultar cómo pagar. El presupuesto va en el PDF adjunto (se responde por email)
-    action: doc.publicToken && site && !(isQuote && input.attachPdf)
+    action: doc.publicToken && site && !input.internal && !(isQuote && input.attachPdf)
       ? { label: `Ver ${label.toLowerCase()}`, url: `${site.replace(/\/+$/, '')}/p/${doc.publicToken}` }
       : null,
     footer: [company.legalName, `NIF ${company.nif}`, company.email].filter(Boolean).join(' · '),
@@ -93,7 +148,8 @@ export async function sendSalesEmail(company: Company, userId: number | null, id
     throw createError({ statusCode: 502, statusMessage: `Gmail no aceptó el envío: ${message}` })
   }
 
-  // Emitido → enviado (los cobrados o parciales conservan su estado)
+  // Emitido → enviado (los cobrados o parciales conservan su estado). La copia interna no cuenta
+  if (input.internal) return record
   if (doc.status === 'issued') {
     await db.update(tables.salesDocuments).set({ status: 'sent', sentAt: new Date() })
       .where(and(eq(tables.salesDocuments.id, id), eq(tables.salesDocuments.status, 'issued')))

@@ -101,6 +101,16 @@ export function assistantToolDefs() {
         referencia: str('Referencia o nº de pedido del cliente'),
       }),
     }),
+    fn('enviar_email', 'Prepara el envío por email de facturas o presupuestos con su PDF (o un recordatorio de pago) para que el usuario lo confirme. NO envía nada hasta que confirme. Los borradores solo pueden enviarse a la empresa o al propio usuario, para revisarlos (van con la marca BORRADOR); al cliente solo van documentos emitidos.', {
+      documentos: { type: 'string', enum: ['facturas', 'presupuestos'] },
+      filtro: FILTER,
+      para: { type: 'array', items: { type: 'string' }, description: 'Destinatarios: "cliente" (el email de cada documento), "empresa" (el email de la empresa en Ajustes), "yo" (el email del usuario que habla contigo), "gestor" (el asesor configurado) o direcciones de email concretas. «Envíamela» = ["yo"]; «al email de la empresa» = ["empresa"]' },
+      copia: { type: ['array', 'null'], items: { type: 'string' }, description: 'CC, con los mismos valores que para' },
+      recordatorio: bool('true para un recordatorio de pago de facturas pendientes en vez del envío normal'),
+      asunto: str('Solo si el usuario lo pide; null = el habitual de la empresa'),
+      mensaje: str('Texto del correo solo si el usuario lo dicta o pide algo concreto; null = el habitual de la empresa'),
+      adjuntos: bool('true para adjuntar también los archivos del documento (pedido, albarán…)'),
+    }),
     fn('operar_gastos', 'Prepara un cambio sobre gastos (facturas recibidas, tickets, cuotas) para que el usuario lo confirme: modificar (proveedor, categoría, tipo, % deducible, IVA, retención, fecha, descripción, forma de pago), eliminar o marcar como pagados. NO ejecuta nada.', {
       accion: { type: 'string', enum: ['modificar', 'eliminar', 'marcar_pagados'] },
       filtro: FILTER,
@@ -195,6 +205,7 @@ export const TOOL_LABELS: Record<string, string> = {
   banco: 'Mirando el banco',
   listar: 'Buscando los registros',
   operar_facturas: 'Preparando el cambio',
+  enviar_email: 'Preparando el correo',
   operar_gastos: 'Preparando el cambio',
   operar_banco: 'Preparando el cambio',
   operar_contactos: 'Preparando el cambio',
@@ -204,7 +215,7 @@ export const TOOL_LABELS: Record<string, string> = {
   crear_gasto: 'Anotando el gasto',
 }
 
-const WRITE_TOOLS = new Set(['crear_borrador', 'operar_facturas', 'operar_gastos', 'operar_banco', 'operar_contactos', 'operar_productos', 'crear_contacto', 'crear_producto', 'crear_gasto'])
+const WRITE_TOOLS = new Set(['crear_borrador', 'operar_facturas', 'enviar_email','operar_gastos', 'operar_banco', 'operar_contactos', 'operar_productos', 'crear_contacto', 'crear_producto', 'crear_gasto'])
 
 /** Saldos y últimos movimientos del banco */
 async function bancoResumen(company: Company) {
@@ -577,6 +588,7 @@ async function runTool(company: Company, actor: Actor, name: string, args: Recor
     switch (name) {
       case 'listar': return await listar(company, String(args.entidad ?? ''), args.filtro)
       case 'operar_facturas': return await propose(planSales(op, args.documentos === 'presupuestos' ? 'quote' : 'invoice', String(args.accion), args.filtro, args.cambios as SalesChangesIn))
+      case 'enviar_email': return await propose(planSalesEmail(op, args.documentos === 'presupuestos' ? 'quote' : 'invoice', args.filtro, args as unknown as SalesEmailIn))
       case 'operar_gastos': return await propose(planExpenses(op, String(args.accion), args.filtro, args.cambios as ExpenseChangesIn))
       case 'operar_banco': return await propose(planBank(op, String(args.accion), args.filtro, args.opciones as BankOptionsIn))
       case 'operar_contactos': return await propose(planContacts(op, String(args.accion), args.filtro, args.cambios as ContactChangesIn))
@@ -623,6 +635,7 @@ Cómo respondes:
 - Eres experto en fiscalidad española de autónomos y pymes (IVA, IRPF, modelos 303, 130, 111, 115, 349, 390, 190, 180, 347, Renta y Sociedades, gastos deducibles, plazos, VeriFactu). Da consejos prácticos y concretos para esta empresa. En decisiones con riesgo fiscal, recomienda confirmarlo con su asesor en una sola frase.
 - Las cifras de impuestos de NUMIQ son estimaciones a partir de lo registrado: dilo si es relevante.
 - Puedes preparar BORRADORES de facturas y presupuestos con la herramienta crear_borrador cuando te lo pidan: confirma cliente y conceptos si no están claros, resume lo creado con su total y enlázalo para que lo revise (la factura la emite él; el presupuesto queda pendiente con su número). Nunca digas que está enviado.
+- Puedes enviar facturas y presupuestos por email con su PDF (enviar_email): al cliente, al email de la empresa, al propio usuario («envíamela», «mándamela para verla»), al gestor o a cualquier dirección que te den, y recordatorios de pago. Si piden ver un borrador en PDF, envíaselo a «yo» sin emitirlo. Al cliente solo van documentos emitidos: si es un borrador, ofrece emitirlo antes. No escribas tú el texto del correo salvo que lo pidan: se usa el habitual de la empresa. Como cualquier cambio, queda pendiente de que el usuario confirme; nunca digas que se ha enviado hasta que el historial lo marque como ejecutado.
 
 Cambios en los datos (tienes control completo, siempre con la confirmación del usuario):
 - Con operar_facturas, operar_gastos, operar_banco, operar_contactos y operar_productos puedes modificar, reasignar, emitir, marcar cobros y pagos, clasificar y eliminar cualquier registro de la empresa, uno o cientos a la vez.

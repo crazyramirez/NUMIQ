@@ -1922,6 +1922,175 @@ async function expenseCreateRevert(ctx: OpCtx, u: { id: number }) {
   return { done: deleted.length, skipped: [] }
 }
 
+// ═══ Envíos por email ═══════════════════════════════════════════════════════
+
+export interface SalesEmailIn {
+  para: string[]
+  copia: string[] | null
+  recordatorio: boolean | null
+  asunto: string | null
+  mensaje: string | null
+  adjuntos: boolean | null
+}
+
+type EmailItem = { id: number, label: string, to: string[], cc: string[], subject: string, message: string, internal: boolean, attachmentIds: number[], url: string }
+
+const MAX_EMAILS = 25
+const EMAIL_RE = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]{2,}$/
+
+/**
+ * Envío de facturas o presupuestos por email. Destinatarios: «cliente» (el email de cada documento),
+ * «empresa» (el de Ajustes), «yo» (el del usuario), «gestor» o direcciones concretas. Solo a la
+ * empresa o al usuario es una copia interna: admite borradores (salen con la marca BORRADOR).
+ */
+export async function planSalesEmail(ctx: OpCtx, family: SalesFamily, rawFilter: unknown, o: SalesEmailIn): Promise<OpPlan> {
+  if (!mailEnabled()) throw new OpError('El correo de la app no está configurado (GOOGLE_APP_EMAIL y GOOGLE_APP_PASSWORD): no se puede enviar nada')
+  const f = cleanFilter(rawFilter)
+  const [one, many] = family === 'quote' ? ['presupuesto', 'presupuestos'] : ['factura', 'facturas']
+  requireScope(f, many)
+  const reminder = !!o.recordatorio
+  if (reminder && family === 'quote') throw new OpError('Los recordatorios de pago son para facturas')
+  const { rows: found, matched } = await salesTargets(ctx.company, f, family)
+  if (!found.length) throw new OpError(`No hay ${many} que coincidan con ese filtro`, { clientes_coincidentes: matched })
+  if (found.length > MAX_EMAILS) throw new OpError(`Son ${found.length} ${many}: como mucho ${MAX_EMAILS} envíos de una vez. Acota la petición, por ejemplo por fechas o cliente.`)
+
+  const db = useDb()
+  const ids = found.map(r => r.id)
+  const [contacts, snapshots, [user], files] = await Promise.all([
+    companyContacts(ctx.company.id),
+    db.select({ id: tables.salesDocuments.id, customer: tables.salesDocuments.customer }).from(tables.salesDocuments).where(inArray(tables.salesDocuments.id, ids)),
+    db.select({ email: tables.users.email }).from(tables.users).where(eq(tables.users.id, ctx.actor.id)),
+    o.adjuntos
+      ? db.select({ id: tables.files.id, linkedId: tables.files.linkedId, name: tables.files.originalName }).from(tables.files)
+          .where(and(eq(tables.files.companyId, ctx.company.id), eq(tables.files.linkedType, 'sales_document'), inArray(tables.files.linkedId, ids)))
+      : Promise.resolve([]),
+  ])
+  const own = new Set([ctx.company.email, user?.email].filter((x): x is string => !!x).map(x => x.toLowerCase()))
+
+  // Destinatarios fijos (todo menos «cliente», que depende de cada documento)
+  const fixed = (list: string[], what: string) => {
+    const out: string[] = []
+    for (const raw of list.map(x => x.trim()).filter(Boolean)) {
+      const key = raw.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      if (key === 'cliente') continue
+      if (key === 'empresa') {
+        if (!ctx.company.email) throw new OpError('La empresa no tiene email en Ajustes → Empresa: añádelo o dime a qué dirección lo envío')
+        out.push(ctx.company.email)
+      }
+      else if (key === 'yo' || key === 'usuario') {
+        if (!user?.email) throw new OpError('Tu usuario no tiene email')
+        out.push(user.email)
+      }
+      else if (key === 'gestor' || key === 'asesor') {
+        const a = advisorOf(ctx.company)
+        if (!a?.email) throw new OpError('No hay gestor configurado: se añade en Ajustes → Gestoría (/ajustes?s=gestoria)')
+        out.push(a.email)
+      }
+      else if (EMAIL_RE.test(raw)) out.push(raw)
+      else throw new OpError(`«${raw}» no es un email válido ${what}`)
+    }
+    return out
+  }
+  const wantsClient = (list: string[]) => list.some(x => x.trim().toLowerCase() === 'cliente')
+  const fixedTo = fixed(o.para, 'para el destinatario')
+  const fixedCc = fixed(o.copia ?? [], 'para la copia')
+  if (!fixedTo.length && !wantsClient(o.para)) throw new OpError('Falta el destinatario: el cliente, la empresa, tú o un email')
+
+  const design = await getCompanyDesign(ctx.company)
+  const items: EmailItem[] = []
+  const skipped: AiActionRow[] = []
+  for (const r of found) {
+    const contact = contacts.find(c => c.id === r.contactId) ?? null
+    const clientEmail = contact?.email || snapshots.find(s => s.id === r.id)?.customer?.email || null
+    const uniq = (list: string[]) => [...new Map(list.map(x => [x.toLowerCase(), x])).values()]
+    const to = uniq([...(wantsClient(o.para) && clientEmail ? [clientEmail] : []), ...fixedTo])
+    const cc = uniq([...(wantsClient(o.copia ?? []) && clientEmail ? [clientEmail] : []), ...fixedCc]).filter(x => !to.some(t => t.toLowerCase() === x.toLowerCase()))
+    const label = salesLabel(r)
+    if (!to.length) {
+      skipped.push(salesRow(r, { after: 'El cliente no tiene email' }))
+      continue
+    }
+    const internal = [...to, ...cc].every(x => own.has(x.toLowerCase()))
+    if (r.status === 'draft' && !internal) {
+      throw new OpError(`${label} de ${r.client ?? 'sin cliente'} es un borrador: solo puede enviarse a la empresa o a ti para revisarla. Para mandarla al cliente hay que emitirla antes (operar_facturas emitir).`)
+    }
+    if (reminder && round2(r.total - r.paidTotal) <= 0) {
+      skipped.push(salesRow(r, { after: 'Ya está cobrada' }))
+      continue
+    }
+    const texts = salesEmailTexts(ctx.company, design, r, contact, { reminder, internal })
+    items.push({
+      id: r.id,
+      label: `${label} · ${r.client ?? 'sin cliente'}`,
+      to,
+      cc,
+      subject: o.asunto?.trim().slice(0, 200) || texts.subject,
+      message: o.mensaje?.trim().slice(0, 5000) || texts.message,
+      internal,
+      attachmentIds: files.filter(x => x.linkedId === r.id).map(x => x.id).slice(0, 10),
+      url: salesUrl(r),
+    })
+  }
+  if (!items.length) throw new OpError(skipped.some(s => s.after === 'Ya está cobrada') ? 'Esas facturas ya están cobradas: no hay nada que recordar' : 'Ninguno tiene email del cliente: añádelo en su ficha o dime a qué dirección lo envío')
+
+  const rows = found.filter(r => items.some(i => i.id === r.id)).map((r) => {
+    const i = items.find(x => x.id === r.id)!
+    return salesRow(r, { sub: [r.client, `Para ${i.to.join(', ')}`, i.cc.length ? `CC ${i.cc.join(', ')}` : ''].filter(Boolean).join(' · ') })
+  })
+  const drafts = found.filter(r => r.status === 'draft' && items.some(i => i.id === r.id)).length
+  const allInternal = items.every(i => i.internal)
+  const first = items[0]!
+  const what = reminder ? count(items.length, 'recordatorio de pago', 'recordatorios de pago') : count(items.length, one, many)
+  const recipients = [...new Set(items.flatMap(i => i.to))]
+  const firstNumber = found.find(r => r.id === first.id)!.number
+  const single = `${reminder ? 'el recordatorio de la' : family === 'quote' ? 'el' : 'la'} ${one} ${firstNumber ?? 'en borrador'}`
+  return {
+    kind: 'ventas.enviar',
+    title: items.length === 1 && recipients.length === 1 ? `Enviar ${single} a ${recipients[0]}` : `Enviar ${what} por email`,
+    risk: 'normal',
+    params: { items, kind: reminder ? 'reminder' : 'document', labels: labelsOf(items) },
+    preview: preview(rows, {
+      scope: recipients.length === 1 ? `Para: ${recipients[0]}` : null,
+      total: sum(found.filter(r => items.some(i => i.id === r.id)).map(r => r.total)),
+      undoable: false,
+      change: allInternal ? 'Copia para ti, con el PDF: no cuenta como enviada al cliente' : reminder ? 'Recordatorio de pago con el PDF' : 'Por email con el PDF',
+      email: {
+        subject: first.subject,
+        message: first.message,
+        attachments: [pdfFilename(found.find(r => r.id === first.id)!.kind, firstNumber), ...files.filter(x => first.attachmentIds.includes(x.id)).map(x => x.name)],
+      },
+      warnings: [
+        drafts ? `${count(drafts, 'va', 'van')} con la marca BORRADOR: es solo para revisar, no se emite ni se envía al cliente.` : '',
+        allInternal ? '' : 'El correo sale en cuanto confirmes y no se puede deshacer.',
+        skipped.length ? `${count(skipped.length, 'documento se queda', 'documentos se quedan')} fuera: ${names(skipped.map(s => `${s.label} (${s.after})`), 3)}.` : '',
+        items.length > 1 ? 'El texto de abajo es el del primero: cada envío lleva sus datos.' : '',
+      ].filter(Boolean),
+    }),
+  }
+}
+
+async function salesSend(ctx: OpCtx, p: { items: EmailItem[], kind: 'document' | 'reminder', labels: Record<string, string> }): Promise<OpOutcome> {
+  const t = new Tally(p.labels)
+  const site = String(useRuntimeConfig().siteUrl || '')
+  const sentTo = new Set<string>()
+  for (const i of p.items) {
+    try {
+      await sendSalesEmail(ctx.company, ctx.actor.id, i.id, {
+        to: i.to, cc: i.cc, subject: i.subject, message: i.message, kind: p.kind, attachPdf: true, attachmentIds: i.attachmentIds, internal: i.internal,
+      }, site)
+      i.to.forEach(x => sentTo.add(x))
+      t.done++
+    }
+    catch (err) {
+      t.skip(i.id, errText(err))
+    }
+  }
+  return {
+    result: t.result({ message: sentTo.size ? `Enviado a ${names([...sentTo], 3)}` : null, url: p.items.length === 1 ? p.items[0]!.url : null }),
+    undo: null,
+  }
+}
+
 // ═══ Registro ═══════════════════════════════════════════════════════════════
 
 // Los parámetros y el «deshacer» vienen de la propuesta guardada (JSON)
@@ -1932,6 +2101,7 @@ export async function executeOp(ctx: OpCtx, kind: string, params: any): Promise<
     case 'ventas.emitir': return salesIssue(ctx, params)
     case 'ventas.cobrar': return salesCollect(ctx, params)
     case 'ventas.pendiente': return salesUncollect(ctx, params)
+    case 'ventas.enviar': return salesSend(ctx, params)
     case 'gastos.modificar': return expensesModify(ctx, params)
     case 'gastos.eliminar': return expensesDelete(ctx, params)
     case 'gastos.pagar': return expensesPay(ctx, params)
