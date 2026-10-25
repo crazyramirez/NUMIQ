@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { and, desc, eq, gte, inArray, isNotNull, lte, ne } from 'drizzle-orm'
 import type { BankSuggestion } from '../db/schema'
 import { bankContactMatcher, learnContactFromTx, type BankContactHit } from './bank-contacts'
-import { significantWords, similarNames } from '../../shared/utils/duplicate-matching'
+import { nameInText, significantWords, similarNames } from '../../shared/utils/duplicate-matching'
 
 type Company = typeof tables.companies.$inferSelect
 type BankTx = typeof tables.bankTransactions.$inferSelect
@@ -18,28 +18,60 @@ const LEGAL = new Set(['sl', 'slu', 'sa', 'slp', 'sll', 'scp', 'cb', 'sociedad',
 /** Tolerancia para discrepancias de redondeo o ajustes bancarios al conciliar (en euros) */
 export const MATCH_TOLERANCE = 1.00
 
-/** ¿Aparece el nombre (alguna palabra significativa) en el concepto del banco? */
+/**
+ * ¿Aparece el nombre en el concepto del banco? Parte de las palabras significativas que salen (también
+ * abreviadas: «LUMEN ARQUIT» por «Lumen Arquitectura») o, si sale entero con erratas o en siglas, 1.
+ */
 function nameScore(name: string | null | undefined, text: string) {
   if (!name) return 0
   const words = plain(name).split(' ').filter(w => w.length > 2 && !LEGAL.has(w))
   if (!words.length) return 0
   const t = ` ${plain(text)} `
-  const hits = words.filter(w => t.includes(` ${w} `) || (w.length >= 5 && t.includes(w))).length
-  return hits / words.length
+  const tokens = t.trim().split(' ')
+  const hits = words.filter(w => t.includes(` ${w} `) || (w.length >= 5 && t.includes(w)) || (w.length >= 6 && tokens.some(tk => tk.length >= 4 && w.startsWith(tk)))).length
+  const whole = nameInText(name, text)
+  return Math.max(hits / words.length, whole > 0 ? Math.min(1, whole / Math.max(1, significantWords(name).length)) : 0)
 }
 
-/** ¿Aparece el número del documento (F2026-0046, 2026/46…) en el concepto? */
-function numberInText(number: string | null | undefined, text: string) {
-  if (!number || number.length < 3) return false
+/** Palabras que en un concepto anuncian el número de una factura: «FRA 46», «FACTURA Nº 46», «INV-46» */
+const INVOICE_WORD = 'fra|fras|fact|facts|factura|facturas|fac|fct|ft|inv|invoice|n|no|num|numero|ref|referencia|recibo'
+
+/**
+ * ¿Aparece el número del documento en el concepto?
+ * 2 = sin dudas: entero (F2026-0046) o con su año (46/2026, 2026-46).
+ * 1 = probable: tras «fra», «factura nº», su serie («F-46»), con el año corto (46/26) o en una lista
+ *     de facturas («FRAS 45 Y 46»).
+ */
+function numberInText(number: string | null | undefined, text: string): 0 | 1 | 2 {
+  if (!number || number.length < 3) return 0
   const n = compact(number)
-  const t = compact(text)
-  if (t.includes(n)) return true
-  // "F2026-0046" escrito como "fra 46/2026" o "factura 46": número final sin ceros
+  if (n.length >= 4 && compact(text).includes(n)) return 2
   const tail = number.match(/(\d+)\D*$/)?.[1]?.replace(/^0+/, '')
   const year = number.match(/(20\d{2})/)?.[1]
+  if (!tail || tail === year) return 0
   // plain() deja los números separados por espacios: "fra 42/2026" → "fra 42 2026"
-  return !!tail && tail.length >= 2 && !!year && new RegExp(`\\b0*${tail} ${year}\\b|\\b${year} 0*${tail}\\b`).test(plain(text))
+  const p = plain(text)
+  if (year && tail.length >= 2 && new RegExp(`\\b0*${tail} ${year}\\b|\\b${year} 0*${tail}\\b`).test(p)) return 2
+  if (year && tail.length >= 2 && new RegExp(`\\b0*${tail} ${year.slice(2)}\\b|\\b${year.slice(2)} 0*${tail}\\b`).test(p)) return 1
+  // Tras «fra», «factura nº» o su serie, también en listas: «FRAS 45 Y 46», «FACTURAS 8, 9 Y 10»
+  const series = plain(number.match(/^[A-Za-z]{1,4}/)?.[0] ?? '')
+  const lead = new Set([...INVOICE_WORD.split('|'), ...(series ? [series] : [])])
+  const tokens = p.split(' ')
+  for (let i = 0; i < tokens.length; i++) {
+    if (!lead.has(tokens[i]!)) continue
+    for (let j = i + 1; j < tokens.length; j++) {
+      const tk = tokens[j]!
+      if (/^\d+$/.test(tk)) {
+        if (tk.replace(/^0+/, '') === tail) return 1
+      }
+      else if (!LIST_GLUE.has(tk)) break
+    }
+  }
+  return 0
 }
+
+/** Palabras que unen los números de una lista de facturas */
+const LIST_GLUE = new Set(['y', 'e', 'n', 'no', 'num', 'numero', 'and'])
 
 /** Reglas sin IA para los cargos más típicos de un autónomo o pyme */
 interface Rule { re: RegExp, sign: -1 | 1 | 0, make: (cat: (code: string, name: RegExp) => number | null, bank: string | null) => Omit<BankSuggestion, 'confidence' | 'source'> }
@@ -74,9 +106,12 @@ const RULES: ReadonlyArray<Rule> = Object.freeze([
 /**
  * Propuestas de conciliación de los movimientos pendientes:
  * 1. Cobros y pagos ya anotados (mismo importe, fechas cercanas) → solo se enlazan.
- * 2. Facturas emitidas con cobro pendiente y gastos sin pagar por el importe exacto.
- * 3. Gastos ya pagados sin movimiento (la mayoría se marcan pagados a mano).
- * 4. Reglas (cuota de autónomos, comisiones, impuestos, traspasos) y, si hay IA, categoría para el resto.
+ * 2. Facturas emitidas con cobro pendiente: por su número en el concepto, su cliente (IBAN, NIF, lo aprendido
+ *    o el nombre) y el importe; también un abono que paga varias facturas del mismo cliente a la vez.
+ * 3. Gastos sin pagar por el importe exacto y gastos ya pagados sin movimiento.
+ * 4. Reglas (cuota de autónomos, comisiones, impuestos, traspasos) y, si hay IA, categoría para el resto de
+ *    cargos y la factura que pagan los abonos que no casan solos.
+ * Cada factura o gasto va a un solo movimiento: se reparten de la propuesta más segura a la menos.
  */
 export async function suggestMatches(company: Company, ids?: number[]) {
   const db = useDb()
@@ -90,7 +125,7 @@ export async function suggestMatches(company: Company, ids?: number[]) {
       .where(and(eq(t.companyId, company.id), eq(t.status, 'matched'))),
     db.select({
       id: tables.salesDocuments.id, number: tables.salesDocuments.number, customer: tables.salesDocuments.customer, contactId: tables.salesDocuments.contactId, issueDate: tables.salesDocuments.issueDate,
-      dueDate: tables.salesDocuments.dueDate, total: tables.salesDocuments.total, paidTotal: tables.salesDocuments.paidTotal, kind: tables.salesDocuments.kind,
+      dueDate: tables.salesDocuments.dueDate, total: tables.salesDocuments.total, paidTotal: tables.salesDocuments.paidTotal, kind: tables.salesDocuments.kind, description: tables.salesDocuments.description,
     }).from(tables.salesDocuments).where(and(
       eq(tables.salesDocuments.companyId, company.id), inArray(tables.salesDocuments.kind, ['invoice', 'rectifying']),
       inArray(tables.salesDocuments.status, ['issued', 'sent', 'partial']),
@@ -121,16 +156,18 @@ export async function suggestMatches(company: Company, ids?: number[]) {
   }
   const expenseById = new Map(expenses.map(e => [e.id, e]))
   const cat = (code: string, name: RegExp) => categories.find(c => c.accountCode === code && name.test(c.name))?.id ?? categories.find(c => name.test(c.name))?.id ?? null
-  const taken = new Set<string>()
+  // Facturas con algo por cobrar, de la más antigua a la más reciente (así se reparten los pagos iguales)
+  const open = invoices.map(inv => ({ ...inv, pending: round2(inv.total - inv.paidTotal) })).filter(inv => inv.pending > 0)
+    .sort((a, b) => a.issueDate.localeCompare(b.issueDate) || a.id - b.id)
 
-  const results = new Map<number, BankSuggestion | null>()
+  /** Propuestas posibles de cada movimiento, con lo que ocupan y lo necesario para desempatar */
+  const pool = new Map<number, Candidate[]>()
   /** Cliente o proveedor reconocido en cada movimiento (IBAN, NIF, lo aprendido o el nombre) */
   const who = new Map<number, BankContactHit>()
-  // Primero los movimientos con más información (número en el concepto) para que no les quiten el documento
   for (const tx of txs) {
     const amount = Math.abs(tx.amount)
     const text = `${tx.description} ${tx.counterparty ?? ''} ${tx.reference ?? ''}`
-    const candidates: BankSuggestion[] = []
+    const candidates: Candidate[] = []
     const near = (d: string) => Math.abs(daysBetween(d, tx.date))
     const contact = contactsOf.identify(tx)
     if (contact) who.set(tx.id, contact)
@@ -144,26 +181,33 @@ export async function suggestMatches(company: Company, ids?: number[]) {
         if (p.direction !== 'in' || usedPayments.has(p.id) || diff > MATCH_TOLERANCE || near(p.date) > 10) continue
         const doc = p.salesDocumentId ? docNames.get(p.salesDocumentId) : null
         const exact = diff <= 0.01
-        const score = (exact ? 72 : 64) + (numberInText(doc?.number, text) ? 20 : 0) + party(doc?.contactId, doc?.name, 15) - near(p.date)
-        candidates.push({ kind: 'payment', id: p.id, label: `Cobro ya anotado${doc?.number ? ` · ${doc.number}` : ''}${exact ? '' : ' (±1 €)'}`, detail: doc?.name ?? null, confidence: score, source: 'match' })
+        const num = numberInText(doc?.number, text)
+        const score = (exact ? 72 : 64) + (num === 2 ? 20 : num ? 12 : 0) + party(doc?.contactId, doc?.name, 15) - near(p.date)
+        candidates.push({ kind: 'payment', id: p.id, label: `Cobro ya anotado${doc?.number ? ` · ${doc.number}` : ''}${exact ? '' : ' (±1 €)'}`, detail: doc?.name ?? null, confidence: score, source: 'match', keys: [`payment:${p.id}`], date: p.date })
       }
-      for (const inv of invoices) {
-        const pending = round2(inv.total - inv.paidTotal)
-        const byNumber = numberInText(inv.number, text)
-        const diff = Math.abs(pending - amount)
+      const numbered = new Map(open.map(inv => [inv.id, numberInText(inv.number, text)]))
+      const ofClient = (inv: typeof open[number]) => (!!contact && inv.contactId === contact.id) || nameScore(inv.customer?.name, text) >= 0.5
+      for (const inv of open) {
+        const num = numbered.get(inv.id)!
+        const diff = Math.abs(inv.pending - amount)
         const exact = diff <= 0.01
         const nearAmount = diff <= MATCH_TOLERANCE
-        // Su cliente pagó un poco menos: comisión de la transferencia, retención o redondeo (hasta 15 € o el 3 %)
-        const ownClient = !!contact && inv.contactId === contact.id
-        const shortBy = ownClient && amount < pending && pending - amount <= Math.max(15, pending * 0.03)
-        if (!exact && !nearAmount && !shortBy && !(byNumber && amount < pending)) continue
+        // Su cliente pagó un poco menos: comisión de la transferencia o redondeo (hasta 15 € o el 3 %)
+        const shortBy = ofClient(inv) && amount < inv.pending && inv.pending - amount <= Math.max(15, inv.pending * 0.03)
+        if (!exact && !nearAmount && !shortBy && !(num === 2 && amount < inv.pending)) continue
         let score = exact ? 62 : nearAmount ? 58 : shortBy ? 52 : 50
-        if (byNumber) score += 26
+        score += num === 2 ? 26 : num ? 14 : 0
         score += party(inv.contactId, inv.customer?.name, 18)
-        if (tx.date < inv.issueDate) score -= 25
-        const missing = exact || nearAmount ? '' : shortBy ? ` (faltan ${eurText(round2(pending - amount))})` : ' (cobro parcial)'
-        candidates.push({ kind: 'invoice', id: inv.id, label: `Factura ${inv.number}${exact ? '' : nearAmount ? ' (±1 €)' : missing}`, detail: inv.customer?.name ?? null, confidence: score, source: 'match', contactId: inv.contactId })
+        // Cobrada antes de emitirla: raro (un anticipo), salvo por un par de días
+        if (daysBetween(inv.issueDate, tx.date) < -2) score -= 25
+        if (inv.dueDate && Math.abs(daysBetween(inv.dueDate, tx.date)) <= 7) score += 3
+        const missing = exact || nearAmount ? '' : shortBy ? ` (faltan ${eurText(round2(inv.pending - amount))})` : ' (cobro parcial)'
+        candidates.push({
+          kind: 'invoice', id: inv.id, label: `Factura ${inv.number}${exact ? '' : nearAmount ? ' (±1 €)' : missing}`, detail: inv.customer?.name ?? null,
+          confidence: score, source: 'match', contactId: inv.contactId, keys: [`invoice:${inv.id}`], date: inv.issueDate, pending: inv.pending, num,
+        })
       }
+      candidates.push(...invoiceGroups(tx, amount, open.filter(inv => (ofClient(inv) || numbered.get(inv.id)) && daysBetween(inv.issueDate, tx.date) >= -2), party))
     }
     else {
       for (const p of payments) {
@@ -172,71 +216,89 @@ export async function suggestMatches(company: Company, ids?: number[]) {
         const e = p.expenseId ? expenseById.get(p.expenseId) : null
         const exact = diff <= 0.01
         const score = (exact ? 72 : 64) + party(e?.supplierId, e?.supplier?.name, 18) - near(p.date)
-        candidates.push({ kind: 'payment', id: p.id, label: `Pago ya anotado${e?.supplier?.name ? ` · ${e.supplier.name}` : ''}${exact ? '' : ' (±1 €)'}`, detail: e?.description ?? null, confidence: score, source: 'match' })
+        candidates.push({ kind: 'payment', id: p.id, label: `Pago ya anotado${e?.supplier?.name ? ` · ${e.supplier.name}` : ''}${exact ? '' : ' (±1 €)'}`, detail: e?.description ?? null, confidence: score, source: 'match', keys: [`payment:${p.id}`], date: p.date })
       }
       for (const e of expenses) {
         if (usedExpenses.has(e.id)) continue
         const pending = round2(e.total - e.paidTotal)
-        const open = e.status !== 'paid'
+        const unpaid = e.status !== 'paid'
         // Pendiente: lo que falta; pagado (sin movimiento): el total
-        const target = open ? pending : e.total
+        const target = unpaid ? pending : e.total
         const diff = Math.abs(target - amount)
         const exact = diff <= 0.01
         const nearAmount = diff <= MATCH_TOLERANCE
         if (!exact && !nearAmount) continue
         const gap = daysBetween(e.issueDate, tx.date)
-        if (gap < -7 || gap > (open ? 120 : 45)) continue
+        if (gap < -7 || gap > (unpaid ? 120 : 45)) continue
         // Sin proveedor (tickets, cuota de autónomos…) la descripción también identifica el gasto
         const name = Math.max(nameScore(e.supplier?.name, text), nameScore(e.description, text), contact && e.supplierId === contact.id ? Math.min(1, contact.score / 90) : 0)
-        let score = (open ? (exact ? 62 : 56) : (exact ? 55 : 50)) + Math.round(name * 22) + (numberInText(e.number, text) ? 15 : 0)
+        let score = (unpaid ? (exact ? 62 : 56) : (exact ? 55 : 50)) + Math.round(name * 22) + (numberInText(e.number, text) ? 15 : 0)
         // Pagado y sin nombre en común: solo cuenta si la fecha casi coincide (evita duplicar gastos ya anotados)
-        if (!open && name === 0 && Math.abs(gap) > 3) score -= 15
+        if (!unpaid && name === 0 && Math.abs(gap) > 3) score -= 15
         // Gastos que se repiten cada mes por el mismo importe: manda la fecha más cercana
-        score -= open ? Math.min(12, Math.floor(Math.abs(gap) / 5)) : Math.min(25, Math.round(Math.abs(gap) * 0.8))
+        score -= unpaid ? Math.min(12, Math.floor(Math.abs(gap) / 5)) : Math.min(25, Math.round(Math.abs(gap) * 0.8))
         if (Math.abs(gap) <= 5 && name >= 0.5) score += 10
-        candidates.push({ kind: 'expense', id: e.id, label: `${open ? 'Gasto pendiente' : 'Gasto'} · ${e.supplier?.name ?? e.description ?? 'sin proveedor'}${exact ? '' : ' (±1 €)'}`, detail: e.number ? `Factura ${e.number}` : e.description ?? null, confidence: score, source: 'match', contactId: e.supplierId })
+        candidates.push({ kind: 'expense', id: e.id, label: `${unpaid ? 'Gasto pendiente' : 'Gasto'} · ${e.supplier?.name ?? e.description ?? 'sin proveedor'}${exact ? '' : ' (±1 €)'}`, detail: e.number ? `Factura ${e.number}` : e.description ?? null, confidence: score, source: 'match', contactId: e.supplierId, keys: [`expense:${e.id}`], date: e.issueDate })
       }
     }
+    pool.set(tx.id, candidates)
+  }
 
-    candidates.sort((a, b) => b.confidence - a.confidence)
-    let best = candidates.find(c => !taken.has(`${c.kind}:${c.id}`)) ?? null
-    if (best) {
-      const second = candidates.find(c => c !== best && !taken.has(`${c.kind}:${c.id}`))
-      // Empate: baja la confianza para que el usuario elija
-      if (second && second.confidence >= best.confidence - 5) best = { ...best, confidence: Math.min(best.confidence, 60) }
-      best = { ...best, confidence: Math.max(1, Math.min(99, best.confidence)) }
-      if (best.confidence >= 50) taken.add(`${best.kind}:${best.id}`)
-      else best = null
-    }
-    if (!best) {
-      const p = plain(text)
-      const rule = RULES.find(r => r.re.test(p) && (r.sign === 0 || Math.sign(tx.amount) === r.sign))
-      const bank = accounts.find(a => a.id === tx.accountId)?.bankName ?? null
-      if (rule) best = { ...rule.make(cat, bank), confidence: 95, source: 'rule' }
-      else if (tx.bankCode === '17' && tx.amount < 0) best = { ...RULES[2]!.make(cat, bank), confidence: 90, source: 'rule' }
-      // Cargo de un proveedor conocido con gastos anteriores: el mismo tipo, categoría e IVA que la última vez
-      else if (contact?.usual && tx.amount < 0 && contact.usual.vatRate != null) {
-        const usual = contact.usual
-        const category = categories.find(c => c.id === usual.categoryId)
-        best = {
-          kind: 'new_expense', label: `${contact.name}${category ? ` · ${category.name}` : ''}`, detail: `${contact.reason}. Como su último gasto`,
-          confidence: Math.min(90, contact.score), source: 'rule', expenseKind: usual.kind,
-          categoryId: usual.categoryId, supplier: contact.name, vatRate: usual.vatRate, contactId: contact.id,
-        }
+  const results = assignCandidates(txs, pool)
+
+  for (const tx of txs) {
+    if (results.get(tx.id)) continue
+    const contact = who.get(tx.id)
+    const text = `${tx.description} ${tx.counterparty ?? ''} ${tx.reference ?? ''}`
+    const p = plain(text)
+    const rule = RULES.find(r => r.re.test(p) && (r.sign === 0 || Math.sign(tx.amount) === r.sign))
+    const bank = accounts.find(a => a.id === tx.accountId)?.bankName ?? null
+    let best: BankSuggestion | null = null
+    if (rule) best = { ...rule.make(cat, bank), confidence: 95, source: 'rule' }
+    else if (tx.bankCode === '17' && tx.amount < 0) best = { ...RULES[2]!.make(cat, bank), confidence: 90, source: 'rule' }
+    // Cargo de un proveedor conocido con gastos anteriores: el mismo tipo, categoría e IVA que la última vez
+    else if (contact?.usual && tx.amount < 0 && contact.usual.vatRate != null) {
+      const usual = contact.usual
+      const category = categories.find(c => c.id === usual.categoryId)
+      best = {
+        kind: 'new_expense', label: `${contact.name}${category ? ` · ${category.name}` : ''}`, detail: `${contact.reason}. Como su último gasto`,
+        confidence: Math.min(90, contact.score), source: 'rule', expenseKind: usual.kind,
+        categoryId: usual.categoryId, supplier: contact.name, vatRate: usual.vatRate, contactId: contact.id,
       }
     }
     results.set(tx.id, best)
   }
 
-  // IA: categoría para los cargos que no casan con nada, eligiendo entre tus proveedores si es uno de ellos
-  const rest = txs.filter(tx => !results.get(tx.id) && tx.amount < 0)
-  if (rest.length && aiEnabled()) {
-    try {
-      const ai = await categorizeWithAi(company, rest, categories, contactsOf.suppliers, who)
-      for (const [id, s] of ai) results.set(id, s)
+  if (aiEnabled()) {
+    // IA: la factura (o facturas) que paga cada abono sin propuesta clara, entre las que nadie más se lleva
+    const unsure = txs.filter((tx) => {
+      const s = results.get(tx.id)
+      return tx.amount > 0 && (!s || ((s.kind === 'invoice' || s.kind === 'payment') && s.confidence <= 60))
+    })
+    if (unsure.length && open.length) {
+      try {
+        const held = new Map<string, number>()
+        for (const [txId, s] of results) {
+          if (s?.kind === 'invoice') for (const id of s.ids?.length ? s.ids : [s.id!]) held.set(`invoice:${id}`, txId)
+        }
+        const ai = await invoicesWithAi(company, unsure, open, held, who)
+        for (const [id, s] of ai) if (s.confidence > (results.get(id)?.confidence ?? 0)) results.set(id, s)
+      }
+      catch (err) {
+        console.warn('[banco] facturas IA', (err as Error).message)
+      }
     }
-    catch (err) {
-      console.warn('[banco] categorías IA', (err as Error).message)
+
+    // IA: categoría para los cargos que no casan con nada, eligiendo entre tus proveedores si es uno de ellos
+    const rest = txs.filter(tx => !results.get(tx.id) && tx.amount < 0)
+    if (rest.length) {
+      try {
+        const ai = await categorizeWithAi(company, rest, categories, contactsOf.suppliers, who)
+        for (const [id, s] of ai) results.set(id, s)
+      }
+      catch (err) {
+        console.warn('[banco] categorías IA', (err as Error).message)
+      }
     }
   }
 
@@ -265,6 +327,118 @@ export async function suggestMatches(company: Company, ids?: number[]) {
 
   await Promise.all([...results].map(([id, suggestion]) => db.update(t).set({ suggestion }).where(eq(t.id, id))))
   return [...results.values()].filter(Boolean).length
+}
+
+/** Propuesta en estudio: lo que ocupa (`invoice:12`, `expense:4`…) y datos para desempatar */
+type Candidate = BankSuggestion & {
+  keys: string[]
+  /** Fecha del documento o del cobro: a igualdad, el más antiguo primero */
+  date: string
+  /** Factura suelta: lo que tiene pendiente y si su número sale en el concepto */
+  pending?: number
+  num?: number
+}
+
+type OpenInvoice = { id: number, number: string | null, customer: { name?: string | null } | null, contactId: number | null, issueDate: string, dueDate: string | null, pending: number }
+
+/** ¿Son del mismo cliente? Por su ficha o, sin ficha, por el nombre de la factura */
+function sameCustomer(a: OpenInvoice, b: OpenInvoice) {
+  return a.contactId && b.contactId ? a.contactId === b.contactId : !!a.customer?.name && plain(a.customer.name) === plain(b.customer?.name ?? '')
+}
+
+/**
+ * Un abono que paga de una vez varias facturas del mismo cliente: combinaciones de 2 a 5 de sus facturas
+ * pendientes cuya suma es el importe. Solo de un cliente reconocido o con los números en el concepto.
+ */
+function invoiceGroups(
+  tx: BankTx, amount: number, pool: OpenInvoice[],
+  party: (contactId: number | null | undefined, name: string | null | undefined, weight: number) => number,
+): Candidate[] {
+  const out: Candidate[] = []
+  // Por cliente: nunca se mezclan facturas de dos clientes en un mismo pago
+  const byCustomer: OpenInvoice[][] = []
+  for (const inv of pool.filter(inv => inv.pending < amount + MATCH_TOLERANCE)) {
+    const group = byCustomer.find(g => sameCustomer(g[0]!, inv))
+    if (group) group.push(inv)
+    else byCustomer.push([inv])
+  }
+  for (const all of byCustomer) {
+    if (all.length < 2) continue
+    // Las más recientes primero si son muchas: el cliente suele pagar lo último que se le ha facturado
+    const list = all.length > 22 ? all.slice(-22) : all
+    const maxSize = list.length > 14 ? 4 : 5
+    const found: OpenInvoice[][] = []
+    const walk = (start: number, picked: OpenInvoice[], sum: number) => {
+      if (found.length > 40) return
+      if (picked.length >= 2 && Math.abs(round2(sum) - amount) <= MATCH_TOLERANCE) found.push([...picked])
+      if (picked.length >= maxSize) return
+      for (let i = start; i < list.length; i++) {
+        const next = sum + list[i]!.pending
+        if (next > amount + MATCH_TOLERANCE) continue
+        picked.push(list[i]!)
+        walk(i + 1, picked, next)
+        picked.pop()
+      }
+    }
+    walk(0, [], 0)
+    for (const group of found) {
+      const sum = round2(group.reduce((s, inv) => s + inv.pending, 0))
+      const exact = Math.abs(sum - amount) <= 0.01
+      const nums = group.map(inv => numberInText(inv.number, `${tx.description} ${tx.counterparty ?? ''} ${tx.reference ?? ''}`))
+      const allNumbered = nums.every(Boolean)
+      const someNumbered = nums.some(Boolean)
+      const first = group[0]!
+      const who = party(first.contactId, first.customer?.name, 18)
+      // Sin cliente reconocido, solo si el concepto nombra todas las facturas
+      if (!who && !allNumbered) continue
+      // Salda justo todo lo que el cliente tenía pendiente: lo más habitual al pagar varias
+      const clears = group.length === all.length
+      let score = (exact ? 60 : 55) + who + (allNumbered ? 26 : someNumbered ? 8 : 0) + (clears ? 8 : 0) - (group.length - 2) * 3
+      out.push({
+        kind: 'invoice', id: first.id, ids: group.map(inv => inv.id),
+        label: `Facturas ${group.map(inv => inv.number).join(' + ')}${exact ? '' : ' (±1 €)'}`,
+        detail: `${first.customer?.name ?? 'Mismo cliente'} · ${clears ? `todas sus facturas pendientes (${group.length})` : `${group.length} facturas`} en un solo pago`,
+        confidence: score, source: 'match', contactId: first.contactId,
+        keys: group.map(inv => `invoice:${inv.id}`), date: first.issueDate,
+      })
+    }
+  }
+  return out
+}
+
+/**
+ * Reparte las propuestas: de la más segura a la menos, cada factura, gasto o cobro va a un solo movimiento.
+ * A igualdad, la factura más antigua al movimiento más antiguo. Si a un movimiento le queda otra opción casi
+ * igual de buena, la confianza baja para que lo decida el usuario; salvo que sean facturas idénticas del mismo
+ * cliente (cuotas mensuales): entonces se cobra la más antigua.
+ */
+function assignCandidates(txs: BankTx[], pool: Map<number, Candidate[]>) {
+  const dateOf = new Map(txs.map(tx => [tx.id, tx.date]))
+  const pairs = [...pool].flatMap(([txId, list]) => list.map(c => ({ txId, c })))
+  pairs.sort((a, b) => b.c.confidence - a.c.confidence || a.c.date.localeCompare(b.c.date) || dateOf.get(a.txId)!.localeCompare(dateOf.get(b.txId)!) || a.txId - b.txId)
+  const taken = new Set<string>()
+  const results = new Map<number, BankSuggestion | null>()
+  const twins = (a: Candidate, b: Candidate) => a.kind === 'invoice' && b.kind === 'invoice' && !a.ids && !b.ids && !a.num && !b.num
+    && a.contactId != null && a.contactId === b.contactId && a.pending === b.pending
+  for (const { txId, c } of pairs) {
+    if (results.get(txId) || c.keys.some(k => taken.has(k))) continue
+    const second = pool.get(txId)!.filter(o => o !== c && !o.keys.some(k => taken.has(k))).sort((a, b) => b.confidence - a.confidence)[0]
+    let confidence = c.confidence
+    let detail = c.detail
+    if (second && second.confidence >= confidence - 5) {
+      if (twins(c, second)) {
+        confidence = Math.min(confidence, 78)
+        detail = [detail, 'La más antigua de sus facturas iguales'].filter(Boolean).join(' · ')
+      }
+      else confidence = Math.min(confidence, 60)
+    }
+    confidence = Math.max(1, Math.min(99, confidence))
+    if (confidence < 50) continue
+    const { keys, date: _date, pending: _pending, num: _num, ...suggestion } = c
+    results.set(txId, { ...suggestion, detail, confidence })
+    for (const k of keys) taken.add(k)
+  }
+  return results
 }
 
 const AI_SCHEMA = {
@@ -350,10 +524,94 @@ async function categorizeWithAi(company: Company, txs: BankTx[], categories: Arr
   return out
 }
 
+const AI_INVOICE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['items'],
+  properties: {
+    items: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'invoiceIds', 'confidence', 'note'],
+        properties: {
+          id: { type: 'integer', description: 'Id del abono' },
+          invoiceIds: { type: 'array', items: { type: 'integer' }, description: 'Ids de las facturas que paga (varias solo si son del mismo cliente); vacío si ninguna' },
+          confidence: { type: 'integer', description: '0-100' },
+          note: { type: 'string', description: 'Por qué, en pocas palabras y en español' },
+        },
+      },
+    },
+  },
+}
+
+/**
+ * Abonos sin propuesta clara: la IA busca qué factura pagan con lo que no se puede comparar con reglas (el
+ * concepto de la factura, otra razón social del cliente, abreviaturas). Lo que proponga se comprueba: facturas
+ * que existan y nadie más se lleve, del mismo cliente y cuya suma pendiente sea el importe del abono.
+ */
+async function invoicesWithAi(company: Company, txs: BankTx[], open: Array<OpenInvoice & { description: Parameters<typeof salesConcepts>[0][number]['description'] }>, held: Map<string, number>, known: Map<number, BankContactHit>) {
+  const out = new Map<number, BankSuggestion>()
+  // Las 200 más recientes: suficientes y la petición no se dispara
+  const list = open.slice(-200)
+  const byId = new Map(list.map(inv => [inv.id, inv]))
+  const concepts = await salesConcepts(list.map(inv => ({ id: inv.id, description: inv.description })))
+  const facturas = list.map(inv => ({
+    id: inv.id, numero: inv.number, cliente: inv.customer?.name ?? null, pendiente: inv.pending, emitida: inv.issueDate, vence: inv.dueDate,
+    concepto: concepts.get(inv.id)?.conceptPreview?.slice(0, 90) ?? null,
+  }))
+  for (let i = 0; i < txs.length; i += 40) {
+    const chunk = txs.slice(i, i + 40)
+    const { data } = await aiJson<{ items: Array<{ id: number, invoiceIds: number[], confidence: number, note: string }> }>({
+      name: 'bank_invoices',
+      schema: AI_INVOICE_SCHEMA,
+      effort: 'low',
+      system: [
+        'Concilias abonos (dinero que entra) del extracto bancario de una empresa española con sus facturas emitidas pendientes de cobro.',
+        `Empresa: ${company.tradeName || company.legalName}.`,
+        'Para cada abono indica qué factura o facturas paga. Puede pagar varias del mismo cliente a la vez: la suma de lo pendiente debe ser el importe. El cliente puede pagar unos euros de menos por comisiones.',
+        'Pistas: el número de factura en el concepto aunque venga abreviado ("FRA 52", "52/26", "FACT 0052"), el nombre del cliente en el ordenante (abreviado, en siglas o con la razón social de su grupo), el concepto de la factura y las fechas (el cobro llega tras la emisión, a menudo cerca del vencimiento).',
+        'Si no lo ves claro o el abono no es el cobro de una factura (préstamo, devolución, aportación de un socio, traspaso entre cuentas), invoiceIds vacío. Usa solo ids de la lista; nunca los inventes.',
+      ].join('\n'),
+      parts: [{ type: 'input_text', text: JSON.stringify({
+        facturas,
+        abonos: chunk.map(tx => ({ id: tx.id, fecha: tx.date, importe: tx.amount, concepto: tx.description, ordenante: tx.counterparty, referencia: tx.reference, ...(known.has(tx.id) ? { clienteReconocido: known.get(tx.id)!.name } : {}) })),
+      }) }],
+    })
+    for (const item of data.items) {
+      const tx = chunk.find(x => x.id === item.id)
+      const ids = [...new Set(item.invoiceIds)]
+      if (!tx || !ids.length || ids.length > 6 || item.confidence < 50) continue
+      const invs = ids.map(id => byId.get(id))
+      if (invs.some(inv => !inv)) continue
+      const picked = invs as OpenInvoice[]
+      if (picked.some(inv => (held.get(`invoice:${inv.id}`) ?? tx.id) !== tx.id)) continue
+      if (picked.some(inv => !sameCustomer(inv, picked[0]!))) continue
+      const sum = round2(picked.reduce((s, inv) => s + inv.pending, 0))
+      const diff = Math.abs(sum - tx.amount)
+      const exact = diff <= 0.01
+      const short = picked.length === 1 && tx.amount < sum && sum - tx.amount <= Math.max(15, sum * 0.03)
+      if (diff > MATCH_TOLERANCE && !short) continue
+      const first = picked[0]!
+      const suffix = exact ? '' : diff <= MATCH_TOLERANCE ? ' (±1 €)' : ` (faltan ${eurText(round2(sum - tx.amount))})`
+      out.set(tx.id, {
+        kind: 'invoice', id: first.id, ...(picked.length > 1 ? { ids } : {}),
+        label: `${picked.length > 1 ? 'Facturas' : 'Factura'} ${picked.map(inv => inv.number).join(' + ')}${suffix}`,
+        detail: item.note || first.customer?.name || null,
+        // Nunca se acepta sola en bloque: la IA propone y el usuario confirma
+        confidence: Math.min(80, item.confidence) - (exact ? 0 : 4), source: 'ai', contactId: first.contactId,
+      })
+      for (const inv of picked) held.set(`invoice:${inv.id}`, tx.id)
+    }
+  }
+  return out
+}
+
 /** Propuestas que se pueden aceptar en bloque sin revisarlas una a una */
 export function isSafeSuggestion(s: BankSuggestion | null | undefined) {
   if (!s) return false
-  if (s.kind === 'invoice' || s.kind === 'expense' || s.kind === 'payment') return s.confidence >= 85
+  if (s.kind === 'invoice' || s.kind === 'expense' || s.kind === 'payment') return s.source === 'match' && s.confidence >= 85
   return s.source === 'rule' && s.confidence >= 90
 }
 
@@ -454,19 +712,27 @@ async function loadTx(companyId: number, id: number) {
  * Concilia un movimiento con una factura, un gasto o un cobro/pago ya anotado. La ficha del cliente o
  * proveedor aprende el IBAN o el NIF que traía el movimiento, para reconocerle la próxima vez.
  */
-export async function confirmMatch(company: Company, userId: number, txId: number, target: { kind: 'invoice' | 'expense' | 'payment', id: number }) {
+export async function confirmMatch(company: Company, userId: number, txId: number, target: MatchTarget) {
   await linkTx(company, userId, txId, target)
   await learnContactFromTx(company, await loadTx(company.id, txId)).catch(err => console.warn('[banco] aprender contacto', (err as Error).message))
 }
 
-async function linkTx(company: Company, userId: number, txId: number, target: { kind: 'invoice' | 'expense' | 'payment', id: number }): Promise<void> {
+/** Con qué se concilia un movimiento; un abono puede cobrar varias facturas a la vez (`ids`) */
+export type MatchTarget = { kind: 'invoice' | 'expense' | 'payment', id: number, ids?: number[] | null }
+
+/** La propuesta de un movimiento como destino de la conciliación */
+export const suggestionTarget = (s: BankSuggestion): MatchTarget => ({ kind: s.kind as MatchTarget['kind'], id: s.id!, ...(s.ids?.length ? { ids: s.ids } : {}) })
+
+async function linkTx(company: Company, userId: number, txId: number, target: MatchTarget): Promise<void> {
   const db = useDb()
   let tx = await loadTx(company.id, txId)
   if (tx.status === 'matched') {
     // Si ya estaba conciliado con otro documento, deshacer la asignación previa para reasignar al nuevo
-    await unmatch(company, txId)
+    await unmatch(company, txId, { suggest: false })
     tx = await loadTx(company.id, txId)
   }
+  const group = target.kind === 'invoice' ? [...new Set([target.id, ...(target.ids ?? [])])] : []
+  if (group.length > 1) return linkInvoices(company, userId, tx, group)
   const amount = Math.abs(tx.amount)
   const t = tables.bankTransactions
   const [dupe] = await db.select({ id: t.id }).from(t).where(and(
@@ -543,6 +809,72 @@ async function linkTx(company: Company, userId: number, txId: number, target: { 
   await db.update(tables.expenses).set({ paidTotal, status: full ? 'paid' : 'partial', paidAt: full ? new Date(`${tx.date}T12:00:00`) : null, paymentMethod: e.paymentMethod ?? method })
     .where(eq(tables.expenses.id, e.id))
   await db.update(t).set({ ...done, paymentId: res!.id, expenseId: e.id, salesDocumentId: null, ownsPayment: true }).where(eq(t.id, tx.id))
+}
+
+/**
+ * Un abono que paga varias facturas del mismo cliente: cada una recibe su cobro por lo que tenía pendiente
+ * (la última, lo que quede, para que la suma sea el importe del banco) y todas pasan a cobradas.
+ */
+async function linkInvoices(company: Company, userId: number, tx: BankTx, ids: number[]) {
+  const db = useDb()
+  const s = tables.salesDocuments
+  if (tx.amount <= 0) throw createError({ statusCode: 400, statusMessage: 'Un cargo no puede cobrar facturas' })
+  const rows = await db.select().from(s).where(and(eq(s.companyId, company.id), inArray(s.id, ids)))
+  const docs = ids.map(id => rows.find(r => r.id === id)).filter((d): d is NonNullable<typeof d> => !!d)
+  if (docs.length !== ids.length) throw createError({ statusCode: 404, statusMessage: 'Alguna de las facturas ya no existe' })
+  const closed = docs.find(d => !isOpenStatus(d.status) || round2(d.total - d.paidTotal) <= 0)
+  if (closed) throw createError({ statusCode: 409, statusMessage: `La factura ${closed.number} no tiene cobros pendientes` })
+  const owner = (d: typeof docs[number]) => d.contactId ? `c${d.contactId}` : `n${plain(d.customer?.name ?? '')}`
+  if (new Set(docs.map(owner)).size > 1) throw createError({ statusCode: 400, statusMessage: 'Un pago solo puede cobrar facturas del mismo cliente' })
+  const amount = round2(tx.amount)
+  const pending = docs.map(d => round2(d.total - d.paidTotal))
+  const sum = round2(pending.reduce((a, b) => a + b, 0))
+  if (Math.abs(sum - amount) > MATCH_TOLERANCE) {
+    throw createError({ statusCode: 400, statusMessage: `Lo pendiente de las facturas (${eurText(sum)}) no coincide con el movimiento (${eurText(amount)})` })
+  }
+  const method = methodFor(tx)
+  const paymentIds: number[] = []
+  let left = amount
+  for (const [i, d] of docs.entries()) {
+    const value = i === docs.length - 1 ? round2(left) : pending[i]!
+    left = round2(left - value)
+    const [res] = await db.insert(tables.payments).values({
+      companyId: company.id, direction: 'in', salesDocumentId: d.id, amount: value, date: tx.date, method, bankAccountId: tx.accountId,
+      notes: `Conciliado con el banco (un pago de ${docs.length} facturas)`,
+    }).$returningId()
+    paymentIds.push(res!.id)
+    await refreshPaidStatus(d.id)
+  }
+  await db.update(tables.bankTransactions).set({
+    status: 'matched', matchedAt: new Date(), matchedBy: userId, ignoreReason: null,
+    paymentId: paymentIds[0]!, salesDocumentId: docs[0]!.id, expenseId: null, ownsPayment: true, groupPaymentIds: paymentIds.slice(1),
+  }).where(eq(tables.bankTransactions.id, tx.id))
+}
+
+type DbLike = Pick<ReturnType<typeof useDb>, 'select' | 'update' | 'delete'>
+
+/**
+ * Movimientos que cobran varias facturas a la vez y pierden uno de sus cobros (se borra la factura o el
+ * cobro): vuelven a estar por revisar y se quitan los cobros que creó la conciliación en las demás facturas.
+ */
+export async function releaseBankGroups(db: DbLike, companyId: number, paymentIds: number[]) {
+  if (!paymentIds.length) return [] as number[]
+  const t = tables.bankTransactions
+  const gone = new Set(paymentIds)
+  const rows = await db.select({ id: t.id, paymentId: t.paymentId, groupPaymentIds: t.groupPaymentIds, ownsPayment: t.ownsPayment }).from(t)
+    .where(and(eq(t.companyId, companyId), eq(t.status, 'matched'), isNotNull(t.groupPaymentIds)))
+  const hit = rows.filter(r => r.groupPaymentIds?.length && [r.paymentId, ...r.groupPaymentIds].some(id => id != null && gone.has(id)))
+  for (const r of hit) {
+    const others = [r.paymentId, ...(r.groupPaymentIds ?? [])].filter((id): id is number => id != null && !gone.has(id))
+    if (r.ownsPayment && others.length) {
+      const docs = (await db.select({ doc: tables.payments.salesDocumentId }).from(tables.payments).where(and(eq(tables.payments.companyId, companyId), inArray(tables.payments.id, others)))).map(p => p.doc)
+      await db.delete(tables.payments).where(and(eq(tables.payments.companyId, companyId), inArray(tables.payments.id, others)))
+      for (const doc of new Set(docs)) if (doc) await refreshPaidStatus(doc, db)
+    }
+    await db.update(t).set({ status: 'pending', paymentId: null, salesDocumentId: null, expenseId: null, groupPaymentIds: null, ownsPayment: false, matchedAt: null, matchedBy: null, ignoreReason: null, suggestion: null })
+      .where(eq(t.id, r.id))
+  }
+  return hit.map(r => r.id)
 }
 
 /**
@@ -643,6 +975,13 @@ export async function expenseFromTx(company: Company, userId: number, txId: numb
 export async function unmatch(company: Company, txId: number, opts: { suggest?: boolean } = {}) {
   const db = useDb()
   const tx = await loadTx(company.id, txId)
+  // Un pago de varias facturas: los cobros de las demás
+  if (tx.status === 'matched' && tx.ownsPayment && tx.groupPaymentIds?.length) {
+    const rows = await db.select({ id: tables.payments.id, doc: tables.payments.salesDocumentId }).from(tables.payments)
+      .where(and(eq(tables.payments.companyId, company.id), inArray(tables.payments.id, tx.groupPaymentIds)))
+    if (rows.length) await db.delete(tables.payments).where(inArray(tables.payments.id, rows.map(r => r.id)))
+    for (const doc of new Set(rows.map(r => r.doc))) if (doc) await refreshPaidStatus(doc)
+  }
   if (tx.status === 'matched' && tx.ownsPayment && tx.paymentId) {
     const [p] = await db.select().from(tables.payments).where(eq(tables.payments.id, tx.paymentId))
     if (p) {
@@ -665,7 +1004,7 @@ export async function unmatch(company: Company, txId: number, opts: { suggest?: 
     }
   }
   await db.update(tables.bankTransactions).set({
-    status: 'pending', paymentId: null, salesDocumentId: null, expenseId: null, ownsPayment: false, ignoreReason: null, matchedAt: null, matchedBy: null,
+    status: 'pending', paymentId: null, salesDocumentId: null, expenseId: null, groupPaymentIds: null, ownsPayment: false, ignoreReason: null, matchedAt: null, matchedBy: null,
   }).where(eq(tables.bankTransactions.id, tx.id))
   if (opts.suggest !== false) await suggestMatches(company, [tx.id])
 }

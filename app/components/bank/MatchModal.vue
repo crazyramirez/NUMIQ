@@ -44,6 +44,8 @@ watch(open, (v) => {
   q.value = ''
   items.value = []
   showFullDesc.value = false
+  multi.value = false
+  picked.value = []
   load()
 })
 watch(q, () => {
@@ -57,6 +59,46 @@ async function pick(c: Candidate) {
   try {
     await $fetch(`/api/bank/transactions/${props.tx.id}/match`, { method: 'POST', body: { kind: c.kind, id: c.id } })
     toast.success(isReassign.value ? 'Movimiento reasignado' : 'Movimiento conciliado', c.title)
+    open.value = false
+    emit('matched')
+  }
+  catch (err) {
+    toast.error('No se pudo conciliar', errorMessage(err))
+  }
+  finally {
+    busy.value = null
+  }
+}
+
+/** Un ingreso que paga varias facturas del mismo cliente: se marcan y se cobran todas a la vez */
+const multi = ref(false)
+const picked = ref<Candidate[]>([])
+const isPicked = (c: Candidate) => picked.value.some(p => p.id === c.id)
+/** Marcada la primera, solo las del mismo cliente (el subtítulo de una factura es su cliente) */
+const otherClient = (c: Candidate) => !!picked.value.length && !isPicked(c) && c.subtitle !== picked.value[0]!.subtitle
+const pickedSum = computed(() => Math.round(picked.value.reduce((s, c) => s + c.amount, 0) * 100) / 100)
+const pickedFits = computed(() => picked.value.length >= 2 && candDiff(pickedSum.value) <= 1)
+const canMulti = computed(() => income.value && items.value.filter(c => c.kind === 'invoice').length >= 2)
+
+function toggle(c: Candidate) {
+  picked.value = isPicked(c) ? picked.value.filter(p => p.id !== c.id) : [...picked.value, c]
+}
+
+function onRow(c: Candidate) {
+  if (multi.value) {
+    if (c.kind === 'invoice') toggle(c)
+    return
+  }
+  pick(c)
+}
+
+async function pickMany() {
+  if (!props.tx || !pickedFits.value) return
+  busy.value = 'many'
+  try {
+    const ids = picked.value.map(c => c.id)
+    await $fetch(`/api/bank/transactions/${props.tx.id}/match`, { method: 'POST', body: { kind: 'invoice', id: ids[0], ids } })
+    toast.success(`${ids.length} facturas cobradas`, picked.value.map(c => c.title.replace(/^Factura /, '')).join(' + '))
     open.value = false
     emit('matched')
   }
@@ -104,7 +146,20 @@ function candDiff(candAmount: number) {
         </div>
         <strong class="num" :class="income ? 'pos' : 'neg'">{{ eur(tx.amount) }}</strong>
       </div>
-      <UiInput v-model="q" icon="ph:magnifying-glass" type="search" :placeholder="income ? 'Cliente o nº de factura' : 'Proveedor, concepto o nº'" aria-label="Buscar" />
+      <div class="search-row">
+        <UiInput v-model="q" icon="ph:magnifying-glass" type="search" :placeholder="income ? 'Cliente o nº de factura' : 'Proveedor, concepto o nº'" aria-label="Buscar" class="grow" />
+        <UiButton
+          v-if="canMulti || multi"
+          :variant="multi ? 'soft' : 'secondary'"
+          icon="ph:stack"
+          :aria-pressed="multi"
+          title="Un solo ingreso que paga varias facturas del mismo cliente"
+          @click="multi = !multi; picked = []"
+        >
+          Varias<span class="long"> facturas</span>
+        </UiButton>
+      </div>
+      <p v-if="multi" class="multi-hint">Marca las facturas que paga este ingreso: deben ser del mismo cliente y sumar su importe.</p>
       <div class="list" :aria-busy="loading">
         <template v-if="loading && !items.length">
           <div v-for="i in 4" :key="i" class="skeleton" style="height: 52px" />
@@ -114,18 +169,21 @@ function candDiff(candAmount: number) {
           :key="`${c.kind}:${c.id}`"
           type="button"
           class="cand"
-          :disabled="!!busy"
-          @click="pick(c)"
+          :class="{ on: multi && isPicked(c) }"
+          :disabled="!!busy || (multi && (c.kind !== 'invoice' || otherClient(c)))"
+          :aria-pressed="multi ? isPicked(c) : undefined"
+          @click="onRow(c)"
         >
-          <span class="c-ic" :class="c.kind" aria-hidden="true"><Icon :name="c.kind === 'invoice' ? 'ph:receipt' : 'ph:wallet'" /></span>
+          <span v-if="multi" class="c-check" aria-hidden="true"><Icon :name="isPicked(c) ? 'ph:check-square-fill' : 'ph:square'" /></span>
+          <span v-else class="c-ic" :class="c.kind" aria-hidden="true"><Icon :name="c.kind === 'invoice' ? 'ph:receipt' : 'ph:wallet'" /></span>
           <span class="grow min0">
             <span class="c-t truncate">{{ c.title }}</span>
             <span class="c-s truncate">{{ [c.subtitle, fdate(c.date)].filter(Boolean).join(' · ') }}</span>
           </span>
           <span class="c-amt">
             <span class="num">{{ eur(c.amount) }}</span>
-            <span v-if="candDiff(c.amount) <= 0.01" class="exact">Mismo importe</span>
-            <span v-else-if="candDiff(c.amount) <= 1.00" class="exact near">Dif. &lt; 1 €</span>
+            <span v-if="!multi && candDiff(c.amount) <= 0.01" class="exact">Mismo importe</span>
+            <span v-else-if="!multi && candDiff(c.amount) <= 1.00" class="exact near">Dif. &lt; 1 €</span>
           </span>
           <span v-if="busy === `${c.kind}:${c.id}`" class="spinner" aria-hidden="true" />
         </button>
@@ -134,6 +192,21 @@ function candDiff(candAmount: number) {
         </p>
       </div>
     </div>
+
+    <template v-if="multi" #footer>
+      <div class="multi-foot">
+        <span class="multi-sum">
+          <strong class="num">{{ eur(pickedSum) }}</strong>
+          <span>de {{ eur(Math.abs(tx?.amount ?? 0)) }}</span>
+          <span v-if="picked.length && !pickedFits" class="multi-gap">
+            {{ pickedSum > Math.abs(tx?.amount ?? 0) ? 'Te pasas' : 'Faltan' }} {{ eur(candDiff(pickedSum)) }}
+          </span>
+        </span>
+        <UiButton variant="primary" icon="ph:check-bold" :disabled="!pickedFits" :loading="busy === 'many'" @click="pickMany">
+          Cobrar {{ picked.length || '' }} facturas
+        </UiButton>
+      </div>
+    </template>
   </UiModal>
 </template>
 
@@ -268,6 +341,73 @@ function candDiff(candAmount: number) {
 
 .exact.near {
   color: var(--brand-text);
+}
+
+.search-row {
+  display: flex;
+  gap: var(--s-2);
+}
+
+@media (max-width: 640px) {
+  .search-row .long {
+    display: none;
+  }
+}
+
+.cand:disabled:not(.on) {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.multi-hint {
+  margin-top: calc(-1 * var(--s-1));
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.cand.on {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.c-check {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  font-size: 22px;
+  color: var(--text-3);
+}
+
+.cand.on .c-check {
+  color: var(--brand);
+}
+
+.multi-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  width: 100%;
+}
+
+.multi-sum {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  font-size: var(--text-sm);
+  color: var(--text-3);
+}
+
+.multi-sum strong {
+  color: var(--text);
+}
+
+.multi-gap {
+  color: var(--warning);
+  font-weight: 600;
 }
 
 .none {

@@ -53,13 +53,16 @@ export async function changeSalesPayments(companyId: number, documentId: number,
     let unmatched: number[] = []
     if (detach) {
       const paymentIds = affected.map(payment => payment.id)
+      // Un pago de varias facturas pierde este cobro: vuelve a pendiente y las demás, a por cobrar
+      unmatched = await releaseBankGroups(tx, companyId, paymentIds)
       const predicate = and(eq(b.companyId, companyId), or(
         change.action === 'clear' ? eq(b.salesDocumentId, documentId) : undefined,
         paymentIds.length ? inArray(b.paymentId, paymentIds) : undefined,
       ))
       if (change.action === 'clear' || paymentIds.length) {
-        unmatched = (await tx.select({ id: b.id }).from(b).where(predicate)).map(row => row.id)
-        if (unmatched.length) await tx.update(b).set({ status: 'pending', paymentId: null, salesDocumentId: null, expenseId: null, ownsPayment: false, matchedAt: null, matchedBy: null, ignoreReason: null, suggestion: null }).where(and(eq(b.companyId, companyId), inArray(b.id, unmatched)))
+        const rows = (await tx.select({ id: b.id }).from(b).where(predicate)).map(row => row.id)
+        if (rows.length) await tx.update(b).set({ status: 'pending', paymentId: null, salesDocumentId: null, expenseId: null, groupPaymentIds: null, ownsPayment: false, matchedAt: null, matchedBy: null, ignoreReason: null, suggestion: null }).where(and(eq(b.companyId, companyId), inArray(b.id, rows)))
+        unmatched = [...new Set([...unmatched, ...rows])]
       }
     }
     await refreshPaidStatus(documentId, tx)

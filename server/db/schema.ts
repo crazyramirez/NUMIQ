@@ -491,6 +491,8 @@ export type BankSuggestion = {
   kind: 'invoice' | 'expense' | 'payment' | 'new_expense' | 'ignore'
   /** Factura, gasto o cobro/pago propuesto */
   id?: number | null
+  /** Un abono que paga varias facturas del mismo cliente: todas ellas (la primera es `id`) */
+  ids?: number[] | null
   label: string
   detail?: string | null
   /** 0-100 */
@@ -532,6 +534,8 @@ export const bankTransactions = mysqlTable('bank_transactions', {
   paymentId: int('payment_id'),
   /** El cobro/pago lo creó la conciliación (se borra al deshacerla) */
   ownsPayment: boolean('owns_payment').notNull().default(false),
+  /** Un abono que paga varias facturas a la vez: los cobros de las demás (el de la primera va en paymentId) */
+  groupPaymentIds: jsonText<number[]>('group_payment_ids'),
   ignoreReason: varchar('ignore_reason', { length: 120 }),
   matchedAt: datetime('matched_at'),
   matchedBy: int('matched_by'),

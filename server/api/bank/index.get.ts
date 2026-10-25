@@ -32,7 +32,13 @@ export default defineEventHandler(async (event) => {
   ])
 
   // Qué hay enlazado a cada movimiento conciliado
-  const docIds = [...new Set(rows.map(r => r.salesDocumentId).filter((x): x is number => !!x))]
+  // Un pago de varias facturas: las demás, por sus cobros
+  const groupIds = rows.flatMap(r => r.groupPaymentIds ?? [])
+  const grouped = groupIds.length
+    ? await db.select({ id: tables.payments.id, doc: tables.payments.salesDocumentId }).from(tables.payments).where(and(eq(tables.payments.companyId, company.id), inArray(tables.payments.id, groupIds)))
+    : []
+  const docOfPayment = new Map(grouped.map(p => [p.id, p.doc]))
+  const docIds = [...new Set([...rows.map(r => r.salesDocumentId), ...grouped.map(p => p.doc)].filter((x): x is number => !!x))]
   const expIds = [...new Set(rows.map(r => r.expenseId).filter((x): x is number => !!x))]
   const [docs, exps] = await Promise.all([
     docIds.length ? db.select({ id: tables.salesDocuments.id, number: tables.salesDocuments.number, customer: tables.salesDocuments.customer }).from(tables.salesDocuments).where(inArray(tables.salesDocuments.id, docIds)) : [],
@@ -54,6 +60,7 @@ export default defineEventHandler(async (event) => {
     items: rows.map((r) => {
       const doc = r.salesDocumentId ? docs.find(d => d.id === r.salesDocumentId) : null
       const exp = r.expenseId ? exps.find(e => e.id === r.expenseId) : null
+      const more = (r.groupPaymentIds ?? []).map(id => docs.find(d => d.id === docOfPayment.get(id))?.number).filter(Boolean)
       return {
         id: r.id,
         accountId: r.accountId,
@@ -71,7 +78,7 @@ export default defineEventHandler(async (event) => {
         matchedAt: r.matchedAt ? r.matchedAt.toISOString() : null,
         createdAt: r.createdAt ? r.createdAt.toISOString() : null,
         link: doc
-          ? { kind: 'invoice' as const, id: doc.id, label: `Factura ${doc.number}`, detail: doc.customer?.name ?? null }
+          ? { kind: 'invoice' as const, id: doc.id, label: more.length ? `Facturas ${[doc.number, ...more].join(' + ')}` : `Factura ${doc.number}`, detail: doc.customer?.name ?? null }
           : exp
             ? { kind: 'expense' as const, id: exp.id, label: exp.supplier?.name ?? exp.description ?? 'Gasto', detail: exp.number ? `Factura ${exp.number}` : exp.supplier ? exp.description : null }
             : null,

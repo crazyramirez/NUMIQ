@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
     const s = tx.suggestion
     if (!s || !isSafeSuggestion(s)) continue
     try {
-      if (s.kind === 'invoice' || s.kind === 'expense' || s.kind === 'payment') await confirmMatch(company, user.id, tx.id, { kind: s.kind, id: s.id! })
+      if (s.kind === 'invoice' || s.kind === 'expense' || s.kind === 'payment') await confirmMatch(company, user.id, tx.id, suggestionTarget(s))
       else if (s.kind === 'new_expense') await expenseFromTx(company, user.id, tx.id, { kind: s.expenseKind ?? 'other', categoryId: s.categoryId ?? null, supplier: s.supplier ?? null, vatRate: s.vatRate ?? 0, description: null, deductiblePct: s.deductiblePct, vatDeductiblePct: s.vatDeductiblePct, contactId: s.contactId })
       else await useDb().update(t).set({ status: 'ignored', ignoreReason: s.label, matchedAt: new Date(), matchedBy: user.id }).where(eq(t.id, tx.id))
       done++

@@ -1152,6 +1152,8 @@ type TxSnapshot = {
   salesDocumentId: number | null
   paymentId: number | null
   ownsPayment: boolean
+  /** Un pago de varias facturas: todas ellas (la primera es salesDocumentId) */
+  salesDocumentIds?: number[] | null
   /** Gasto creado desde el movimiento (se borra al deshacer la conciliación): con qué datos rehacerlo */
   ownExpense: { kind: ExpenseKind, categoryId: number | null, supplier: string | null, vatRate: number, description: string | null, deductiblePct: number, vatDeductiblePct: number } | null
 }
@@ -1166,6 +1168,10 @@ async function txSnapshot(tx: BankTx): Promise<TxSnapshot> {
   const snap: TxSnapshot = {
     id: tx.id, status: tx.status, ignoreReason: tx.ignoreReason, suggestion: tx.suggestion, expenseId: tx.expenseId,
     salesDocumentId: tx.salesDocumentId, paymentId: tx.paymentId, ownsPayment: tx.ownsPayment, ownExpense: null,
+  }
+  if (tx.status === 'matched' && tx.salesDocumentId && tx.groupPaymentIds?.length) {
+    const rows = await useDb().select({ doc: tables.payments.salesDocumentId }).from(tables.payments).where(inArray(tables.payments.id, tx.groupPaymentIds))
+    snap.salesDocumentIds = [tx.salesDocumentId, ...rows.map(r => r.doc).filter((x): x is number => !!x)]
   }
   if (tx.status === 'matched' && tx.ownsPayment && tx.expenseId) {
     const db = useDb()
@@ -1194,7 +1200,7 @@ async function restoreTx(ctx: OpCtx, snap: TxSnapshot) {
     return
   }
   if (snap.ownExpense) await expenseFromTx(ctx.company, ctx.actor.id, tx.id, snap.ownExpense)
-  else if (snap.ownsPayment && snap.salesDocumentId) await confirmMatch(ctx.company, ctx.actor.id, tx.id, { kind: 'invoice', id: snap.salesDocumentId })
+  else if (snap.ownsPayment && snap.salesDocumentId) await confirmMatch(ctx.company, ctx.actor.id, tx.id, { kind: 'invoice', id: snap.salesDocumentId, ids: snap.salesDocumentIds })
   else if (snap.ownsPayment && snap.expenseId) await confirmMatch(ctx.company, ctx.actor.id, tx.id, { kind: 'expense', id: snap.expenseId })
   else if (snap.paymentId) await confirmMatch(ctx.company, ctx.actor.id, tx.id, { kind: 'payment', id: snap.paymentId })
   else if (snap.expenseId) await confirmMatch(ctx.company, ctx.actor.id, tx.id, { kind: 'expense', id: snap.expenseId })

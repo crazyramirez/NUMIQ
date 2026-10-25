@@ -8,6 +8,7 @@ useHead({ title: 'Banco · NUMIQ' })
 interface Suggestion {
   kind: 'invoice' | 'expense' | 'payment' | 'new_expense' | 'ignore'
   id?: number | null
+  ids?: number[] | null
   label: string
   detail?: string | null
   confidence: number
@@ -120,7 +121,7 @@ function accept(tx: Tx) {
   const s = tx.suggestion
   if (!s) return
   if (s.kind === 'invoice' || s.kind === 'expense' || s.kind === 'payment') {
-    return run(tx.id, () => call(`/api/bank/transactions/${tx.id}/match`, { method: 'POST', body: { kind: s.kind, id: s.id } }), 'Conciliado', s.label)
+    return run(tx.id, () => call(`/api/bank/transactions/${tx.id}/match`, { method: 'POST', body: { kind: s.kind, id: s.id, ids: s.ids ?? null } }), s.ids?.length ? 'Facturas cobradas' : 'Conciliado', s.label)
   }
   if (s.kind === 'new_expense') return createExpense(tx)
   return ignore(tx, s.label)

@@ -35,6 +35,8 @@ export async function deleteSalesDocuments(companyId: number, ids: number[]) {
     const paymentIds = (await tx.select({ id: tables.payments.id }).from(tables.payments)
       .where(inArray(tables.payments.salesDocumentId, docIds))).map(p => p.id)
     const bt = tables.bankTransactions
+    // Un pago de varias facturas pierde una: vuelve a pendiente y las demás, a por cobrar
+    await releaseBankGroups(tx, companyId, paymentIds)
     const unmatch = { status: 'pending' as const, salesDocumentId: null, paymentId: null, ownsPayment: false, ignoreReason: null, matchedAt: null, matchedBy: null }
     await tx.update(bt).set(unmatch).where(and(eq(bt.companyId, companyId), inArray(bt.salesDocumentId, docIds)))
     if (paymentIds.length) await tx.update(bt).set(unmatch).where(and(eq(bt.companyId, companyId), inArray(bt.paymentId, paymentIds)))
@@ -45,7 +47,7 @@ export async function deleteSalesDocuments(companyId: number, ids: number[]) {
       .where(and(eq(bt.companyId, companyId), eq(bt.status, 'pending'), isNotNull(bt.suggestion)))
     for (const t of suggested) {
       const sg = t.suggestion
-      if (sg?.id != null && ((sg.kind === 'invoice' && gone.has(sg.id)) || (sg.kind === 'payment' && paid.has(sg.id)))) {
+      if (sg?.id != null && ((sg.kind === 'invoice' && [sg.id, ...(sg.ids ?? [])].some(id => gone.has(id))) || (sg.kind === 'payment' && paid.has(sg.id)))) {
         await tx.update(bt).set({ suggestion: null }).where(eq(bt.id, t.id))
       }
     }

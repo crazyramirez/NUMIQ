@@ -1,0 +1,1 @@
+ALTER TABLE `bank_transactions` ADD `group_payment_ids` longtext;
