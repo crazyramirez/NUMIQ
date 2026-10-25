@@ -159,6 +159,17 @@ async function disconnect(a: SyncAccount) {
   }
 }
 
+// Google sin claves: cómo activarlo, con la dirección de vuelta de este servidor ya puesta
+const googleHelp = ref(false)
+const redirectUri = computed(() => (import.meta.client ? `${window.location.origin}/api/calendar/google/callback` : ''))
+const uriCopied = ref(false)
+async function copyUri() {
+  if (await copyToClipboard(redirectUri.value)) {
+    uriCopied.value = true
+    setTimeout(() => (uriCopied.value = false), 1800)
+  }
+}
+
 const expanded = ref<number | null>(null)
 const SYNCABLE = CALENDAR_LAYERS
 const providerName = (a: SyncAccount) => (a.provider === 'google' ? 'Google Calendar' : /icloud/i.test(a.label) ? 'iCloud' : 'CalDAV')
@@ -222,17 +233,35 @@ const needsReconnect = (a: SyncAccount) => !!a.lastError && /permiso|contraseña
 
       <!-- Añadir -->
       <div v-if="!form" class="opts">
-        <button v-if="!has('google')" type="button" class="opt" :disabled="!data?.google" @click="connectGoogle">
+        <button v-if="!has('google')" type="button" class="opt" :aria-expanded="data?.google ? undefined : googleHelp" @click="data?.google ? connectGoogle() : (googleHelp = !googleHelp)">
           <span class="opt-ic" aria-hidden="true">
             <svg viewBox="0 0 48 48" width="26" height="26"><path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h11.8c-.5 2.8-2.1 5.1-4.4 6.7v5.5h7.1c4.2-3.9 6.6-9.6 6.6-16.2z" /><path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.3l-7.1-5.5c-2 1.3-4.5 2.1-7.4 2.1-5.7 0-10.5-3.8-12.2-9H4.5v5.7C8.1 41.1 15.5 46 24 46z" /><path fill="#FBBC05" d="M11.8 28.3c-.4-1.3-.7-2.8-.7-4.3s.3-3 .7-4.3V14H4.5C3 17 2 20.4 2 24s1 7 2.5 10l7.3-5.7z" /><path fill="#EA4335" d="M24 10.8c3.2 0 6.1 1.1 8.4 3.3l6.3-6.3C34.9 4.2 29.9 2 24 2 15.5 2 8.1 6.9 4.5 14l7.3 5.7c1.7-5.2 6.5-8.9 12.2-8.9z" /></svg>
           </span>
           <span class="opt-t">
             <strong>Google Calendar</strong>
             <span v-if="data?.google">Inicia sesión con Google y listo. Android, web y cualquier dispositivo.</span>
-            <span v-else>No está activado en este servidor. Mientras, usa la pestaña «Suscripción».</span>
+            <span v-else>Falta activarlo una vez con unas claves de Google (10 minutos). Toca para ver cómo.</span>
           </span>
-          <Icon v-if="data?.google" name="ph:arrow-up-right" class="opt-go" aria-hidden="true" />
+          <Icon :name="data?.google ? 'ph:arrow-up-right' : googleHelp ? 'ph:caret-up' : 'ph:caret-down'" class="opt-go" aria-hidden="true" />
         </button>
+        <div v-if="!data?.google && googleHelp" class="ghelp">
+          <p>Google solo deja escribir en un calendario a las apps que tienen sus propias claves. Se crean gratis con tu cuenta de Google, una sola vez:</p>
+          <ol>
+            <li>Entra en <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener" class="link">console.cloud.google.com</a> y crea un proyecto llamado «NUMIQ».</li>
+            <li>En <a href="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com" target="_blank" rel="noopener" class="link">Google Calendar API</a> pulsa <strong>Habilitar</strong>.</li>
+            <li>En <a href="https://console.cloud.google.com/auth/overview" target="_blank" rel="noopener" class="link">Google Auth Platform</a> pulsa <strong>Comenzar</strong>: nombre «NUMIQ», tu correo, público <strong>Externo</strong>. En <strong>Público → Usuarios de prueba</strong> añade los correos de Google que vayan a conectarse.</li>
+            <li>En <strong>Clientes → Crear cliente</strong>: tipo <strong>Aplicación web</strong> y, en «URI de redireccionamiento autorizados», pega esta dirección:
+              <span class="ghelp-uri">
+                <code>{{ redirectUri }}</code>
+                <UiButton size="sm" :icon="uriCopied ? 'ph:check-bold' : 'ph:copy'" @click="copyUri">{{ uriCopied ? 'Copiada' : 'Copiar' }}</UiButton>
+              </span>
+            </li>
+            <li>Copia el <strong>ID de cliente</strong> y el <strong>secreto</strong> en el archivo <code>.env</code> del servidor y reinícialo:
+              <code class="ghelp-env">NUXT_GOOGLE_CLIENT_ID=…<br>NUXT_GOOGLE_CLIENT_SECRET=…</code>
+            </li>
+          </ol>
+          <p class="ghelp-note"><Icon name="ph:info" aria-hidden="true" /><span>Si usas NUMIQ en tu dominio y en local, añade en el paso 4 las dos direcciones (<code>https://tu-dominio/api/calendar/google/callback</code> y la de local). Mientras tanto, iCloud funciona ya y la pestaña «Suscripción» sirve para Google.</span></p>
+        </div>
         <button v-if="!has('caldav')" type="button" class="opt" @click="openForm('icloud')">
           <span class="opt-ic apple" aria-hidden="true"><Icon name="ph:apple-logo" /></span>
           <span class="opt-t">
@@ -518,6 +547,71 @@ const needsReconnect = (a: SyncAccount) => !!a.lastError && /permiso|contraseña
 .opt-go {
   flex: none;
   color: var(--text-4);
+}
+
+.ghelp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: calc(-1 * var(--s-2));
+  padding: var(--s-4);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-xl);
+}
+
+.ghelp ol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding-left: var(--s-5);
+}
+
+.ghelp code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  overflow-wrap: anywhere;
+}
+
+.ghelp-uri {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 6px 6px 6px 10px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.ghelp-uri code {
+  flex: 1;
+  min-width: 0;
+}
+
+.ghelp-env {
+  display: block;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.ghelp-note {
+  display: flex;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.ghelp-note > :first-child {
+  flex: none;
+  margin-top: 3px;
 }
 
 .opts-note {
