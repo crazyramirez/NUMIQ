@@ -73,8 +73,7 @@ export default defineNuxtConfig({
         { property: 'og:image:height', content: '630' },
         { property: 'og:image:alt', content: 'NUMIQ: facturas, gastos e impuestos en orden, con IA para autónomos y pymes' },
         { name: 'twitter:card', content: 'summary_large_image' },
-        { name: 'theme-color', content: '#f5f6f8', media: '(prefers-color-scheme: light)' },
-        { name: 'theme-color', content: '#0b0d12', media: '(prefers-color-scheme: dark)' },
+        // theme-color no va aquí: lo pone el script de abajo y plugins/theme-color.client.ts según el tema elegido en la app
         // App instalable (PWA): pantalla completa y nombre en el móvil
         { name: 'application-name', content: 'NUMIQ' },
         { name: 'mobile-web-app-capable', content: 'yes' },
@@ -88,9 +87,9 @@ export default defineNuxtConfig({
         { rel: 'manifest', href: '/manifest.webmanifest' },
         { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
       ],
-      // Tema antes del primer pintado: sin destello claro en modo oscuro
+      // Tema antes del primer pintado: sin destello claro en modo oscuro, y la barra de estado (theme-color) a juego
       script: [{
-        innerHTML: `(function(){try{var m=localStorage.getItem('numiq-theme')||'auto';var d=m==='dark'||(m==='auto'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light')}catch(e){}})()`,
+        innerHTML: `(function(){var d=false;try{var m=localStorage.getItem('numiq-theme')||'auto';d=m==='dark'||(m==='auto'&&matchMedia('(prefers-color-scheme: dark)').matches)}catch(e){}document.documentElement.setAttribute('data-theme',d?'dark':'light');var t=document.createElement('meta');t.name='theme-color';t.content=d?'#0a0c10':'#f5f6f8';document.head.appendChild(t)})()`,
       }],
     },
     pageTransition: { name: 'page', mode: 'out-in' },
