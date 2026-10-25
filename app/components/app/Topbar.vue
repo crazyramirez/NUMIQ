@@ -21,7 +21,7 @@ const createItems: MenuItem[] = CREATE_ACTIONS.map(a => ({ label: a.label, icon:
       <UiButton variant="ghost" square icon="ph:list" :aria-label="inbox.count.value ? 'Abrir menú: hay documentos por revisar' : 'Abrir menú'" @click="navOpen = true" />
       <span v-if="inbox.count.value" class="burger-dot" aria-hidden="true" />
     </span>
-    <!-- Móvil: menú y marca a la izquierda, tema a la derecha; crear está en la barra inferior -->
+    <!-- Móvil: menú y marca a la izquierda; crear está en la barra inferior y la apariencia en el menú -->
     <NuxtLink to="/" class="m-brand" aria-label="NUMIQ, inicio"><AppLogo :size="30" :wordmark="false" /></NuxtLink>
 
     <button type="button" class="search" @click="palette = true">
@@ -163,8 +163,9 @@ const createItems: MenuItem[] = CREATE_ACTIONS.map(a => ({ label: a.label, icon:
     padding: 0 var(--s-3);
   }
 
+  /* La apariencia se cambia desde el menú (Claro / Oscuro / Auto) */
   .keys,
-  .right > :not(.ro, .theme-btn) {
+  .right > :not(.ro) {
     display: none;
   }
 
@@ -178,13 +179,8 @@ const createItems: MenuItem[] = CREATE_ACTIONS.map(a => ({ label: a.label, icon:
     height: 40px;
   }
 
-  .right {
-    gap: 0;
-  }
-
-  /* Botones de 40 px: cómodos para el dedo */
-  .topbar .burger :deep(.btn),
-  .topbar .theme-btn {
+  /* Botón de 40 px: cómodo para el dedo */
+  .topbar .burger :deep(.btn) {
     width: 40px;
     height: 40px;
   }
@@ -196,11 +192,6 @@ const createItems: MenuItem[] = CREATE_ACTIONS.map(a => ({ label: a.label, icon:
   .topbar .burger :deep(.btn-icon) {
     width: 22px;
     height: 22px;
-  }
-
-  .topbar .theme-btn :deep(.btn-icon) {
-    width: 20px;
-    height: 20px;
   }
 }
 </style>
