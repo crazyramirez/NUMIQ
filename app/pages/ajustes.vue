@@ -18,9 +18,11 @@ const SECTIONS = [
   { id: 'equipo', label: 'Equipo', icon: 'ph:users-three' },
   { id: 'cuenta', label: 'Tu cuenta', icon: 'ph:user-circle' },
   { id: 'copia', label: 'Copia de seguridad', icon: 'ph:cloud-arrow-down' },
+  { id: 'novedades', label: 'Novedades', icon: 'ph:rocket-launch' },
 ] as const
 type SectionId = typeof SECTIONS[number]['id']
 
+const news = useNews()
 const section = computed<SectionId>({
   get: () => (SECTIONS.some(s => s.id === route.query.s) ? route.query.s as SectionId : 'empresa'),
   set: s => router.replace({ query: { ...route.query, s } }),
@@ -367,6 +369,7 @@ function onDesignSaved(accent: string) {
         >
           <Icon :name="section === s.id ? `${s.icon}-fill` : s.icon" class="snav-ic" aria-hidden="true" />
           <span class="truncate">{{ s.label }}</span>
+          <span v-if="s.id === 'novedades' && news.unseen.value" class="snav-new num" :aria-label="`${news.unseen.value} sin ver`">{{ news.unseen.value }}</span>
         </button>
       </nav>
 
@@ -571,6 +574,7 @@ function onDesignSaved(accent: string) {
           </div>
 
           <!-- ─── Diseño ─── -->
+          <SettingsNewsPanel v-if="section === 'novedades'" class="rise" style="--i: 2" />
           <SettingsSignaturesPanel v-if="section === 'firmas'" class="rise" style="--i: 2" :can-edit="canEdit" />
           <SettingsInvoiceDesigner v-if="section === 'diseno'" class="rise" style="--i: 2" :can-edit="canEdit" @saved="onDesignSaved" />
 
@@ -741,6 +745,20 @@ function onDesignSaved(accent: string) {
   text-align: left;
   border-radius: var(--r-md);
   transition: background var(--t-fast), color var(--t-fast);
+}
+
+.snav-new {
+  min-width: 20px;
+  margin-left: auto;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 19px;
+  color: #fff;
+  text-align: center;
+  background: linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--brand) 70%, #ec4899));
+  border-radius: 999px;
+  box-shadow: 0 4px 10px -4px color-mix(in srgb, var(--brand) 70%, transparent);
 }
 
 .snav-item:hover {

@@ -37,6 +37,8 @@ async function logout() {
 }
 
 const pwa = usePwa()
+// Novedades sin ver: acceso directo bajo Ajustes hasta que se abren
+const news = useNews()
 
 // Cajón del móvil: la apariencia a un toque, sin pasar por el menú de la cuenta
 const themes = [
@@ -136,6 +138,11 @@ const userItems = computed<MenuItem[]>(() => [
           <Icon :name="isActive(SETTINGS_NAV.to) ? `${SETTINGS_NAV.icon}-fill` : SETTINGS_NAV.icon" class="ic" aria-hidden="true" />
           <span v-if="!mini" class="grow">{{ SETTINGS_NAV.label }}</span>
         </NuxtLink>
+        <NuxtLink v-if="news.unseen.value" to="/ajustes?s=novedades" class="item news-item" :title="mini ? `Novedades: ${news.unseen.value} sin ver` : undefined">
+          <Icon name="ph:rocket-launch" class="ic" aria-hidden="true" />
+          <span v-if="!mini" class="grow">Novedades</span>
+          <span class="news-count num" :aria-label="`${news.unseen.value} sin ver`">{{ news.unseen.value }}</span>
+        </NuxtLink>
         <UiMenu :items="userItems" align="start" up :width="230">
           <template #default="{ toggle }">
             <button type="button" class="user" @click="toggle">
@@ -154,6 +161,33 @@ const userItems = computed<MenuItem[]>(() => [
 </template>
 
 <style scoped>
+.news-item {
+  position: relative;
+}
+
+.news-count {
+  min-width: 20px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 19px;
+  color: #fff;
+  text-align: center;
+  background: linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--brand) 70%, #ec4899));
+  border-radius: 999px;
+  box-shadow: 0 4px 10px -4px color-mix(in srgb, var(--brand) 70%, transparent);
+}
+
+.collapsed .news-count {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 16px;
+  padding: 0 4px;
+  font-size: 9.5px;
+  line-height: 16px;
+}
+
 .sidebar {
   position: fixed;
   inset: 0 auto 0 0;
