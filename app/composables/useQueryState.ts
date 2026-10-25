@@ -91,16 +91,40 @@ export function useBackTo(path: MaybeRefOrGetter<string>) {
     return typeof f === 'string' && f.startsWith('/') && !f.startsWith('//') ? f : null
   })
   const href = computed(() => from.value ?? lastUrl.get(toValue(path)) ?? toValue(path))
+  /** A dónde vuelve, para el botón: «Calendario», «Cliente», «Facturas»… */
+  const label = computed(() => backPlace(from.value ?? toValue(path)))
   function back(e?: MouseEvent) {
     // Ctrl/⌘ o botón central: el enlace se abre aparte como siempre
     if (e && (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button > 0)) return
     e?.preventDefault()
     const prev = (window.history.state as { back?: string } | null)?.back
-    const target = (from.value ?? toValue(path)).split(/[?#]/)[0]
+    // A otra pantalla (?from=): a esa dirección exacta, que puede reabrir lo que había abierto (?item=)
+    if (from.value) {
+      if (prev === from.value) router.back()
+      else navigateTo(from.value, { replace: true })
+      return
+    }
+    const target = toValue(path).split(/[?#]/)[0]
     if (prev && prev.split(/[?#]/)[0] === target) router.back()
     else navigateTo(href.value)
   }
-  return { href, back, from }
+  return { href, back, from, label }
+}
+
+/**
+ * Para las fichas que se abren encima de su lista (?ver=ID): al cerrarlas, si se abrieron desde otra
+ * pantalla (?from=), se vuelve a ella; si no, `stay()` deja la lista como estaba.
+ */
+export function useReturnFrom() {
+  const router = useRouter()
+  const route = useRoute()
+  return (stay: () => void) => {
+    const f = route.query.from
+    if (typeof f !== 'string' || !f.startsWith('/') || f.startsWith('//')) return stay()
+    const prev = (window.history.state as { back?: string } | null)?.back
+    if (prev === f) router.back()
+    else navigateTo(f, { replace: true })
+  }
 }
 
 /** Cambia parte de la query de la página actual junto con los `useQueryState` (undefined quita la clave) */

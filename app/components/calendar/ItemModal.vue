@@ -48,10 +48,13 @@ const openLabel = computed(() => {
   return 'Abrir'
 })
 
+// Al volver de la factura, el gasto o el contacto, el calendario reabre este mismo elemento
+const route = useRoute()
 function go() {
   if (!it.value?.to) return
+  const to = linkWithReturn(it.value.to, route, { item: it.value.id })
   open.value = false
-  navigateTo(it.value.to)
+  navigateTo(to)
 }
 
 function downloadIcs() {

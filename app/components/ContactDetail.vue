@@ -64,7 +64,7 @@ const toast = useToast()
 const { confirm } = useConfirm()
 const isClient = computed(() => props.role === 'client')
 const listPath = computed(() => (isClient.value ? '/clientes' : '/proveedores'))
-const { href: listHref, back } = useBackTo(listPath)
+const { href: listHref, back, label: backText } = useBackTo(listPath)
 
 const { data: c, status, refresh, error } = useFetch<ContactFull>(() => `/api/contacts/${props.id}`, {
   key: `contact-${props.id}`,
@@ -401,7 +401,7 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
 <template>
   <div class="page">
     <a :href="listHref" class="back" @click="back">
-      <Icon name="ph:arrow-left" aria-hidden="true" /> {{ isClient ? 'Clientes' : 'Proveedores' }}
+      <Icon name="ph:arrow-left" aria-hidden="true" /> {{ backText }}
     </a>
 
     <div v-if="error" class="card">

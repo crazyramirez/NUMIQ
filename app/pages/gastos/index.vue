@@ -232,9 +232,11 @@ watch(() => [route.query.nuevo, route.query.ver, route.query.proveedor], () => {
   }
 }, { immediate: true })
 
+const returnFrom = useReturnFrom()
 watch(modalOpen, (v) => {
   if (!v && (route.query.nuevo || route.query.ver || route.query.proveedor)) {
-    router.replace({ query: { ...route.query, nuevo: undefined, ver: undefined, proveedor: undefined } })
+    // Abierto desde otra pantalla (calendario, banco…): al cerrar se vuelve allí
+    returnFrom(() => router.replace({ query: { ...route.query, nuevo: undefined, ver: undefined, proveedor: undefined } }))
   }
 })
 

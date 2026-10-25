@@ -244,6 +244,14 @@ function onSaved() {
 provideCalendarMenus({ canEdit, today, view, selected, items, openItem, create, edit, toggleDone, move, select: onSelect, goToday, reload: reloadAll })
 
 
+// ─── Al volver de algo abierto desde aquí (?item=ID), se reabre su ficha ───
+watch([() => route.query.item, items], ([id]) => {
+  if (typeof id !== 'string' || !data.value) return
+  const it = items.value.find(i => i.id === id)
+  if (it) openItem(it)
+  navigateTo({ query: { ...route.query, item: undefined } }, { replace: true })
+}, { immediate: true })
+
 // ─── Enlaces: ?nuevo=1, ?evento=ID, ?conectar=1|externo ───
 
 watch(() => [route.query.nuevo, route.query.evento, route.query.conectar], () => {

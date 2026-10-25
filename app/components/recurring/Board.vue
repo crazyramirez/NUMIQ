@@ -225,9 +225,10 @@ watch(() => [route.query.nuevo, route.query.ver, route.query.desde, route.query.
   else if (q.nuevo) openNew(q.nuevo === 'gasto' ? 'expense' : 'invoice')
 }, { immediate: true })
 
+const returnFrom = useReturnFrom()
 watch(modalOpen, (v) => {
   const q = route.query
-  if (!v && (q.nuevo || q.ver || q.desde || q.gasto)) router.replace({ query: { ...q, nuevo: undefined, ver: undefined, desde: undefined, gasto: undefined } })
+  if (!v && (q.nuevo || q.ver || q.desde || q.gasto)) returnFrom(() => router.replace({ query: { ...q, nuevo: undefined, ver: undefined, desde: undefined, gasto: undefined } }))
 })
 
 // ─── Acciones ───

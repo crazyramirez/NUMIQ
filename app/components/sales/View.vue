@@ -81,9 +81,9 @@ const VF_STATUS: Record<string, { label: string, tone: 'brand' | 'success' | 'wa
 
 const isQuote = computed(() => doc.value?.kind === 'quote' || doc.value?.kind === 'proforma')
 const base = computed(() => (isQuote.value ? '/presupuestos' : '/facturas'))
-const { href: backHref, back, from: backFrom } = useBackTo(base)
+const { href: backHref, back, from: backFrom, label: backPlaceLabel } = useBackTo(base)
 const listHref = computed(() => (backFrom.value ? base.value : backHref.value))
-const backLabel = computed(() => (backFrom.value ? (backFrom.value.startsWith('/presupuestos') ? 'Volver al presupuesto' : 'Volver a la factura') : 'Volver al listado'))
+const backLabel = computed(() => `Volver: ${backPlaceLabel.value}`)
 // Al abrir un documento vinculado, su «Volver» regresa aquí
 const linkTo = (id: number) => ({ path: `${isQuote.value ? '/facturas' : '/presupuestos'}/${id}`, query: { from: `${base.value}/${props.id}` } })
 const kindLabel = computed(() => KIND_LABEL[doc.value?.kind ?? 'invoice'] ?? 'Factura')
@@ -416,7 +416,8 @@ function paperCtx(): CtxSpec | null {
   <div v-if="doc && company" class="view page">
     <div class="v-head no-print">
       <div class="head-nav">
-        <UiButton variant="ghost" square icon="ph:arrow-left" :aria-label="backLabel" :title="backLabel" @click="back()" />
+        <UiButton v-if="backFrom" variant="ghost" size="sm" icon="ph:arrow-left" class="back-from" :title="backLabel" @click="back()">{{ backPlaceLabel }}</UiButton>
+        <UiButton v-else variant="ghost" square icon="ph:arrow-left" :aria-label="backLabel" :title="backLabel" @click="back()" />
         <div class="pager-btns" role="navigation" aria-label="Navegación entre documentos">
           <UiButton
             variant="ghost"
