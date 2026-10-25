@@ -4,7 +4,7 @@
 
 # NUMIQ
 
-Gestión completa para autónomos y pequeñas empresas españolas: facturas y presupuestos, gastos, banco, impuestos, archivo para la gestoría e IA que lee documentos y responde con las cifras reales de la empresa.
+Gestión completa para autónomos y pequeñas empresas españolas: facturas y presupuestos, gastos, banco, impuestos, calendario con los plazos de Hacienda, archivo para la gestoría e IA que lee documentos y responde con las cifras reales de la empresa.
 
 App web instalable (PWA), responsive y en español. Varias empresas por cuenta y equipo con roles.
 
@@ -61,6 +61,15 @@ Cuenta de demostración con datos ficticios. Las imágenes siguen el tema claro 
     </td>
   </tr>
   <tr>
+    <td width="100%" colspan="2">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/calendario-dark.webp">
+        <img src=".github/assets/screenshots/calendario-light.webp" alt="Calendario del mes con vencimientos de cobro y pago, plazos de Hacienda, recurrentes, festivos y eventos propios">
+      </picture>
+      <p align="center"><b>Calendario</b> · cobros, pagos, plazos de Hacienda y tus citas; se añade a Google, Apple u Outlook con un toque</p>
+    </td>
+  </tr>
+  <tr>
     <td width="50%">
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/banco-dark.webp">
@@ -97,18 +106,22 @@ Cuenta de demostración con datos ficticios. Las imágenes siguen el tema claro 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/movil-inicio-dark.webp">
-    <img src=".github/assets/screenshots/movil-inicio-light.webp" alt="Inicio en el móvil" width="31%">
+    <img src=".github/assets/screenshots/movil-inicio-light.webp" alt="Inicio en el móvil" width="23%">
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/movil-factura-dark.webp">
-    <img src=".github/assets/screenshots/movil-factura-light.webp" alt="Factura en el móvil" width="31%">
+    <img src=".github/assets/screenshots/movil-factura-light.webp" alt="Factura en el móvil" width="23%">
+  </picture>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/movil-calendario-dark.webp">
+    <img src=".github/assets/screenshots/movil-calendario-light.webp" alt="Calendario en el móvil" width="23%">
   </picture>
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/movil-banco-dark.webp">
-    <img src=".github/assets/screenshots/movil-banco-light.webp" alt="Banco en el móvil" width="31%">
+    <img src=".github/assets/screenshots/movil-banco-light.webp" alt="Banco en el móvil" width="23%">
   </picture>
 </p>
-<p align="center"><b>En el móvil</b> · inicio, factura y banco</p>
+<p align="center"><b>En el móvil</b> · inicio, factura, calendario y banco</p>
 
 ---
 

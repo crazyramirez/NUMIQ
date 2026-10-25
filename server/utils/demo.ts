@@ -205,4 +205,21 @@ export async function seedDemoData(companyId: number, userId: number) {
     { companyId, kind: 'expense', name: 'Cuota de autónomos', frequency: 'monthly', startDate: addDays(nextMonth, 27), nextDate: addDays(nextMonth, 27), autoIssue: true, template: { categoryId: catId('Cuota de autónomos'), expenseKind: 'social_security', taxLines: [{ base: 310.5, vatRate: 0 }], paid: true, paymentMethod: 'direct_debit', base: 310.5, total: 310.5 } },
     { companyId, kind: 'invoice', name: 'Mantenimiento web · Lumen', frequency: 'monthly', startDate: nextMonth, nextDate: nextMonth, autoIssue: false, template: { contactId: clientIds[0]!.id, irpfRate: 15, paymentMethod: 'transfer', lines: [{ description: ITEMS[1]!.name, quantity: 1, unitPrice: 120, vatRate: 21 }], base: 120, total: 127.2 } },
   ])
+
+  // ─── Calendario: citas y tareas de ejemplo ─────────────────────────────────
+  await db.insert(tables.calendarEvents).values(demoCalendarEvents(companyId, userId, today, clientIds[0]!.id))
+}
+
+/** Eventos y tareas de la demo, alrededor de hoy */
+export function demoCalendarEvents(companyId: number, userId: number, today: string, clientId: number) {
+  const monday = addDays(today, ((8 - new Date(`${today}T12:00:00Z`).getUTCDay()) % 7) || 7)
+  const base = { companyId, createdBy: userId }
+  return [
+    { ...base, kind: 'event' as const, title: 'Seguimiento del proyecto con Lumen', startDate: addDays(today, 3), startTime: '10:00', endTime: '11:00', color: 'brand', location: 'Videollamada', remindMinutes: 30, contactId: clientId },
+    { ...base, kind: 'task' as const, title: 'Revisar el banco y conciliar', startDate: monday, startTime: '09:00', color: 'amber', repeat: 'weekly' as const },
+    { ...base, kind: 'task' as const, title: 'Llamar a la gestoría por el cierre', startDate: addDays(today, 6), startTime: '12:30', color: 'violet', remindMinutes: 60 },
+    { ...base, kind: 'event' as const, title: 'Entrega de la identidad · Bodegas Altamira', startDate: addDays(today, 9), color: 'pink', notes: 'Manual de marca, logotipos y plantillas.' },
+    { ...base, kind: 'event' as const, title: 'Feria de diseño · Madrid', startDate: addDays(today, 15), endDate: addDays(today, 17), color: 'teal', location: 'IFEMA, Madrid' },
+    { ...base, kind: 'task' as const, title: 'Enviar presupuesto a Clínica Dental', startDate: addDays(today, -2), color: 'sky', doneDates: [addDays(today, -2)] },
+  ]
 }
