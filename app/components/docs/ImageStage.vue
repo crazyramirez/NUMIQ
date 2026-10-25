@@ -65,6 +65,9 @@ onMounted(() => {
   if (stage.value) ro.observe(stage.value)
 })
 onBeforeUnmount(() => ro?.disconnect())
+
+// Tamaño real (1 px de la imagen = 1 px de pantalla), para el menú contextual del visor
+defineExpose({ actualSize: () => zoomAt(1 / base.value) })
 </script>
 
 <template>

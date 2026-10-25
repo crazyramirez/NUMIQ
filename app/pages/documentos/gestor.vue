@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { CtxSpec } from '~/composables/useContextMenu'
 import type { DroppedFile } from '~/components/docs/Dropzone.vue'
 import type { Advisor } from '~/components/settings/AdvisorForm.vue'
 
@@ -211,6 +212,49 @@ async function removePack(p: Pack) {
   }
 }
 
+// ─── Clic derecho / pulsación larga ───
+
+const viewer = useFileViewer()
+type VaultItem = Preview['vault'][number]
+
+function vaultCtx(v: VaultItem, list: VaultItem[]): CtxSpec {
+  const on = vaultIds.value.includes(v.id)
+  const ids = list.map(x => x.id)
+  const allOn = ids.every(id => vaultIds.value.includes(id))
+  const all = preview.value?.vault ?? []
+  return {
+    title: v.name,
+    subtitle: `${vaultFolder(v.folder).label} · ${v.quarter}T ${v.year} · ${fileSize(v.size)}`,
+    icon: fileIcon(v.name, v.mime),
+    items: [
+      { label: 'Ver', icon: 'ph:eye', onClick: () => viewer.open(all.map(f => storedFile(f)), Math.max(0, all.findIndex(f => f.id === v.id))) },
+      { label: 'Descargar', icon: 'ph:download-simple', onClick: () => { window.location.href = `/api/files/${v.id}?download=1` } },
+      { divider: true },
+      { label: on ? 'Quitar del envío' : 'Incluir en el envío', icon: on ? 'ph:minus-circle' : 'ph:plus-circle', onClick: () => toggleVault(v.id) },
+      {
+        label: allOn ? `Quitar toda la carpeta ${vaultFolder(v.folder).label}` : `Incluir toda la carpeta ${vaultFolder(v.folder).label}`,
+        icon: 'ph:folder-simple',
+        onClick: () => (vaultIds.value = allOn ? vaultIds.value.filter(id => !ids.includes(id)) : [...new Set([...vaultIds.value, ...ids])]),
+      },
+      { label: 'Abrir en el archivo', icon: 'ph:archive', to: `/documentos/archivo?anio=${v.year}&t=${v.quarter}&carpeta=${v.folder ?? 'otros'}` },
+    ],
+  }
+}
+
+function packCtx(p: Pack): CtxSpec {
+  return {
+    title: p.label,
+    subtitle: `${p.contents?.files ?? 0} archivos · ${fileSize(p.size)}`,
+    icon: 'ph:file-zip',
+    items: [
+      { label: 'Descargar ZIP', icon: 'ph:download-simple', disabled: !p.available, sub: p.available ? undefined : 'Ya no está disponible', onClick: () => { window.location.href = `/api/advisor/packs/${p.id}/download` } },
+      ...(p.sentTo ? [{ label: 'Copiar destinatario', sub: p.sentTo, icon: 'ph:at', onClick: () => copyText(p.sentTo, 'Email') }] : []),
+      { divider: true },
+      { label: 'Borrar envío…', icon: 'ph:trash', danger: true, onClick: () => removePack(p) },
+    ],
+  }
+}
+
 const advisorOpen = ref(false)
 function onAdvisorSaved(a: Advisor | null) {
   info.value = { ...info.value, advisor: a }
@@ -311,7 +355,7 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
             <p v-if="!preview?.vault.length" class="muted small">No hay documentos en el archivo para este periodo. Añade extractos del banco, contratos o justificantes:</p>
             <div v-for="[folder, list] in vaultByFolder" :key="folder" class="v-group">
               <p class="v-folder"><Icon :name="vaultFolder(folder).icon" aria-hidden="true" /> {{ vaultFolder(folder).label }}</p>
-              <label v-for="v in list" :key="v.id" class="v-file">
+              <label v-for="v in list" :key="v.id" v-ctx="() => vaultCtx(v, list)" class="v-file">
                 <input type="checkbox" :checked="vaultIds.includes(v.id)" @change="toggleVault(v.id)">
                 <Icon :name="fileIcon(v.name, v.mime)" class="v-ic" aria-hidden="true" />
                 <span class="grow truncate">{{ v.name }}</span>
@@ -377,7 +421,7 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
         <UiCard title="Envíos anteriores" icon="ph:clock-counter-clockwise" padding="none" class="rise history" style="--i: 3">
           <UiEmpty v-if="!info.packs.length" compact icon="ph:paper-plane-tilt" title="Aún no has enviado nada" />
           <ul v-else class="packs">
-            <li v-for="p in shownPacks" :key="p.id" class="pack">
+            <li v-for="p in shownPacks" :key="p.id" v-ctx="() => packCtx(p)" class="pack">
               <div class="grow min0">
                 <p class="pk-t">{{ p.label }}</p>
                 <p class="pk-s truncate">

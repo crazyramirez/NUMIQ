@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { MenuItem } from '~/components/ui/Menu.vue'
+import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 import type { PaperDoc } from './Paper.vue'
 import type { LinkCandidate, LinkCandidatesResult, SalesInvoiceLink, SalesSourceLink } from '#shared/types/sales-links'
 
@@ -340,6 +341,37 @@ const moreItems = computed<MenuItem[]>(() => {
   items.push({ divider: true }, { label: isQuote.value ? 'Eliminar presupuesto' : 'Eliminar factura', icon: 'ph:trash', danger: true, onClick: remove })
   return items
 })
+
+// Clic derecho / pulsación larga sobre la hoja: la acción principal, copiar datos y el resto de «Más acciones»
+function paperCtx(): CtxSpec | null {
+  const d = doc.value
+  if (!d) return null
+  const party = d.customer ?? d.contact
+  const main: CtxItem[] = []
+  if (d.status === 'draft') main.push({ label: 'Emitir', icon: 'ph:seal-check', onClick: issue })
+  if (canEdit.value) main.push({ label: 'Editar', icon: 'ph:pencil-simple', to: `${base.value}/${d.id}/editar` })
+  if (d.status !== 'draft') main.push({ label: alreadySent.value ? 'Reenviar por email…' : 'Enviar por email…', icon: alreadySent.value ? 'ph:arrow-clockwise' : 'ph:paper-plane-tilt', onClick: () => openSend() })
+  if (!isQuote.value && isOpen.value) main.push({ label: 'Registrar cobro…', icon: 'ph:hand-coins', sub: `Pendiente ${eur(remaining.value)}`, onClick: () => openPayment() })
+  if (isQuote.value && !['invoiced', 'rejected', 'draft'].includes(d.status)) main.push({ label: 'Convertir en factura', icon: 'ph:receipt', onClick: convert })
+  if (d.status !== 'draft') main.push({ label: 'Descargar PDF', icon: 'ph:download-simple', onClick: () => window.open(`${pdfUrl.value}?download=1`, '_blank') })
+  const copy: CtxItem[] = [
+    ...(d.number ? [{ label: 'Número', sub: d.number, icon: 'ph:hash', onClick: () => copyText(d.number, 'Número') }] : []),
+    { label: 'Importe total', sub: eur(d.total), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(d.total), 'Importe') },
+    ...(party?.name ? [{ label: 'Cliente', sub: party.name, icon: 'ph:user', onClick: () => copyText(party.name, 'Cliente') }] : []),
+    ...(party?.nif ? [{ label: 'NIF del cliente', sub: party.nif, icon: 'ph:identification-card', onClick: () => copyText(party.nif, 'NIF') }] : []),
+    ...(publicUrl.value && !isQuote.value && d.status !== 'draft' ? [{ label: 'Enlace para el cliente', icon: 'ph:link-simple', onClick: copyLink }] : []),
+    { label: 'Enlace a esta página', icon: 'ph:link', onClick: () => copyText(window.location.href, 'Enlace') },
+  ]
+  // «Más acciones» sin lo que ya está arriba
+  const taken = new Set(['Editar factura', 'Copiar enlace para el cliente'])
+  const more = moreItems.value.filter(it => !taken.has(it.label ?? ''))
+  return {
+    title: d.number ?? 'Borrador',
+    subtitle: `${party?.name ?? 'Sin cliente'} · ${eur(d.total)}`,
+    icon: isQuote.value ? 'ph:file-text' : 'ph:receipt',
+    items: [...main, { divider: true }, { label: 'Copiar', icon: 'ph:copy', children: copy }, { divider: true }, ...more],
+  }
+}
 </script>
 
 <template>
@@ -403,7 +435,7 @@ const moreItems = computed<MenuItem[]>(() => {
     </div>
 
     <div class="v-body">
-      <div class="print-root">
+      <div v-ctx="paperCtx" class="print-root">
         <SalesPaper :doc="doc" :company="company as any" :design="design?.design" :logo-url="design?.logoUrl" />
       </div>
 

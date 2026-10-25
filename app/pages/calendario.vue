@@ -240,6 +240,9 @@ function onSaved() {
   void reloadAll()
 }
 
+// Clic derecho (o pulsación larga) en días, eventos y meses: crear, mover, marcar, copiar…
+provideCalendarMenus({ canEdit, today, view, selected, items, openItem, create, edit, toggleDone, move, select: onSelect, goToday, reload: reloadAll })
+
 // Calendarios conectados para escribir: el botón de la cabecera lo dice
 const { data: syncData, refresh: refreshSync } = useFetch<{ accounts: Array<{ active: boolean, lastError: string | null }> }>('/api/calendar/accounts', { key: 'calendar-accounts', lazy: true, server: false })
 const synced = computed(() => (syncData.value?.accounts ?? []).some(a => a.active && !a.lastError))

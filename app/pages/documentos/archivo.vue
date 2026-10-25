@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DroppedFile } from '~/components/docs/Dropzone.vue'
+import type { CtxSpec } from '~/composables/useContextMenu'
 
 useHead({ title: 'Archivo trimestral · NUMIQ' })
 
@@ -150,6 +151,46 @@ function menuFor(f: VaultFile) {
   ]
 }
 
+// Clic derecho / pulsación larga: además de lo del menú «⋮», mover de carpeta o de trimestre sin abrir el formulario
+async function moveTo(f: VaultFile, body: { folder?: string, quarter?: number }, ok: string) {
+  try {
+    await $fetch(`/api/vault/${f.id}`, { method: 'PATCH', body })
+    toast.success(ok, f.name)
+    await refresh()
+  }
+  catch (err) {
+    toast.error('No se pudo mover', errorMessage(err))
+  }
+}
+
+function ctxFor(f: VaultFile): CtxSpec {
+  const current = f.folder ?? 'otros'
+  return {
+    title: f.name,
+    subtitle: `${vaultFolder(f.folder).label} · ${f.quarter}T ${f.year} · ${fileSize(f.size)}`,
+    icon: fileIcon(f.name, f.mime),
+    items: [
+      { label: 'Ver', icon: 'ph:eye', keys: ['↵'], onClick: () => show(f) },
+      { label: 'Descargar', icon: 'ph:download-simple', onClick: () => { window.location.href = `/api/files/${f.id}?download=1` } },
+      { divider: true },
+      {
+        label: 'Mover a',
+        icon: 'ph:folder-simple',
+        children: folders.value.map(fd => ({ label: fd.label, icon: fd.icon, active: fd.key === current, onClick: () => fd.key !== current && moveTo(f, { folder: fd.key }, `Movido a ${fd.label}`) })),
+      },
+      {
+        label: 'Trimestre',
+        icon: 'ph:calendar-blank',
+        children: [1, 2, 3, 4].map(q => ({ label: `${q}.º trimestre de ${f.year}`, active: q === f.quarter, onClick: () => q !== f.quarter && moveTo(f, { quarter: q }, `Movido al ${q}T ${f.year}`) })),
+      },
+      { label: 'Renombrar o añadir nota…', icon: 'ph:pencil-simple', onClick: () => openEdit(f) },
+      { label: 'Copiar nombre', icon: 'ph:copy', onClick: () => copyText(f.name, 'Nombre') },
+      { divider: true },
+      { label: 'Eliminar', icon: 'ph:trash', danger: true, onClick: () => remove(f) },
+    ],
+  }
+}
+
 const folderOptions = computed(() => folders.value.map(f => ({ value: f.key, label: f.label })))
 const quarterSelect = [1, 2, 3, 4].map(q => ({ value: q, label: `${q}.º trimestre` }))
 const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { quarter.value = v } })
@@ -211,7 +252,7 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
       </header>
       <UiEmpty v-if="!files.length" compact icon="ph:archive" title="No hay documentos aquí" text="Sube extractos del banco, contratos o justificantes: tu gestoría los tendrá ordenados por trimestre." />
       <ul v-else class="files">
-        <li v-for="f in shown" :key="f.id" class="file">
+        <li v-for="f in shown" :key="f.id" v-ctx="() => ctxFor(f)" class="file">
           <button type="button" class="f-main" @click="show(f)">
             <span class="f-ic" aria-hidden="true"><Icon :name="fileIcon(f.name, f.mime)" /></span>
             <span class="min0">

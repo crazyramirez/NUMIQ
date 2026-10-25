@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { CtxSpec } from '~/composables/useContextMenu'
+
 /** Documentos asociados a una factura o presupuesto: orden de pedido, albarán, contrato… */
 interface Attachment {
   id: number
@@ -63,6 +65,27 @@ function onDrop(e: DragEvent) {
   if (props.canEdit) upload(e.dataTransfer?.files)
 }
 
+// Clic derecho / pulsación larga en un adjunto
+function attCtx(a: Attachment, i: number): CtxSpec {
+  return {
+    title: a.originalName,
+    subtitle: `${sizeLabel(a.size)} · ${fdate(a.createdAt)}`,
+    icon: iconFor(a.mime).name,
+    items: [
+      { label: 'Ver', icon: 'ph:eye', onClick: () => view(i) },
+      { label: 'Descargar', icon: 'ph:download-simple', onClick: () => { window.location.href = `/api/files/${a.id}?download=1` } },
+      { label: 'Copiar nombre', icon: 'ph:copy', onClick: () => copyText(a.originalName, 'Nombre') },
+      ...(props.canEdit
+        ? [
+            { label: 'Añadir más documentos…', icon: 'ph:plus', onClick: () => input.value?.click() },
+            { divider: true },
+            { label: 'Quitar', icon: 'ph:trash', danger: true, onClick: () => remove(a) },
+          ]
+        : []),
+    ],
+  }
+}
+
 async function remove(a: Attachment) {
   if (!(await confirm({ title: `¿Quitar ${a.originalName}?`, body: 'El archivo se borrará de NUMIQ.', confirmLabel: 'Quitar', danger: true }))) return
   try {
@@ -89,7 +112,7 @@ async function remove(a: Attachment) {
     </div>
 
     <ul v-if="items.length" class="list">
-      <li v-for="(a, i) in items" :key="a.id" class="item">
+      <li v-for="(a, i) in items" :key="a.id" v-ctx="() => attCtx(a, i)" class="item">
         <button type="button" class="grow min0 name-link" :aria-label="`Ver ${a.originalName}`" @click="view(i)">
           <span class="ic" :class="iconFor(a.mime).tone"><Icon :name="iconFor(a.mime).name" /></span>
           <span class="min0 name-text">

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BulkAction } from '~/components/ui/BulkBar.vue'
 import type { MenuItem } from '~/components/ui/Menu.vue'
+import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 
 /** Listado de clientes o proveedores con búsqueda y lo facturado o gastado en el periodo (por defecto, el año en curso) */
 const props = defineProps<{ role: 'client' | 'supplier' }>()
@@ -162,6 +163,62 @@ async function deleteBulk() {
   }
 }
 
+// ─── Clic derecho (o pulsación larga): acciones del contacto o, dentro de la selección, las del lote ───
+
+function pickFromMenu(r: ContactRow) {
+  pick(r.id)
+  if (!selecting.value) selecting.value = true
+}
+
+function rowCtx(r: ContactRow): CtxSpec {
+  const n = selected.value.length
+  if (n > 1 && selectedSet.value.has(r.id)) {
+    return {
+      title: `${n} ${noun(n)} ${n === 1 ? 'seleccionado' : 'seleccionados'}`,
+      icon: 'ph:stack',
+      items: [
+        { label: 'Copiar emails', icon: 'ph:envelope-simple', disabled: !selectedRows.value.some(x => x.email), onClick: () => copyText(selectedRows.value.map(x => x.email).filter(Boolean).join(', '), 'Emails') },
+        { divider: true },
+        { label: 'Quitar este de la selección', icon: 'ph:minus-circle', onClick: () => pick(r.id) },
+        { label: 'Seleccionar todo lo filtrado', icon: 'ph:checks', disabled: selected.value.length === rows.value.length, onClick: selectAll },
+        { label: 'Quitar la selección', icon: 'ph:x-circle', onClick: clear },
+        { divider: true },
+        { label: `Eliminar ${n} ${noun(n)}`, icon: 'ph:trash', danger: true, onClick: deleteBulk },
+      ],
+    }
+  }
+  const url = `${base.value}/${r.id}`
+  const create: CtxItem[] = isClient.value
+    ? [
+        { label: 'Nueva factura', icon: 'ph:receipt', to: `/facturas/nueva?cliente=${r.id}` },
+        { label: 'Nuevo presupuesto', icon: 'ph:file-text', to: `/presupuestos/nuevo?cliente=${r.id}` },
+      ]
+    : [{ label: 'Nuevo gasto', icon: 'ph:wallet', to: `/gastos?nuevo=1&proveedor=${r.id}` }]
+  const copy: CtxItem[] = [
+    { label: 'Nombre', sub: r.name, icon: 'ph:user', onClick: () => copyText(r.name, 'Nombre') },
+    ...(r.nif ? [{ label: 'NIF', sub: r.nif, icon: 'ph:identification-card', onClick: () => copyText(r.nif, 'NIF') }] : []),
+    ...(r.email ? [{ label: 'Email', sub: r.email, icon: 'ph:envelope-simple', onClick: () => copyText(r.email, 'Email') }] : []),
+    ...(r.phone ? [{ label: 'Teléfono', sub: r.phone, icon: 'ph:phone', onClick: () => copyText(r.phone, 'Teléfono') }] : []),
+    { label: 'Enlace a la ficha', icon: 'ph:link', onClick: () => copyText(`${window.location.origin}${url}`, 'Enlace') },
+  ]
+  const items: CtxItem[] = [
+    { label: 'Abrir ficha', icon: 'ph:eye', keys: ['↵'], to: url },
+    ...(desktopCtx() ? [{ label: 'Abrir en otra pestaña', icon: 'ph:arrow-square-out', onClick: () => window.open(url, '_blank', 'noopener') }] : []),
+    { divider: true },
+    ...create,
+    { divider: true },
+    ...(r.email ? [{ label: 'Escribir un email', sub: r.email, icon: 'ph:envelope-simple', onClick: () => (window.location.href = `mailto:${r.email}`) }] : []),
+    ...(r.phone ? [{ label: 'Llamar', sub: r.phone, icon: 'ph:phone', onClick: () => (window.location.href = `tel:${r.phone!.replace(/\s+/g, '')}`) }] : []),
+    { label: 'Copiar', icon: 'ph:copy', children: copy },
+    { divider: true },
+    { label: selectedSet.value.has(r.id) ? 'Quitar de la selección' : 'Seleccionar', icon: selectedSet.value.has(r.id) ? 'ph:minus-circle' : 'ph:check-square', onClick: () => pickFromMenu(r) },
+    { divider: true },
+    { label: isClient.value ? 'Eliminar cliente' : 'Eliminar proveedor', icon: 'ph:trash', danger: true, onClick: () => removeContact(r) },
+  ]
+  const sub = [r.nif, r.city, amountOf(r) ? eur(amountOf(r)) : null].filter(Boolean).join(' · ')
+  return { title: r.name, subtitle: sub || undefined, icon: isClient.value ? 'ph:user' : 'ph:storefront', items }
+}
+
 const bulkActions = computed<BulkAction[]>(() => [
   { label: 'Eliminar', icon: 'ph:trash', tone: 'danger', onClick: deleteBulk },
 ])
@@ -274,6 +331,7 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
               <tr
                 v-for="r in shown"
                 :key="r.id"
+                v-ctx="() => rowCtx(r)"
                 class="clickable"
                 :class="{ sel: selectedSet.has(r.id) }"
                 tabindex="0"
@@ -322,7 +380,7 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
         </div>
 
         <ul class="cards mobile">
-          <li v-for="r in shown" :key="r.id">
+          <li v-for="r in shown" :key="r.id" v-ctx="() => rowCtx(r)">
             <UiListRow :to="`${base}/${r.id}`" :selecting="selecting" :selected="selectedSet.has(r.id)" @toggle="pick(r.id)">
               <template #lead>
                 <UiAvatar :name="r.name" :size="38" :square="r.kind === 'company'" :src="r.logoUrl" contain />

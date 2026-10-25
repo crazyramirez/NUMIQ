@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { MenuItem } from '~/components/ui/Menu.vue'
+import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 
 /** Ficha de cliente o proveedor: cifras, documentos y datos */
 const props = defineProps<{ role: 'client' | 'supplier', id: number }>()
@@ -267,6 +268,72 @@ const entries = computed<Entry[]>(() => {
   })
 })
 
+// ─── Clic derecho (o pulsación larga) en un documento de la ficha y en sus datos ───
+
+const viewer = useFileViewer()
+
+function entryCtx(e: Entry): CtxSpec {
+  const isExpense = tab.value === 'gastos'
+  const isQ = tab.value === 'presupuestos'
+  const pdf = `/api/sales/${e.id}/pdf`
+  const issued = !isExpense && e.state !== 'draft'
+  const items: CtxItem[] = [
+    { label: 'Abrir', icon: 'ph:eye', keys: ['↵'], to: e.path },
+    ...(!isExpense ? [{ label: 'Editar', icon: 'ph:pencil-simple', to: `${e.path}/editar` }] : []),
+    ...(issued
+      ? [
+          { divider: true },
+          { label: 'Ver PDF', icon: 'ph:file-pdf', onClick: () => viewer.open({ url: pdf, downloadUrl: `${pdf}?download=1`, mime: 'application/pdf', name: `${e.number ?? 'documento'}.pdf` }) },
+          { label: 'Descargar PDF', icon: 'ph:download-simple', onClick: () => window.open(`${pdf}?download=1`, '_blank') },
+        ]
+      : []),
+    ...(!isExpense && !isQ && issued ? [{ label: 'Crear rectificativa', icon: 'ph:arrow-counter-clockwise', to: `/facturas/nueva?rectifica=${e.id}` }] : []),
+    { divider: true },
+    {
+      label: 'Copiar',
+      icon: 'ph:copy',
+      children: [
+        ...(e.number ? [{ label: 'Número', sub: e.number, icon: 'ph:hash', onClick: () => copyText(e.number, 'Número') }] : []),
+        { label: isQ ? 'Base imponible' : 'Importe total', sub: eur(e.amount), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(e.amount), 'Importe') },
+        { label: 'Concepto', sub: e.title, icon: 'ph:text-align-left', onClick: () => copyText(e.title, 'Concepto') },
+      ],
+    },
+  ]
+  return { title: e.number ?? e.title, subtitle: `${fdate(e.date)} · ${eur(e.amount)}`, icon: e.icon, items }
+}
+
+function dataCtx(): CtxSpec | null {
+  const x = c.value
+  if (!x) return null
+  // La dirección en una línea: para pegarla o buscarla en el mapa
+  const line = address.value.replace(/\n/g, ', ')
+  const copy: CtxItem[] = [
+    { label: 'Nombre', sub: x.name, icon: 'ph:user', onClick: () => copyText(x.name, 'Nombre') },
+    ...(x.nif ? [{ label: 'NIF', sub: x.nif, icon: 'ph:identification-card', onClick: () => copyText(x.nif, 'NIF') }] : []),
+    ...(x.email ? [{ label: 'Email', sub: x.email, icon: 'ph:envelope-simple', onClick: () => copyText(x.email, 'Email') }] : []),
+    ...(x.phone ? [{ label: 'Teléfono', sub: x.phone, icon: 'ph:phone', onClick: () => copyText(x.phone, 'Teléfono') }] : []),
+    ...(line ? [{ label: 'Dirección', sub: line, icon: 'ph:map-pin', onClick: () => copyText(line, 'Dirección') }] : []),
+    ...(x.iban ? [{ label: 'IBAN', sub: x.iban, icon: 'ph:bank', onClick: () => copyText(x.iban, 'IBAN') }] : []),
+    { divider: true },
+    // Todo junto, listo para pegar en un email o en otra aplicación
+    { label: 'Todos los datos', icon: 'ph:clipboard-text', onClick: () => copyText([x.name, x.nif, line, x.email, x.phone, x.iban].filter(Boolean).join('\n'), 'Datos') },
+  ]
+  return {
+    title: x.name,
+    subtitle: x.nif ?? undefined,
+    icon: 'ph:identification-card',
+    items: [
+      { label: 'Editar datos', icon: 'ph:pencil-simple', onClick: () => (editing.value = true) },
+      { divider: true },
+      ...(x.email ? [{ label: 'Escribir un email', sub: x.email, icon: 'ph:envelope-simple', onClick: () => (window.location.href = `mailto:${x.email}`) }] : []),
+      ...(x.phone ? [{ label: 'Llamar', sub: x.phone, icon: 'ph:phone', onClick: () => (window.location.href = `tel:${x.phone!.replace(/\s/g, '')}`) }] : []),
+      ...(line ? [{ label: 'Abrir en el mapa', icon: 'ph:map-trifold', onClick: () => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(line)}`, '_blank', 'noopener') }] : []),
+      ...(x.website ? [{ label: 'Abrir su web', icon: 'ph:globe', onClick: () => window.open(x.website!.startsWith('http') ? x.website! : `https://${x.website}`, '_blank', 'noopener') }] : []),
+      { label: 'Copiar', icon: 'ph:copy', children: copy },
+    ],
+  }
+}
+
 const isPending = (e: Entry) => e.state === 'open' || e.state === 'overdue'
 const FILTERS: Record<string, Array<{ value: string, label: string, tone?: string, test?: (e: Entry) => boolean }>> = {
   facturas: [
@@ -464,7 +531,7 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
                     <span class="grp-s num">{{ g.count }} · {{ eur(g.total, false) }}</span>
                   </header>
                   <ul>
-                    <li v-for="e in g.items" :key="e.id">
+                    <li v-for="e in g.items" :key="e.id" v-ctx="() => entryCtx(e)">
                       <UiListRow :to="e.path">
                         <template #lead>
                           <span class="st-ic" :class="e.state" aria-hidden="true"><Icon :name="e.icon" /></span>
@@ -511,6 +578,7 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
                     <tr
                       v-for="e in g.items"
                       :key="e.id"
+                      v-ctx="() => entryCtx(e)"
                       class="clickable"
                       tabindex="0"
                       @click="navigateTo(e.path)"
@@ -540,7 +608,7 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
           </template>
         </UiCard>
 
-        <UiCard title="Datos" icon="ph:identification-card" class="rise data" style="--i: 3">
+        <UiCard v-ctx="dataCtx" title="Datos" icon="ph:identification-card" class="rise data" style="--i: 3">
           <template #actions>
             <UiButton size="sm" variant="ghost" icon="ph:pencil-simple" @click="editing = true">Editar</UiButton>
           </template>

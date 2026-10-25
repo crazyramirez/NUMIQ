@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BulkAction } from '~/components/ui/BulkBar.vue'
 import type { MenuItem } from '~/components/ui/Menu.vue'
+import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 import type { ImportResult } from '~/components/bank/ImportModal.vue'
 
 useHead({ title: 'Banco · NUMIQ' })
@@ -341,8 +342,7 @@ const sel = useSelection(pageItems)
 const bulkBusy = ref(false)
 const plural = (n: number) => `${n} ${n === 1 ? 'movimiento' : 'movimientos'}`
 
-async function bulk(action: 'accept' | 'ignore' | 'unmatch' | 'delete', reason?: string) {
-  const ids = sel.selected.value
+async function bulk(action: 'accept' | 'ignore' | 'unmatch' | 'delete', reason?: string, ids = sel.selected.value) {
   if (!ids.length) return
   if (action === 'delete') {
     const ok = await confirm({
@@ -415,6 +415,109 @@ async function removeAccount(a: Account) {
   await run(a.id, () => call(`/api/bank/accounts/${a.id}`, { method: 'DELETE' }), 'Cuenta quitada')
 }
 
+// ─── Clic derecho (o pulsación larga): acciones del movimiento, del lote seleccionado o de la cuenta ───
+
+const ignoreReasons = (tx: Tx | null, apply: (reason?: string) => unknown): CtxItem[] => [
+  { label: 'Traspaso entre cuentas', icon: 'ph:arrows-left-right', onClick: () => apply('Traspaso entre tus cuentas') },
+  { label: 'Pago de impuestos', icon: 'ph:bank', onClick: () => apply('Pago de impuestos') },
+  { label: tx ? (tx.amount > 0 ? 'Ingreso personal' : 'Gasto personal') : 'Personal', icon: 'ph:user', onClick: () => apply(tx ? (tx.amount > 0 ? 'Ingreso personal' : 'Gasto personal') : 'Movimiento personal') },
+  { divider: true },
+  { label: 'Sin motivo', icon: 'ph:eye-slash', onClick: () => apply() },
+]
+
+function txCtx(tx: Tx): CtxSpec {
+  const picked = sel.selectedRows.value
+  if (!readOnly.value && picked.length > 1 && sel.selectedSet.value.has(tx.id)) {
+    const withSuggestion = picked.filter(t => t.status === 'pending' && t.suggestion).length
+    const pending = picked.filter(t => t.status === 'pending').length
+    return {
+      title: `${plural(picked.length)} seleccionados`,
+      subtitle: bulkSub.value,
+      icon: 'ph:stack',
+      items: [
+        ...(withSuggestion ? [{ label: withSuggestion === picked.length ? 'Aceptar propuestas' : `Aceptar ${withSuggestion} propuestas`, icon: 'ph:check-bold', onClick: () => bulk('accept') }] : []),
+        ...(pending ? [{ label: 'Marcar como revisados', icon: 'ph:eye-slash', children: ignoreReasons(null, r => bulk('ignore', r)) }] : []),
+        ...(picked.length > pending ? [{ label: 'Deshacer conciliación', icon: 'ph:arrow-counter-clockwise', onClick: () => bulk('unmatch') }] : []),
+        {
+          label: 'Copiar suma',
+          sub: bulkSub.value,
+          icon: 'ph:copy',
+          onClick: () => copyText(plainAmount(picked.reduce((a, t) => a + t.amount, 0)), 'Suma'),
+        },
+        { divider: true },
+        { label: 'Quitar este de la selección', icon: 'ph:minus-circle', onClick: () => sel.toggle(tx.id) },
+        { label: 'Seleccionar toda la página', icon: 'ph:checks', disabled: sel.allSelected.value, onClick: sel.selectAll },
+        { label: 'Quitar la selección', icon: 'ph:x-circle', onClick: sel.clear },
+        { divider: true },
+        { label: `Eliminar ${plural(picked.length)}`, icon: 'ph:trash', danger: true, onClick: () => bulk('delete') },
+      ],
+    }
+  }
+  const amount = `${tx.amount > 0 ? '+' : ''}${eur(tx.amount)}`
+  const copy: CtxItem[] = [
+    { label: 'Importe', sub: amount, icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(tx.amount), 'Importe') },
+    { label: 'Concepto', sub: tx.description, icon: 'ph:text-align-left', onClick: () => copyText(tx.description, 'Concepto') },
+    ...(tx.counterparty ? [{ label: tx.amount > 0 ? 'Ordenante' : 'Beneficiario', sub: tx.counterparty, icon: 'ph:user', onClick: () => copyText(tx.counterparty, tx.amount > 0 ? 'Ordenante' : 'Beneficiario') }] : []),
+    ...(tx.reference ? [{ label: 'Referencia', sub: tx.reference, icon: 'ph:hash', onClick: () => copyText(tx.reference, 'Referencia') }] : []),
+    { label: 'Fecha', sub: fdate(tx.date), icon: 'ph:calendar-blank', onClick: () => copyText(fdate(tx.date), 'Fecha') },
+  ]
+  const items: CtxItem[] = [{ label: 'Ver detalle', icon: 'ph:info', onClick: () => openDetail(tx) }]
+  if (tx.status === 'matched' && tx.link) items.push({ label: tx.link.kind === 'invoice' ? 'Abrir la factura' : 'Abrir el gasto', sub: tx.link.label, icon: tx.link.kind === 'invoice' ? 'ph:receipt' : 'ph:wallet', to: linkTo(tx.link) })
+  if (!readOnly.value) {
+    items.push({ divider: true })
+    if (tx.status === 'pending') {
+      if (tx.suggestion) items.push({ label: ACCEPT_LABEL[tx.suggestion.kind], sub: tx.suggestion.label, icon: 'ph:check-bold', onClick: () => accept(tx) })
+      items.push({ label: tx.amount > 0 ? 'Buscar factura…' : 'Buscar gasto…', icon: 'ph:magnifying-glass', onClick: () => openMatch(tx) })
+      if (tx.amount < 0) {
+        items.push(
+          { label: 'Crear gasto…', icon: 'ph:plus-circle', onClick: () => openExpense(tx) },
+          { label: 'Crear gasto no deducible', icon: 'ph:prohibit', onClick: () => createExpense(tx, 0) },
+        )
+      }
+      items.push({ label: 'Marcar como revisado', icon: 'ph:eye-slash', children: ignoreReasons(tx, r => ignore(tx, r ?? null)) })
+    }
+    else {
+      items.push(
+        { label: tx.status === 'matched' ? (tx.amount > 0 ? 'Reasignar a otra factura…' : 'Reasignar a otro gasto…') : (tx.amount > 0 ? 'Asignar a una factura…' : 'Asignar a un gasto…'), icon: tx.status === 'matched' ? 'ph:arrows-left-right' : 'ph:link', onClick: () => openMatch(tx) },
+        { label: tx.status === 'matched' ? 'Deshacer conciliación' : 'Volver a pendiente', icon: 'ph:arrow-counter-clockwise', onClick: () => unmatch(tx) },
+      )
+    }
+  }
+  items.push({ label: 'Copiar', icon: 'ph:copy', children: copy }, { divider: true })
+  if (tx.counterparty && tx.counterparty !== tx.description) items.push({ label: `Solo de ${tx.counterparty}`, icon: 'ph:funnel', onClick: () => (q.value = tx.counterparty!) })
+  if (accounts.value.length > 1 && account.value !== tx.accountId) {
+    const acc = accounts.value.find(a => a.id === tx.accountId)
+    if (acc) items.push({ label: `Solo la cuenta ${acc.name}`, icon: 'ph:bank', onClick: () => (account.value = acc.id) })
+  }
+  if (!readOnly.value) {
+    items.push(
+      { divider: true },
+      { label: sel.selectedSet.value.has(tx.id) ? 'Quitar de la selección' : 'Seleccionar', icon: sel.selectedSet.value.has(tx.id) ? 'ph:minus-circle' : 'ph:check-square', onClick: () => sel.toggle(tx.id) },
+      { divider: true },
+      { label: 'Eliminar movimiento', icon: 'ph:trash', danger: true, onClick: () => bulk('delete', undefined, [tx.id]) },
+    )
+  }
+  return { title: tx.counterparty || tx.description, subtitle: `${fdate(tx.date)} · ${amount}`, icon: tx.amount > 0 ? 'ph:arrow-down-left' : 'ph:arrow-up-right', items }
+}
+
+function accountCtx(a: Account): CtxSpec {
+  const only = accounts.value.length > 1
+  return {
+    title: a.name,
+    subtitle: `${a.bankName && a.bankName !== a.name ? `${a.bankName} · ` : ''}${eur(a.balance)}`,
+    icon: 'ph:bank',
+    items: [
+      ...(only ? [account.value === a.id ? { label: 'Ver todas las cuentas', icon: 'ph:stack', onClick: () => (account.value = null) } : { label: 'Ver solo esta cuenta', icon: 'ph:funnel', onClick: () => (account.value = a.id) }] : []),
+      ...(a.pending ? [{ label: 'Movimientos por revisar', sub: plural(a.pending), icon: 'ph:list-checks', onClick: () => { account.value = only ? a.id : null; status.value = 'pending' } }] : []),
+      ...(readOnly.value ? [] : [{ label: 'Importar extracto…', icon: 'ph:upload-simple', onClick: () => (importOpen.value = true) }]),
+      { divider: true },
+      ...(a.iban ? [{ label: 'Copiar IBAN', sub: a.iban.replace(/(.{4})/g, '$1 ').trim(), icon: 'ph:copy', onClick: () => copyText(a.iban!.replace(/\s+/g, ''), 'IBAN') }] : []),
+      { label: 'Copiar saldo', sub: eur(a.balance), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(a.balance), 'Saldo') },
+      ...(readOnly.value ? [] : [{ divider: true }, { label: 'Quitar cuenta', icon: 'ph:trash', danger: true, onClick: () => removeAccount(a) }]),
+    ],
+  }
+}
+
 const SUGGEST_ICON: Record<Suggestion['kind'], string> = {
   invoice: 'ph:receipt',
   expense: 'ph:wallet',
@@ -483,7 +586,7 @@ const pages = computed(() => pageCount(data.value?.total ?? 0, data.value?.pageS
           <span class="acc-bal num">{{ eur(totalBalance) }}</span>
           <span class="acc-foot">Saldo total</span>
         </button>
-        <div v-for="a in accounts" :key="a.id" class="acc" :class="{ on: account === a.id || accounts.length === 1 }" role="button" tabindex="0" @click="account = accounts.length > 1 ? a.id : null" @keydown.enter="account = accounts.length > 1 ? a.id : null">
+        <div v-for="a in accounts" :key="a.id" v-ctx="() => accountCtx(a)" class="acc" :class="{ on: account === a.id || accounts.length === 1 }" role="button" tabindex="0" @click="account = accounts.length > 1 ? a.id : null" @keydown.enter="account = accounts.length > 1 ? a.id : null">
           <span class="acc-top">
             <span class="acc-mark" :style="{ '--h': hueOf(a.bankName ?? a.name) }" aria-hidden="true">{{ initials(a.bankName ?? a.name) }}</span>
             <span class="min0 grow">
@@ -526,7 +629,7 @@ const pages = computed(() => pageCount(data.value?.total ?? 0, data.value?.pageS
         <UiEmpty v-else-if="data && !data.items.length" compact icon="ph:funnel" title="Ningún movimiento" text="Prueba con otro filtro o búsqueda." />
 
         <ul v-else-if="data" class="txs" :class="{ dim: loadStatus === 'pending', picking: !readOnly }">
-          <li v-for="tx in data.items" :key="tx.id" class="tx" :class="[tx.status, { busy: busy === tx.id, sel: sel.selectedSet.value.has(tx.id) }]">
+          <li v-for="tx in data.items" :key="tx.id" v-ctx="() => txCtx(tx)" class="tx" :class="[tx.status, { busy: busy === tx.id, sel: sel.selectedSet.value.has(tx.id) }]">
             <span v-if="!readOnly" class="pick" @click="sel.toggle(tx.id, $event)">
               <input
                 type="checkbox"

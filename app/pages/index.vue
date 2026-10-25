@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { CtxSpec } from '~/composables/useContextMenu'
+
 useHead({ title: 'Inicio · NUMIQ' })
 
 const { me, companyName } = useMe()
@@ -54,6 +56,77 @@ const severity = {
   info: { icon: 'ph:lightbulb-fill', tone: 'brand' },
   success: { icon: 'ph:check-circle-fill', tone: 'success' },
 } as const
+
+// ─── Clic derecho: actividad reciente, mejores clientes y plazos ───
+
+const viewer = useFileViewer()
+const readOnly = computed(() => me.value?.company?.role === 'advisor')
+type Recent = NonNullable<typeof data.value>['recent'][number]
+type Top = NonNullable<typeof data.value>['topClients'][number]
+type Deadline = NonNullable<typeof data.value>['deadlines'][number]
+
+function recentCtx(r: Recent): CtxSpec {
+  const url = `/facturas/${r.id}`
+  const pdf = `/api/sales/${r.id}/pdf`
+  return {
+    title: r.number ?? 'Borrador',
+    subtitle: `${r.contactName ?? 'Sin cliente'} · ${eur(r.total)}`,
+    icon: 'ph:receipt',
+    items: [
+      { label: 'Abrir', icon: 'ph:eye', to: url },
+      ...(readOnly.value ? [] : [{ label: 'Editar', icon: 'ph:pencil-simple', to: `${url}/editar` }]),
+      ...(r.status !== 'draft' ? [{ label: 'Ver PDF', icon: 'ph:file-pdf', onClick: () => viewer.open({ url: pdf, downloadUrl: `${pdf}?download=1`, mime: 'application/pdf', name: `${r.number ?? 'factura'}.pdf` }) }] : []),
+      { divider: true },
+      {
+        label: 'Copiar',
+        icon: 'ph:copy',
+        children: [
+          ...(r.number ? [{ label: 'Número', sub: r.number, icon: 'ph:hash', onClick: () => copyText(r.number, 'Número') }] : []),
+          { label: 'Importe total', sub: eur(r.total), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(r.total), 'Importe') },
+        ],
+      },
+      ...(r.contactId ? [{ label: 'Ficha del cliente', icon: 'ph:user', to: `/clientes/${r.contactId}` }] : []),
+      { divider: true },
+      { label: 'Todas las facturas', icon: 'ph:list-bullets', to: '/facturas' },
+    ],
+  }
+}
+
+function clientCtx(c: Top): CtxSpec {
+  return {
+    title: c.name,
+    subtitle: `${eur(c.amount)} en 12 meses`,
+    icon: 'ph:user',
+    items: [
+      ...(c.id ? [{ label: 'Abrir ficha', icon: 'ph:user', to: `/clientes/${c.id}` }] : []),
+      { label: 'Ver sus facturas', icon: 'ph:receipt', to: `/facturas?q=${encodeURIComponent(c.name)}&anio=todos` },
+      ...(c.id && !readOnly.value
+        ? [
+            { divider: true },
+            { label: 'Nueva factura', icon: 'ph:plus-circle', to: `/facturas/nueva?cliente=${c.id}` },
+            { label: 'Nuevo presupuesto', icon: 'ph:file-text', to: `/presupuestos/nuevo?cliente=${c.id}` },
+          ]
+        : []),
+      { divider: true },
+      { label: 'Copiar nombre', icon: 'ph:copy', onClick: () => copyText(c.name, 'Nombre') },
+    ],
+  }
+}
+
+function deadlineCtx(d: Deadline): CtxSpec {
+  return {
+    title: d.title,
+    subtitle: `${d.period} · hasta el ${fdate(d.end)}`,
+    icon: 'ph:calendar-dots',
+    items: [
+      { label: 'Ver impuestos', icon: 'ph:bank', to: '/impuestos' },
+      { label: 'Ver en el calendario', icon: 'ph:calendar-blank', to: `/calendario?fecha=${d.end}` },
+      ...(readOnly.value ? [] : [{ label: 'Añadir recordatorio', icon: 'ph:bell-simple-ringing', to: `/calendario?nuevo=1&fecha=${d.end}` }]),
+      { divider: true },
+      { label: 'Copiar fecha límite', icon: 'ph:copy', onClick: () => copyText(fdate(d.end), 'Fecha') },
+    ],
+  }
+}
 
 const deadlineDay = (iso: string) => new Date(`${iso}T12:00:00`).getDate()
 const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString('es-ES', { month: 'short' }).replace('.', '')
@@ -245,7 +318,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 
         <UiCard class="rise" style="--i: 8" icon="ph:calendar-dots" title="Próximos plazos" subtitle="Calendario de la AEAT">
           <ul class="deadlines">
-            <li v-for="d in data.deadlines" :key="`${d.end}-${d.title}`" class="deadline" :class="{ soon: daysUntil(d.end) < 15 }">
+            <li v-for="d in data.deadlines" :key="`${d.end}-${d.title}`" v-ctx="() => deadlineCtx(d)" class="deadline" :class="{ soon: daysUntil(d.end) < 15 }">
               <div class="date-chip" aria-hidden="true">
                 <span class="dd num">{{ deadlineDay(d.end) }}</span>
                 <span class="mm">{{ deadlineMonth(d.end) }}</span>
@@ -264,7 +337,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
 
         <UiCard class="rise" style="--i: 9" icon="ph:crown-simple" title="Mejores clientes" subtitle="Últimos 12 meses · importe total">
           <ul v-if="data.topClients.length" class="clients">
-            <li v-for="c in data.topClients" :key="c.id ?? c.name">
+            <li v-for="c in data.topClients" :key="c.id ?? c.name" v-ctx="() => clientCtx(c)">
               <NuxtLink :to="c.id ? `/clientes/${c.id}` : '/clientes'" class="client">
                 <UiAvatar :name="c.name" :size="32" :src="c.logoUrl" contain />
                 <div class="grow">
@@ -297,7 +370,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
             <UiButton size="sm" variant="ghost" icon-right="ph:arrow-right" to="/facturas">Todas</UiButton>
           </template>
           <ul v-if="data.recent.length" class="recent desk">
-            <li v-for="r in data.recent" :key="r.id">
+            <li v-for="r in data.recent" :key="r.id" v-ctx="() => recentCtx(r)">
               <NuxtLink :to="`/facturas/${r.id}`" class="recent-row">
                 <span class="doc-ic" aria-hidden="true"><Icon :name="r.status === 'draft' ? 'ph:file-dashed' : 'ph:receipt'" /></span>
                 <div class="grow">
@@ -315,7 +388,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
           </ul>
           <!-- Móvil: nombre y concepto enteros; debajo, nº, fecha, estado e importe -->
           <ul v-if="data.recent.length" class="recent mob">
-            <li v-for="r in data.recent" :key="r.id">
+            <li v-for="r in data.recent" :key="r.id" v-ctx="() => recentCtx(r)">
               <UiListRow :to="`/facturas/${r.id}`">
                 <template #lead>
                   <span class="doc-ic" aria-hidden="true"><Icon :name="r.status === 'draft' ? 'ph:file-dashed' : 'ph:receipt'" /></span>

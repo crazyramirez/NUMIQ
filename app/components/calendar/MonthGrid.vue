@@ -17,6 +17,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ select: [date: string], open: [item: CalendarItem], create: [date: string], move: [item: CalendarItem, date: string] }>()
 
+const menus = useCalendarMenus()
 const root = ref<HTMLElement>()
 const { width } = useElementSize(root)
 const dots = computed(() => width.value > 0 && width.value < 620)
@@ -149,6 +150,7 @@ function onDragEnd() {
             :aria-selected="d === selected"
             :aria-label="longDate(d)"
             tabindex="-1"
+            v-ctx="() => menus.day(d)"
             @click="emit('select', d)"
             @dblclick="canEdit && !dots && emit('create', d)"
             @dragover="onDragOver($event, d)"
@@ -179,6 +181,7 @@ function onDragEnd() {
             :style="{ ...chipStyle(s.item), gridColumn: `${s.col} / span ${s.span}`, gridRow: s.lane + 2 }"
             :title="label(s.item)"
             :draggable="draggable(s.item)"
+            v-ctx="() => menus.item(s.item)"
             @click.stop="emit('open', s.item)"
             @dragstart="onDragStart($event, s.item)"
             @dragend="onDragEnd"
@@ -197,6 +200,7 @@ function onDragEnd() {
               :style="chipStyle(it)"
               :title="label(it)"
               :draggable="draggable(it)"
+              v-ctx="() => menus.item(it)"
               @click.stop="emit('open', it)"
               @dragstart="onDragStart($event, it)"
               @dragend="onDragEnd"
@@ -207,7 +211,7 @@ function onDragEnd() {
               <span v-if="it.time" class="tm num">{{ it.time }}</span>
               <span class="tt">{{ it.title }}</span>
             </button>
-            <button v-if="w.more[i]" type="button" class="more" @click.stop="emit('select', w.days[i]!)">
+            <button v-if="w.more[i]" v-ctx="() => menus.day(w.days[i]!)" type="button" class="more" @click.stop="emit('select', w.days[i]!)">
               +{{ w.more[i] }} más
             </button>
           </div>

@@ -5,6 +5,7 @@
  * Los totales se calculan con el mismo código que usa el servidor (shared/utils/tax.ts).
  */
 import type { CatalogItem } from './ConceptInput.vue'
+import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 
 type Kind = 'invoice' | 'quote' | 'proforma' | 'rectifying'
 
@@ -350,6 +351,29 @@ function lineMenu(l: Line, i: number) {
     { divider: true },
     { label: 'Eliminar línea', icon: 'ph:trash', danger: true, onClick: () => removeLine(i) },
   ]
+}
+
+// Clic derecho / pulsación larga en una línea (fuera de los campos): sus opciones y el IVA a mano
+function lineCtx(l: Line, i: number): CtxSpec {
+  const n = form.lines.length
+  const items: CtxItem[] = lineMenu(l, i).map((it) => {
+    if (it.label === 'Subir') return { ...it, disabled: i === 0 }
+    if (it.label === 'Bajar') return { ...it, disabled: i === n - 1 }
+    return it
+  })
+  items.splice(items.findIndex(it => it.divider), 0, {
+    label: 'IVA',
+    icon: 'ph:receipt',
+    hint: `${l.vatRate} %`,
+    children: VAT_RATES.map(r => ({ label: `${r} %`, active: l.vatRate === r, onClick: () => { l.vatRate = r; onVatChange(l) } })),
+  })
+  const concept = l.description.split('\n')[0]?.trim()
+  return {
+    title: `Línea ${i + 1} de ${n}`,
+    subtitle: [concept || 'Sin concepto', eur(lineAmounts({ ...l, quantity: l.quantity ?? 0, unitPrice: l.unitPrice ?? 0 }).base)].join(' · '),
+    icon: 'ph:list-bullets',
+    items,
+  }
 }
 
 // Adjuntos (orden de pedido, albarán…): disponibles en cuanto el documento existe
@@ -790,7 +814,7 @@ const R_CODES = [
               <span />
             </div>
             <TransitionGroup name="line">
-              <div v-for="(l, i) in form.lines" :key="l.key" class="l-row" :data-line="l.key">
+              <div v-for="(l, i) in form.lines" :key="l.key" v-ctx="() => lineCtx(l, i)" class="l-row" :data-line="l.key">
                 <div class="l-desc">
                   <SalesConceptInput v-model="l.description" :items="items ?? []" :linked="!!l.itemId" @pick="pickItem(l, $event)" @update:model-value="l.itemId && !$event ? (l.itemId = null) : undefined" />
                   <div v-if="l.itemId || !l.irpfApplies" class="l-tags">

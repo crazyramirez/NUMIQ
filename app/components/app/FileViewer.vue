@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { filePreviewKind } from '#shared/utils/file-preview'
 import type { ViewerFile } from '~/composables/useFileViewer'
+import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 
 /**
  * Visor de documentos a pantalla completa: PDF (zoom, páginas, texto seleccionable), imágenes (zoom,
@@ -25,6 +26,7 @@ const root = ref<HTMLElement>()
 const closeBtn = ref<HTMLButtonElement>()
 const strip = ref<HTMLElement>()
 const pdfRef = ref<{ goTo: (page: number) => void } | null>(null)
+const imgRef = ref<{ actualSize: () => void } | null>(null)
 
 const items = computed(() => state.value.items)
 const index = computed(() => state.value.index)
@@ -229,7 +231,8 @@ const typing = (t: EventTarget | null) => t instanceof HTMLElement && (t.isConte
 // El visor es modal: lo que usa no sigue adelante y el resto tampoco llega a los atajos de la página
 // de debajo (← → cambian de factura, Ctrl+K abre la paleta…)
 function onKey(e: KeyboardEvent) {
-  if (!state.value.open) return
+  // El menú contextual abierto encima ya usó la tecla (Esc lo cierra a él, no al visor)
+  if (!state.value.open || e.defaultPrevented) return
   if (handleKey(e) || !root.value?.contains(e.target as Node)) e.stopImmediatePropagation()
 }
 
@@ -351,6 +354,100 @@ onBeforeUnmount(() => {
 })
 
 const thumbKind = (f: ViewerFile) => kindOf(f.name ?? '', f.mime ?? '')
+
+// ─── Clic derecho / pulsación larga: zoom, giro, recorrer, descargar, copiar… como un visor de escritorio ───
+
+// Cerrar el menú haciendo clic fuera no cierra además el visor (el mousedown del fondo llega justo después)
+const { state: ctxState } = useContextMenu()
+let ctxClosedAt = 0
+watch(() => !!ctxState.value, (v, was) => {
+  if (was && !v) ctxClosedAt = performance.now()
+}, { flush: 'sync' })
+function onBackdrop(e: MouseEvent) {
+  if (e.button !== 0 || performance.now() - ctxClosedAt < 300) return
+  close()
+}
+
+function download() {
+  const href = downloadHref.value
+  if (!href) return
+  const a = document.createElement('a')
+  a.href = href
+  a.download = name.value
+  a.click()
+}
+
+// El portapapeles solo acepta PNG: otras imágenes se convierten antes
+async function pngOf(l: Loaded) {
+  if (l.mime === 'image/png') return l.blob
+  const bmp = await createImageBitmap(l.blob)
+  const canvas = document.createElement('canvas')
+  canvas.width = bmp.width
+  canvas.height = bmp.height
+  canvas.getContext('2d')!.drawImage(bmp, 0, 0)
+  return await new Promise<Blob>((resolve, reject) => canvas.toBlob(b => (b ? resolve(b) : reject(new Error('png'))), 'image/png'))
+}
+
+async function copyImage() {
+  const l = current.value
+  if (!l) return
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngOf(l) })])
+    toast.success('Imagen copiada', 'Pégala en un email, un chat o un documento.')
+  }
+  catch {
+    toast.error('No se pudo copiar la imagen', 'El navegador no permite copiar imágenes aquí. Descárgala.')
+  }
+}
+
+function viewerMenu(): CtxSpec {
+  const ready = status.value === 'ready' && !!current.value
+  const items: CtxItem[] = []
+  if (zoomable.value) {
+    items.push(
+      { label: 'Acercar', icon: 'ph:magnifying-glass-plus', keys: ['+'], disabled: zoom.value >= maxZoom.value, onClick: () => zoomStep(1) },
+      { label: 'Alejar', icon: 'ph:magnifying-glass-minus', keys: ['−'], disabled: zoom.value <= 0.25, onClick: () => zoomStep(-1) },
+      { label: 'Ajustar a la pantalla', icon: 'ph:arrows-in', keys: ['0'], active: Math.abs(zoom.value - 1) < 0.01, onClick: () => (zoom.value = 1) },
+    )
+    if (kind.value === 'image') {
+      items.push(
+        { label: 'Tamaño real', icon: 'ph:frame-corners', onClick: () => imgRef.value?.actualSize() },
+        { label: 'Girar', icon: 'ph:arrow-clockwise', keys: ['R'], onClick: () => (rotation.value += 90) },
+      )
+    }
+    items.push({ divider: true })
+  }
+  if (ready && kind.value === 'pdf' && pages.value > 1) {
+    items.push(
+      { label: 'Página anterior', icon: 'ph:caret-up', keys: ['RePág'], disabled: page.value <= 1, onClick: () => pdfRef.value?.goTo(page.value - 1) },
+      { label: 'Página siguiente', icon: 'ph:caret-down', keys: ['AvPág'], disabled: page.value >= pages.value, onClick: () => pdfRef.value?.goTo(page.value + 1) },
+      { divider: true },
+    )
+  }
+  if (multi.value) {
+    // ← → solo cambian de documento sin zoom (ampliado, mueven la vista)
+    const arrows = zoom.value <= 1.01
+    items.push(
+      { label: 'Documento anterior', icon: 'ph:caret-left', keys: arrows ? ['←'] : undefined, onClick: () => go(index.value - 1) },
+      { label: 'Documento siguiente', icon: 'ph:caret-right', keys: arrows ? ['→'] : undefined, onClick: () => go(index.value + 1) },
+      { divider: true },
+    )
+  }
+  if (downloadHref.value) items.push({ label: 'Descargar', icon: 'ph:download-simple', onClick: download })
+  if (printable.value && desktopCtx()) items.push({ label: 'Imprimir', icon: 'ph:printer', keys: [modKey(), 'P'], onClick: print })
+  if (canShare.value) items.push({ label: 'Compartir…', icon: 'ph:share-network', onClick: share })
+  const copy: CtxItem[] = [
+    ...(ready && kind.value === 'image' && typeof ClipboardItem !== 'undefined' ? [{ label: 'Imagen', icon: 'ph:image', onClick: copyImage }] : []),
+    ...(ready && current.value?.kind === 'text' ? [{ label: 'Texto', icon: 'ph:text-aa', onClick: () => copyText(current.value?.text, 'Texto') }] : []),
+    { label: 'Nombre del archivo', sub: name.value, icon: 'ph:file', onClick: () => copyText(name.value, 'Nombre') },
+  ]
+  items.push(
+    { label: 'Copiar', icon: 'ph:copy', children: copy },
+    { divider: true },
+    { label: 'Cerrar el visor', icon: 'ph:x', keys: ['Esc'], onClick: close },
+  )
+  return { title: name.value, subtitle: meta.value, icon: kindInfo.value.icon, items }
+}
 </script>
 
 <template>
@@ -360,6 +457,7 @@ const thumbKind = (f: ViewerFile) => kindOf(f.name ?? '', f.mime ?? '')
         v-if="state.open"
         ref="root"
         class="fv"
+        data-ctx-theme="dark"
         role="dialog"
         @keydown.stop
         aria-modal="true"
@@ -398,9 +496,9 @@ const thumbKind = (f: ViewerFile) => kindOf(f.name ?? '', f.mime ?? '')
           </div>
         </header>
 
-        <div class="fv-body" @touchstart.passive="onTouchStart" @touchend.passive="onTouchEnd" @mousedown.self="close">
+        <div v-ctx="viewerMenu" class="fv-body" @touchstart.passive="onTouchStart" @touchend.passive="onTouchEnd" @mousedown.self="onBackdrop">
           <Transition :name="`fv-${direction}`" mode="out-in">
-            <div :key="`${index}-${item?.url}`" class="fv-slot" @mousedown.self="close">
+            <div :key="`${index}-${item?.url}`" class="fv-slot" @mousedown.self="onBackdrop">
               <div v-if="status === 'loading'" class="fv-wait" role="status" aria-live="polite">
                 <span class="fv-spin" aria-hidden="true" />
                 <span>Abriendo {{ item?.name ?? 'el documento' }}…</span>
@@ -429,6 +527,7 @@ const thumbKind = (f: ViewerFile) => kindOf(f.name ?? '', f.mime ?? '')
 
               <LazyDocsImageStage
                 v-else-if="current.kind === 'image'"
+                ref="imgRef"
                 v-model:zoom="zoom"
                 :src="current.objectUrl"
                 :alt="current.name"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { CtxSpec } from '~/composables/useContextMenu'
 import type { DroppedFile } from '~/components/docs/Dropzone.vue'
 import type { Tone } from '~/utils/labels'
 
@@ -126,6 +127,23 @@ function askUndo(b: Batch) {
   undoOpen.value = true
 }
 
+// Clic derecho / pulsación larga en una importación
+function batchCtx(b: Batch): CtxSpec {
+  const url = `/documentos/importacion/${b.id}`
+  return {
+    title: b.name || `Importación ${b.id}`,
+    subtitle: `${fdate(b.createdAt)} · ${STATUS[b.status].label}`,
+    icon: SOURCE_ICON[b.source],
+    items: [
+      { label: b.status === 'review' ? 'Revisar' : 'Abrir', icon: b.status === 'review' ? 'ph:list-checks' : 'ph:eye', to: url },
+      ...(desktopCtx() ? [{ label: 'Abrir en otra pestaña', icon: 'ph:arrow-square-out', onClick: () => window.open(url, '_blank', 'noopener') }] : []),
+      { label: 'Actualizar la lista', icon: 'ph:arrows-clockwise', onClick: () => refresh() },
+      { divider: true },
+      { label: 'Eliminar con todo lo que creó…', icon: 'ph:trash', danger: true, disabled: busy(b), sub: busy(b) ? 'Espera a que termine la lectura' : undefined, onClick: () => askUndo(b) },
+    ],
+  }
+}
+
 const SOURCE_ICON: Record<Batch['source'], string> = { upload: 'ph:upload-simple', scan: 'ph:scan', email: 'ph:envelope-simple' }
 const TYPES = ['PDF', 'Fotos', 'Word', 'Excel', 'CSV', 'ZIP', 'Carpetas']
 </script>
@@ -214,7 +232,7 @@ const TYPES = ['PDF', 'Fotos', 'Word', 'Excel', 'CSV', 'ZIP', 'Carpetas']
       <div class="card">
         <UiEmpty v-if="!batches.length" compact icon="ph:tray" title="Aún no has importado nada" text="Tus importaciones aparecerán aquí para revisarlas cuando quieras." />
         <ul v-else class="batches">
-          <li v-for="b in shownBatches" :key="b.id" class="batch">
+          <li v-for="b in shownBatches" :key="b.id" v-ctx="() => batchCtx(b)" class="batch">
             <span class="b-ic" :class="b.source" aria-hidden="true"><Icon :name="SOURCE_ICON[b.source]" /></span>
             <div class="grow min0">
               <!-- El enlace cubre toda la fila; el botón de eliminar queda por encima -->

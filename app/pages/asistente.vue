@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AiActionView } from '#shared/types/assistant'
+import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 
 useHead({ title: 'Asistente IA · NUMIQ' })
 
@@ -281,6 +282,48 @@ onMounted(() => {
 onBeforeUnmount(() => controller?.abort())
 
 const html = (m: Message) => renderMarkdown(m.content)
+
+// ─── Clic derecho: conversaciones y mensajes ───
+
+function convCtx(c: Conversation): CtxSpec {
+  return {
+    title: c.title,
+    subtitle: relTime(c.updatedAt),
+    icon: 'ph:chat-circle-text',
+    items: [
+      { label: 'Abrir', icon: 'ph:chat-circle', onClick: () => open(c.id) },
+      { label: 'Copiar enlace', icon: 'ph:link', onClick: () => copyText(`${window.location.origin}/asistente?c=${c.id}`, 'Enlace') },
+      { divider: true },
+      { label: 'Borrar conversación', icon: 'ph:trash', danger: true, onClick: () => remove(c) },
+    ],
+  }
+}
+
+function messageCtx(m: Message, e: MouseEvent): CtxSpec | null {
+  if (m.streaming) return null
+  const link = (e.target as HTMLElement).closest('a[href]') as HTMLAnchorElement | null
+  const i = messages.value.indexOf(m)
+  // La pregunta que originó esta respuesta: para repetirla
+  const ask = m.role === 'assistant' ? messages.value.slice(0, i).reverse().find(x => x.role === 'user') : m
+  const items: CtxItem[] = []
+  if (link) {
+    const href = link.getAttribute('href')!
+    items.push(
+      { label: 'Abrir enlace', icon: 'ph:arrow-square-out', onClick: () => (link.dataset.internal ? router.push(href) : window.open(link.href, '_blank', 'noopener')) },
+      { label: 'Copiar enlace', icon: 'ph:link', onClick: () => copyText(link.href, 'Enlace') },
+      { divider: true },
+    )
+  }
+  if (m.content) items.push({ label: m.role === 'user' ? 'Copiar pregunta' : 'Copiar respuesta', icon: 'ph:copy', onClick: () => copy(m) })
+  if (ask && !busy.value && ai.value.configured) {
+    items.push(
+      { label: m.role === 'user' ? 'Enviar de nuevo' : 'Preguntar de nuevo', icon: 'ph:arrow-clockwise', onClick: () => send(ask.content) },
+      { label: 'Editar la pregunta', icon: 'ph:pencil-simple', onClick: () => { draft.value = ask.content; nextTick(() => { autosize(); input.value?.focus() }) } },
+    )
+  }
+  items.push({ divider: true }, { label: 'Nueva conversación', icon: 'ph:plus', onClick: () => open(null) })
+  return { items }
+}
 </script>
 
 <template>
@@ -290,7 +333,7 @@ const html = (m: Message) => renderMarkdown(m.content)
       <UiButton variant="secondary" icon="ph:plus" block @click="open(null)">Nueva conversación</UiButton>
       <p v-if="conversations.length" class="eyebrow side-t">Recientes</p>
       <nav class="convs" aria-label="Conversaciones">
-        <div v-for="c in conversations" :key="c.id" class="conv" :class="{ on: c.id === conversationId }">
+        <div v-for="c in conversations" :key="c.id" v-ctx="() => convCtx(c)" class="conv" :class="{ on: c.id === conversationId }">
           <button type="button" class="conv-b" @click="open(c.id)">
             <span class="conv-t truncate">{{ c.title }}</span>
             <span class="conv-d">{{ relTime(c.updatedAt) }}</span>
@@ -334,7 +377,7 @@ const html = (m: Message) => renderMarkdown(m.content)
         <template v-else>
           <div v-for="m in messages" :key="m.id" class="msg" :class="m.role">
             <span v-if="m.role === 'assistant'" class="avatar-bot" aria-hidden="true"><Icon name="ph:sparkle-fill" /></span>
-            <div class="bubble" :class="{ error: m.error }">
+            <div v-ctx="(e: MouseEvent) => messageCtx(m, e)" class="bubble" :class="{ error: m.error }">
               <p v-if="m.role === 'user'" class="u-text">{{ m.content }}</p>
               <template v-else>
                 <p v-if="m.status" class="status"><span class="dots" aria-hidden="true"><i /><i /><i /></span>{{ m.status }}…</p>
@@ -368,7 +411,7 @@ const html = (m: Message) => renderMarkdown(m.content)
       <UiButton variant="secondary" icon="ph:plus" block @click="open(null)">Nueva conversación</UiButton>
       <UiEmpty v-if="!conversations.length" compact icon="ph:chats" title="Aún no hay conversaciones" />
       <nav class="convs m" aria-label="Conversaciones">
-        <div v-for="c in conversations" :key="c.id" class="conv" :class="{ on: c.id === conversationId }">
+        <div v-for="c in conversations" :key="c.id" v-ctx="() => convCtx(c)" class="conv" :class="{ on: c.id === conversationId }">
           <button type="button" class="conv-b" @click="open(c.id)">
             <span class="conv-t truncate">{{ c.title }}</span>
             <span class="conv-d">{{ relTime(c.updatedAt) }}</span>

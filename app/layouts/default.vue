@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { CtxSpec } from '~/composables/useContextMenu'
+
 const { mini } = useSidebar()
 const route = useRoute()
 const router = useRouter()
@@ -16,6 +18,41 @@ watch(() => route.query.escanear, (v) => {
   const { escanear: _, ...query } = route.query
   router.replace({ query })
 }, { immediate: true })
+
+// Clic derecho en una zona sin menú propio: crear, buscar, escanear, tema… (enlaces e imágenes, el del navegador)
+const { me } = useMe()
+const { collapsed, desktop } = useSidebar()
+const { mode: colorMode } = useTheme()
+const palette = useState('paletteOpen', () => false)
+function pageMenu(e: MouseEvent): CtxSpec | null {
+  if ((e.target as Element).closest('a[href], img, video, canvas, iframe, [data-native-ctx]')) return null
+  const readOnly = me.value?.company?.role === 'advisor'
+  const theme = colorMode.store.value
+  return {
+    footer: 'Mayús + clic derecho: menú del navegador',
+    items: [
+      { label: 'Atrás', icon: 'ph:arrow-left', keys: ['Alt', '←'], disabled: !window.history.state?.back, onClick: () => router.back() },
+      { label: 'Recargar', icon: 'ph:arrow-clockwise', keys: ['F5'], onClick: () => window.location.reload() },
+      { divider: true },
+      ...(readOnly
+        ? []
+        : [
+            { label: 'Crear', icon: 'ph:plus-circle', children: CREATE_ACTIONS.filter(a => !a.to.includes('escanear')).map(a => ({ label: a.label, icon: a.icon, to: a.to })) },
+            { label: 'Escanear documento', icon: 'ph:scan', onClick: () => openScan('auto') },
+          ]),
+      { label: 'Buscar…', icon: 'ph:magnifying-glass', keys: [modKey(), 'K'], onClick: () => (palette.value = true) },
+      { divider: true },
+      { label: 'Copiar enlace de esta página', icon: 'ph:link', onClick: () => copyText(window.location.href, 'Enlace') },
+      {
+        label: 'Apariencia',
+        icon: theme === 'dark' ? 'ph:moon' : theme === 'light' ? 'ph:sun' : 'ph:circle-half',
+        children: ([['light', 'Claro', 'ph:sun'], ['dark', 'Oscuro', 'ph:moon'], ['auto', 'Automático', 'ph:circle-half']] as const)
+          .map(([value, label, icon]) => ({ label, icon, active: theme === value, onClick: () => (colorMode.value = value) })),
+      },
+      ...(desktop.value ? [{ label: collapsed.value ? 'Expandir barra lateral' : 'Contraer barra lateral', icon: collapsed.value ? 'ph:sidebar-simple-fill' : 'ph:sidebar-simple', onClick: () => (collapsed.value = !collapsed.value) }] : []),
+    ],
+  }
+}
 </script>
 
 <template>
@@ -24,7 +61,7 @@ watch(() => route.query.escanear, (v) => {
     <AppSidebar />
     <div class="main-col">
       <AppTopbar />
-      <main id="main" tabindex="-1">
+      <main id="main" v-ctx="pageMenu" tabindex="-1">
         <AppAreaTabs />
         <slot />
       </main>

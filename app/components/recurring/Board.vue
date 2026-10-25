@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { MenuItem } from '~/components/ui/Menu.vue'
+import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 import type { RecurringForm } from '~/components/recurring/Modal.vue'
 
 /**
@@ -309,6 +310,33 @@ function menuOf(r: Row): MenuItem[] {
   return items
 }
 
+// Clic derecho (o pulsación larga) en una fila o en el calendario: las mismas acciones, con quién y cuánto
+function rowCtx(r: Row): CtxSpec {
+  const items: CtxItem[] = [...menuOf(r)]
+  const extra: CtxItem[] = []
+  if (r.contact) {
+    const path = r.kind === 'invoice' ? `/clientes/${r.contact.id}` : `/proveedores/${r.contact.id}`
+    extra.push({ label: r.kind === 'invoice' ? 'Ficha del cliente' : 'Ficha del proveedor', sub: r.contact.name, icon: r.kind === 'invoice' ? 'ph:user' : 'ph:storefront', to: path })
+  }
+  extra.push({
+    label: 'Copiar',
+    icon: 'ph:copy',
+    children: [
+      { label: 'Nombre', sub: r.name, icon: 'ph:text-aa', onClick: () => copyText(r.name, 'Nombre') },
+      { label: 'Importe', sub: eur(r.total), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(r.total), 'Importe') },
+      ...(r.status !== 'finished' ? [{ label: 'Próxima fecha', sub: fdate(r.nextDate), icon: 'ph:calendar-dots', onClick: () => copyText(fdate(r.nextDate), 'Fecha') }] : []),
+    ],
+  })
+  // Antes del separador de «Eliminar»
+  items.splice(items.length - 2, 0, { divider: true }, ...extra)
+  return {
+    title: r.name,
+    subtitle: `${eur(r.total)} · ${frequencyLabel(r.frequency, r.interval)}${r.status === 'active' ? ` · próxima ${fdate(r.nextDate)}` : r.status === 'paused' ? ' · en pausa' : ''}`,
+    icon: r.kind === 'invoice' ? 'ph:receipt' : (r.category?.icon || 'ph:wallet'),
+    items,
+  }
+}
+
 const ALL_IDEAS = Object.freeze([
   { kind: 'invoice' as const, icon: 'ph:handshake', label: 'Iguala mensual', name: 'Iguala mensual' },
   { kind: 'invoice' as const, icon: 'ph:globe', label: 'Mantenimiento web', name: 'Mantenimiento web' },
@@ -363,7 +391,7 @@ const IDEAS = computed(() => ALL_IDEAS.filter(i => i.kind === props.kind))
           </div>
           <ul class="tl-items">
             <li v-for="u in d.items" :key="`${u.row.id}-${u.date}`">
-              <button type="button" class="tl-item" :class="u.row.kind" @click="openEdit(u.row.id)">
+              <button v-ctx="() => rowCtx(u.row)" type="button" class="tl-item" :class="u.row.kind" @click="openEdit(u.row.id)">
                 <span class="truncate">{{ u.row.name }}</span>
                 <span class="num">{{ u.row.kind === 'invoice' ? '+' : '−' }}{{ eur(u.row.total, false) }}</span>
               </button>
@@ -404,7 +432,7 @@ const IDEAS = computed(() => ALL_IDEAS.filter(i => i.kind === props.kind))
 
       <template v-else>
       <ul class="list">
-        <li v-for="(r, i) in paged" :key="r.id" class="item rise" :class="{ off: r.status !== 'active' }" :style="{ '--i': Math.min(i, 8) }">
+        <li v-for="(r, i) in paged" :key="r.id" v-ctx="() => rowCtx(r)" class="item rise" :class="{ off: r.status !== 'active' }" :style="{ '--i': Math.min(i, 8) }">
           <button type="button" class="it-main" @click="openEdit(r.id)">
             <span class="it-ic" :class="r.kind" aria-hidden="true">
               <Icon :name="r.kind === 'invoice' ? 'ph:receipt' : (r.category?.icon || 'ph:wallet')" />
@@ -458,7 +486,7 @@ const IDEAS = computed(() => ALL_IDEAS.filter(i => i.kind === props.kind))
 
       <!-- Móvil: nombre y concepto enteros; debajo, próxima fecha, estado e importe -->
       <ul class="mlist">
-        <li v-for="r in paged" :key="r.id" :class="{ off: r.status !== 'active' }">
+        <li v-for="r in paged" :key="r.id" v-ctx="() => rowCtx(r)" :class="{ off: r.status !== 'active' }">
           <UiListRow @open="openEdit(r.id)">
             <template #lead>
               <span class="it-ic" :class="r.kind" aria-hidden="true">

@@ -48,6 +48,7 @@ const dotOf = (d: string) => {
   return list.length ? calColor(list[0]!.color) : null
 }
 
+const menus = useCalendarMenus()
 const isCurrent = (ym: string) => props.today.startsWith(ym)
 </script>
 
@@ -55,7 +56,7 @@ const isCurrent = (ym: string) => props.today.startsWith(ym)
   <div class="yv">
     <section v-for="(m, i) in months" :key="m.ym" class="mo rise" :class="{ cur: isCurrent(m.ym) }" :style="{ '--i': Math.min(i, 8) }">
       <header class="mo-h">
-        <button type="button" class="mo-name" @click="emit('pick', `${m.ym}-01`)">{{ monthName(m.ym) }}</button>
+        <button v-ctx="() => menus.month(m.ym)" type="button" class="mo-name" @click="emit('pick', `${m.ym}-01`)">{{ monthName(m.ym) }}</button>
         <span v-if="m.deadlines" class="tax-pill" :title="`${m.deadlines} ${m.deadlines === 1 ? 'plazo' : 'plazos'} de Hacienda`">
           <Icon name="ph:bank-fill" aria-hidden="true" /> {{ m.deadlines }}
         </span>
@@ -71,6 +72,7 @@ const isCurrent = (ym: string) => props.today.startsWith(ym)
             :class="dayClass(d, m.ym)"
             :tabindex="d.startsWith(m.ym) ? 0 : -1"
             :aria-label="longDate(d, true)"
+            v-ctx="() => menus.day(d)"
             @click="emit('pick', d)"
           >
             {{ Number(d.slice(8)) }}

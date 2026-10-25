@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BulkAction } from '~/components/ui/BulkBar.vue'
 import type { MenuItem } from '~/components/ui/Menu.vue'
+import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 import type { SalesInvoiceLink } from '#shared/types/sales-links'
 interface Row {
   id: number
@@ -325,6 +326,94 @@ const statusMenu = computed<MenuItem[]>(() => isQuote.value
       { label: 'Vencimiento…', hint: 'Vencidas', icon: 'ph:calendar-x', onClick: () => (dueOpen.value = true) },
     ])
 
+// ─── Clic derecho (o pulsación larga): las acciones de la fila o, si está dentro de la selección, las del lote ───
+
+const viewer = useFileViewer()
+
+async function convertRow(r: Row) {
+  try {
+    const res = await $fetch<{ id: number }>(`/api/sales/${r.id}/convert`, { method: 'POST' })
+    toast.success('Factura creada desde el presupuesto', 'Revísala y emítela.')
+    await navigateTo(`/facturas/${res.id}/editar`)
+  }
+  catch (err) {
+    toast.error('No se pudo convertir', errorMessage(err))
+  }
+}
+
+function pickFromMenu(r: Row) {
+  pick(r.id)
+  // En el móvil las casillas solo se ven en modo selección
+  if (!selecting.value) selecting.value = true
+}
+
+function rowCtx(r: Row): CtxSpec {
+  const n = selected.value.length
+  if (n > 1 && selectedSet.value.has(r.id)) {
+    return {
+      title: `${n} ${noun(n)} ${isQuote.value ? 'seleccionados' : 'seleccionadas'}`,
+      subtitle: isQuote.value ? `${eur(selectedTotal.value)} de base imponible` : eur(selectedTotal.value),
+      icon: 'ph:stack',
+      items: [
+        ...(isQuote.value ? [] : [{ label: 'Marcar como cobradas…', icon: 'ph:hand-coins', onClick: () => (paidOpen.value = true) }]),
+        { label: 'Cambiar estado', icon: 'ph:flag', children: statusMenu.value },
+        { divider: true },
+        { label: 'Quitar esta de la selección', icon: 'ph:minus-circle', onClick: () => pick(r.id) },
+        { label: 'Seleccionar todo lo filtrado', icon: 'ph:checks', disabled: selected.value.length === list.value.length, onClick: selectAll },
+        { label: 'Quitar la selección', icon: 'ph:x-circle', onClick: clear },
+        { divider: true },
+        { label: `Eliminar ${n} ${noun(n)}`, icon: 'ph:trash', danger: true, onClick: deleteBulk },
+      ],
+    }
+  }
+  const isQ = isQuote.value
+  const url = `${base.value}/${r.id}`
+  const pdf = `/api/sales/${r.id}/pdf`
+  const copy: CtxItem[] = [
+    ...(r.number ? [{ label: 'Número', sub: r.number, icon: 'ph:hash', onClick: () => copyText(r.number, 'Número') }] : []),
+    { label: isQ ? 'Base imponible' : 'Importe total', sub: eur(amountOf(r)), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(amountOf(r)), 'Importe') },
+    ...(r.contactName ? [{ label: 'Cliente', sub: r.contactName, icon: 'ph:user', onClick: () => copyText(r.contactName, 'Cliente') }] : []),
+    { label: 'Enlace a la ficha', icon: 'ph:link', onClick: () => copyText(`${window.location.origin}${url}`, 'Enlace') },
+  ]
+  const items: CtxItem[] = [
+    { label: 'Abrir', icon: 'ph:eye', keys: ['↵'], to: url },
+    { label: 'Editar', icon: 'ph:pencil-simple', to: `${url}/editar` },
+    ...(desktopCtx() ? [{ label: 'Abrir en otra pestaña', icon: 'ph:arrow-square-out', onClick: () => window.open(url, '_blank', 'noopener') }] : []),
+    { divider: true },
+  ]
+  if (!isQ && ['issued', 'sent', 'partial'].includes(r.status)) items.push({ label: 'Registrar cobro…', icon: 'ph:hand-coins', onClick: () => { payDoc.value = r } })
+  if (isQ && !['invoiced', 'rejected', 'draft'].includes(r.status)) items.push({ label: 'Convertir en factura', icon: 'ph:receipt', onClick: () => convertRow(r) })
+  if (isQ && r.status !== 'invoiced') {
+    items.push({
+      label: 'Estado',
+      icon: 'ph:flag',
+      children: QUOTE_STATUS_OPTIONS.map(o => ({ label: o.label, icon: o.icon, active: r.status === o.value, onClick: () => setRowStatus(r, o.value) })),
+    })
+  }
+  if (r.status !== 'draft') {
+    items.push(
+      { label: 'Ver PDF', icon: 'ph:file-pdf', onClick: () => viewer.open({ url: pdf, downloadUrl: `${pdf}?download=1`, mime: 'application/pdf', name: `${r.number ?? 'documento'}.pdf` }) },
+      { label: 'Descargar PDF', icon: 'ph:download-simple', onClick: () => window.open(`${pdf}?download=1`, '_blank') },
+    )
+  }
+  if (!isQ && r.status !== 'draft') items.push({ label: 'Crear rectificativa', icon: 'ph:arrow-counter-clockwise', to: `/facturas/nueva?rectifica=${r.id}` })
+  items.push({ label: 'Copiar', icon: 'ph:copy', children: copy }, { divider: true })
+  if (r.contactId) {
+    items.push(
+      { label: 'Ficha del cliente', icon: 'ph:user', to: `/clientes/${r.contactId}` },
+      { label: isQ ? 'Nuevo presupuesto para el cliente' : 'Nueva factura para el cliente', icon: 'ph:plus-circle', to: `${base.value}/${isQ ? 'nuevo' : 'nueva'}?cliente=${r.contactId}` },
+    )
+  }
+  if (r.contactName) items.push({ label: `Solo de ${r.contactName}`, icon: 'ph:funnel', onClick: () => (q.value = r.contactName!) })
+  items.push(
+    { divider: true },
+    { label: selectedSet.value.has(r.id) ? 'Quitar de la selección' : 'Seleccionar', icon: selectedSet.value.has(r.id) ? 'ph:minus-circle' : 'ph:check-square', onClick: () => pickFromMenu(r) },
+    { divider: true },
+    { label: isQ ? 'Eliminar presupuesto' : 'Eliminar factura', icon: 'ph:trash', danger: true, onClick: () => removeDoc(r) },
+  )
+  return { title: r.number ?? 'Borrador', subtitle: `${r.contactName ?? 'Sin cliente'} · ${eur(amountOf(r))}`, icon: isQ ? 'ph:file-text' : 'ph:receipt', items }
+}
+
 const bulkActions = computed<BulkAction[]>(() => [
   ...(isQuote.value ? [] : [{ label: 'Cobradas', icon: 'ph:hand-coins', tone: 'success' as const, onClick: () => (paidOpen.value = true) }]),
   { label: 'Estado', icon: 'ph:flag', menu: statusMenu.value, menuWidth: 240 },
@@ -437,7 +526,7 @@ const bulkActions = computed<BulkAction[]>(() => [
               </tr>
             </thead>
             <tbody>
-              <tr v-for="r in shown" :key="r.id" class="clickable" :class="{ sel: selectedSet.has(r.id) }" tabindex="0" @click="open(r)" @keydown.enter.self="open(r)">
+              <tr v-for="r in shown" :key="r.id" v-ctx="() => rowCtx(r)" class="clickable" :class="{ sel: selectedSet.has(r.id) }" tabindex="0" @click="open(r)" @keydown.enter.self="open(r)">
                 <td class="pick" @click.stop="pick(r.id, $event)">
                   <input
                     type="checkbox"
@@ -494,7 +583,7 @@ const bulkActions = computed<BulkAction[]>(() => [
         </div>
 
         <ul class="mobile">
-          <li v-for="r in shown" :key="r.id">
+          <li v-for="r in shown" :key="r.id" v-ctx="() => rowCtx(r)">
             <UiListRow
               :to="`${base}/${r.id}`"
               :selecting="selecting"

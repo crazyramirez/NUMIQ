@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { BulkAction } from '~/components/ui/BulkBar.vue'
 import type { MenuItem } from '~/components/ui/Menu.vue'
+import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 import type { ReviewKind } from '#shared/utils/review'
 
 interface ExpenseRow {
@@ -520,6 +521,119 @@ function deductibleMenu(e: ExpenseRow): MenuItem[] {
   ]
 }
 
+// ─── Clic derecho (o pulsación larga): las acciones del gasto o, si está dentro de la selección, las del lote ───
+
+const viewer = useFileViewer()
+const nameOf = (e: ExpenseRow) => e.supplierName || e.description || EXPENSE_KIND[e.kind] || 'Gasto'
+
+function pickFromMenu(e: ExpenseRow) {
+  toggle(e.id)
+  // En el móvil las casillas solo se ven en modo selección
+  if (!selecting.value) selecting.value = true
+}
+
+function rowCtx(e: ExpenseRow): CtxSpec {
+  const n = selected.value.length
+  if (n > 1 && selectedSet.value.has(e.id)) {
+    const ids = () => [...selected.value]
+    return {
+      title: `${plural(n)} seleccionados`,
+      subtitle: eur(selectedTotal.value),
+      icon: 'ph:stack',
+      items: [
+        ...(canApprove.value && rows.value.some(r => selectedSet.value.has(r.id) && r.approval === 'pending')
+          ? [
+              { label: 'Aprobar', icon: 'ph:check-bold', onClick: () => decide(ids(), 'approve') },
+              { label: 'Rechazar…', icon: 'ph:x-bold', onClick: () => decide(ids(), 'reject') },
+              { divider: true },
+            ]
+          : []),
+        ...(selectedUnreviewed.value.length ? [{ label: 'Dar por revisados', icon: 'ph:sparkle', sub: plural(selectedUnreviewed.value.length), onClick: () => confirmReview(selectedUnreviewed.value.map(r => r.id)) }] : []),
+        ...(selectedForeign.value.length ? [{ label: 'Pasar a euros', icon: 'ph:currency-eur', onClick: () => convertToEur(selectedForeign.value.map(r => r.id)) }] : []),
+        {
+          label: 'Deducible',
+          icon: 'ph:check-circle',
+          children: [
+            { label: 'Deducibles', icon: 'ph:check-circle', onClick: () => markDeductible(ids(), 'full') },
+            { label: 'Deducibles al 50 %', hint: 'Uso mixto', icon: 'ph:circle-half', onClick: () => markPartial(ids(), 50, 50) },
+            { label: 'Otro porcentaje…', icon: 'ph:percent', onClick: () => openPartial(ids()) },
+            { label: 'No deducibles', icon: 'ph:prohibit', onClick: () => markDeductible(ids(), 'none') },
+          ],
+        },
+        { label: 'Categoría', icon: 'ph:tag', children: categoryMenu.value },
+        { label: 'Pago', icon: 'ph:wallet', children: statusMenu.value },
+        { divider: true },
+        { label: 'Quitar este de la selección', icon: 'ph:minus-circle', onClick: () => toggle(e.id) },
+        { label: 'Seleccionar todo lo filtrado', icon: 'ph:checks', disabled: n === rows.value.length, onClick: selectAll },
+        { label: 'Quitar la selección', icon: 'ph:x-circle', onClick: stopSelecting },
+        { divider: true },
+        { label: `Eliminar ${plural(n)}`, icon: 'ph:trash', danger: true, onClick: () => deleteBulk(ids()) },
+      ],
+    }
+  }
+  const level = levelOf(e)
+  const one = [e.id]
+  const copy: CtxItem[] = [
+    { label: 'Importe total', sub: eur(e.total), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(e.total), 'Importe') },
+    { label: 'Base imponible', sub: eur(e.taxBase), icon: 'ph:calculator', onClick: () => copyText(plainAmount(e.taxBase), 'Base imponible') },
+    ...(e.number ? [{ label: 'Nº de factura', sub: e.number, icon: 'ph:hash', onClick: () => copyText(e.number, 'Número') }] : []),
+    ...(e.supplierName ? [{ label: 'Proveedor', sub: e.supplierName, icon: 'ph:storefront', onClick: () => copyText(e.supplierName, 'Proveedor') }] : []),
+    ...(e.description ? [{ label: 'Concepto', sub: e.description, icon: 'ph:text-align-left', onClick: () => copyText(e.description, 'Concepto') }] : []),
+  ]
+  const items: CtxItem[] = [
+    { label: 'Abrir', icon: 'ph:eye', keys: ['↵'], onClick: () => openEdit(e.id) },
+    ...(e.fileId ? [{ label: 'Ver justificante', icon: 'ph:file-magnifying-glass', onClick: () => viewer.open(storedFile({ id: e.fileId!, name: nameOf(e) })) }] : []),
+    { divider: true },
+  ]
+  if (canApprove.value && e.approval === 'pending') {
+    items.push(
+      { label: 'Aprobar', icon: 'ph:check-bold', onClick: () => decide(one, 'approve') },
+      { label: 'Rechazar…', icon: 'ph:x-bold', onClick: () => decide(one, 'reject') },
+      { divider: true },
+    )
+  }
+  if (e.status !== 'paid') items.push({ label: 'Marcar como pagado', icon: 'ph:check-circle', sub: e.status === 'partial' ? `Pendiente ${eur(e.total - e.paidTotal)}` : undefined, onClick: () => markPaid(e) })
+  if (!e.reviewed) {
+    items.push({ label: 'Dar por revisado', icon: 'ph:sparkle', onClick: () => confirmReview(one, `row-${e.id}`) })
+    if (kindsOf(e).has('currency')) items.push({ label: 'Pasar a euros', icon: 'ph:currency-eur', onClick: () => convertToEur(one, `row-${e.id}`) })
+  }
+  items.push(
+    {
+      label: 'Deducible',
+      icon: level === 'full' ? 'ph:check-circle' : level === 'partial' ? 'ph:circle-half' : 'ph:prohibit',
+      sub: deductibleLabel(e.deductiblePct, e.vatDeductiblePct, e.vatTotal !== 0),
+      children: deductibleMenu(e),
+    },
+    {
+      label: 'Categoría',
+      icon: 'ph:tag',
+      sub: e.categoryName ?? 'Sin categoría',
+      children: [
+        ...expenseCats.value.map(c => ({ label: c.name, icon: 'ph:tag', active: e.categoryId === c.id, onClick: () => e.categoryId !== c.id && apply(one, { categoryId: c.id }, `Movido a ${c.name}`) })),
+        { divider: true },
+        { label: 'Sin categoría', icon: 'ph:tag-simple', active: e.categoryId == null, onClick: () => e.categoryId != null && apply(one, { categoryId: null }, 'Sin categoría') },
+      ],
+    },
+    { label: 'Copiar', icon: 'ph:copy', children: copy },
+    { divider: true },
+  )
+  if (e.supplierId) {
+    items.push(
+      { label: 'Ficha del proveedor', icon: 'ph:storefront', to: `/proveedores/${e.supplierId}` },
+      { label: 'Nuevo gasto del proveedor', icon: 'ph:plus-circle', to: `/gastos?nuevo=1&proveedor=${e.supplierId}` },
+    )
+  }
+  if (e.supplierName) items.push({ label: `Solo de ${e.supplierName}`, icon: 'ph:funnel', onClick: () => (q.value = e.supplierName!) })
+  if (e.categoryId) items.push({ label: `Solo ${e.categoryName}`, icon: 'ph:funnel-simple', onClick: () => (categoryId.value = e.categoryId) })
+  items.push(
+    { divider: true },
+    { label: selectedSet.value.has(e.id) ? 'Quitar de la selección' : 'Seleccionar', icon: selectedSet.value.has(e.id) ? 'ph:minus-circle' : 'ph:check-square', onClick: () => pickFromMenu(e) },
+    { divider: true },
+    { label: 'Eliminar gasto', icon: 'ph:trash', danger: true, onClick: () => deleteBulk(one) },
+  )
+  return { title: nameOf(e), subtitle: `${fdate(e.issueDate)} · ${eur(e.total)}`, icon: e.categoryIcon || 'ph:wallet', items }
+}
+
 // «En parte…»: % del gasto y del IVA
 const partialOpen = ref(false)
 const partialIds = ref<number[]>([])
@@ -713,6 +827,7 @@ function savePartial() {
               <tr
                 v-for="e in shown"
                 :key="e.id"
+                v-ctx="() => rowCtx(e)"
                 class="clickable"
                 :class="{ sel: selectedSet.has(e.id) }"
                 tabindex="0"
@@ -781,7 +896,7 @@ function savePartial() {
         </div>
 
         <ul class="cards mobile">
-          <li v-for="e in shown" :key="e.id">
+          <li v-for="e in shown" :key="e.id" v-ctx="() => rowCtx(e)">
             <UiListRow :selecting="selecting" :selected="selectedSet.has(e.id)" @toggle="toggle(e.id)" @open="openEdit(e.id)">
               <template #lead>
                 <span class="cat-ic lg" :style="{ '--c': e.categoryColor ?? 'var(--text-4)' }" aria-hidden="true">

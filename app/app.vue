@@ -8,5 +8,6 @@ const { state: viewer } = useFileViewer()
   </NuxtLayout>
   <AppToasts />
   <AppConfirm />
+  <AppContextMenu />
   <LazyAppFileViewer v-if="viewer.mounted" />
 </template>

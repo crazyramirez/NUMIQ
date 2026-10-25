@@ -23,6 +23,7 @@ const totals = (list: CalendarItem[]) => {
   }
 }
 
+const menus = useCalendarMenus()
 const rel = (d: string) => (d === props.today ? 'Hoy' : relDays(d))
 </script>
 
@@ -33,7 +34,7 @@ const rel = (d: string) => (d === props.today ? 'Hoy' : relDays(d))
     </UiEmpty>
     <ol v-else class="ag-list">
       <li v-for="(g, i) in groups" :key="g.date" class="ag-day rise" :class="{ today: g.date === today, past: g.date < today }" :style="{ '--i': Math.min(i, 8) }">
-        <div class="ag-date">
+        <div v-ctx="() => menus.day(g.date)" class="ag-date">
           <span class="wd">{{ weekdayShort(g.date) }}</span>
           <span class="dn num">{{ Number(g.date.slice(8)) }}</span>
           <span class="rl">{{ rel(g.date) }}</span>

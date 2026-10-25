@@ -9,6 +9,7 @@ const props = defineProps<{ item: CalendarItem, day?: string, canEdit?: boolean 
 const emit = defineEmits<{ open: [], toggle: [] }>()
 
 const it = computed(() => props.item)
+const menus = useCalendarMenus()
 const style = computed(() => ({ '--c': calColor(it.value.color) }))
 const status = computed(() => statusText(it.value))
 
@@ -30,7 +31,7 @@ const tone = computed(() => {
 </script>
 
 <template>
-  <div class="crow" :class="{ done: it.type === 'task' && it.done }" :style="style">
+  <div v-ctx="() => menus.item(it)" class="crow" :class="{ done: it.type === 'task' && it.done }" :style="style">
     <button v-if="it.type === 'task' && canEdit" type="button" class="lead task" :class="{ on: it.done }" :aria-pressed="!!it.done" :aria-label="it.done ? 'Marcar como pendiente' : 'Marcar como hecha'" @click="emit('toggle')">
       <Icon v-if="it.done" name="ph:check-bold" aria-hidden="true" />
     </button>

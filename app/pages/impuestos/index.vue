@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
+
 useHead({ title: 'Impuestos · NUMIQ' })
 const { verifactu } = useMe()
 
@@ -122,6 +124,43 @@ async function unfile(id: number, model: string) {
   if (!ok) return
   await $fetch(`/api/taxes/filings/${id}`, { method: 'DELETE' }).catch(err => toast.error('No se pudo deshacer', errorMessage(err)))
   await refresh()
+}
+
+// ─── Clic derecho en un modelo: presentar, justificante, desglose, copiar el importe ───
+
+function filingItems(model: string, filing: { id: number, receiptFileId?: number | null, csv?: string | null } | null, presentFn: () => void): CtxItem[] {
+  if (!filing) return [{ label: 'Presentar en la AEAT…', icon: 'ph:seal-check', onClick: presentFn }]
+  return [
+    ...(filing.receiptFileId ? [{ label: 'Ver justificante', icon: 'ph:file-pdf', onClick: () => viewReceipt(filing.receiptFileId!) }] : []),
+    ...(filing.csv ? [{ label: 'Copiar CSV', sub: filing.csv, icon: 'ph:copy', onClick: () => copyText(filing.csv, 'CSV') }] : []),
+    { label: 'Deshacer presentación', icon: 'ph:arrow-counter-clockwise', onClick: () => unfile(filing.id, model) },
+  ]
+}
+
+function modelCtx(q: Quarter, r: { model: string, m: ModelData }): CtxSpec {
+  const key = `${q.quarter}-${r.model}`
+  const filing = filingOf(q, r.model)
+  return {
+    title: `Modelo ${r.model} · ${q.quarter}T ${data.value?.year ?? ''}`,
+    subtitle: `${eur(Math.abs(r.m.result))} ${interpret(r.model, r.m.result, q).text.toLowerCase()} · ${MODEL_SHORT[r.model] ?? MODEL_NAMES[r.model]}`,
+    icon: filing ? 'ph:seal-check-fill' : 'ph:bank',
+    items: [
+      ...filingItems(r.model, filing, () => present(q.quarter, r.model)),
+      { divider: true },
+      { label: open.value.has(key) ? 'Ocultar desglose' : 'Ver desglose', icon: open.value.has(key) ? 'ph:caret-up' : 'ph:caret-down', onClick: () => toggle(key) },
+      { label: 'Copiar resultado', sub: eur(r.m.result), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(r.m.result), 'Importe') },
+      ...(q.dueDate ? [{ label: 'Ver plazo en el calendario', icon: 'ph:calendar-blank', to: `/calendario?fecha=${q.dueDate}` }] : []),
+    ],
+  }
+}
+
+function annualCtx(a: typeof ANNUAL[number]): CtxSpec {
+  return {
+    title: `Modelo ${a.model} · ${data.value?.year ?? ''}`,
+    subtitle: a.label,
+    icon: 'ph:calendar-check',
+    items: filingItems(a.model, annualFiling(a.model), () => presentAnnual(a.model)),
+  }
 }
 
 // ─── Impuesto sobre Sociedades (solo sociedades): pagos fraccionados 202 y declaración 200 ───
@@ -270,7 +309,7 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
 
             <template v-else>
               <ul class="models">
-                <li v-for="r in modelRows(q)" :key="r.model" class="model-row">
+                <li v-for="r in modelRows(q)" :key="r.model" v-ctx="() => modelCtx(q, r)" class="model-row">
                   <button
                     type="button"
                     class="model-btn"
@@ -440,7 +479,7 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
 
           <UiCard class="rise annual-card" style="--i: 7" icon="ph:calendar-check" :title="`Resúmenes anuales ${data.year}`" subtitle="Se presentan a principios del año siguiente">
             <ul class="annual">
-              <li v-for="a in ANNUAL" :key="a.model" class="an-row">
+              <li v-for="a in ANNUAL" :key="a.model" v-ctx="() => annualCtx(a)" class="an-row">
                 <span class="model-chip num">{{ a.model }}</span>
                 <span class="grow min0">
                   <span class="an-t">{{ a.label }}</span>

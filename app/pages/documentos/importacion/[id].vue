@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 import type { ImportItemStatus, ImportItemType, ImportUndoSummary } from '#shared/types/import'
 
 interface Row {
@@ -225,6 +226,54 @@ function resultLink(r: Row) {
   return '/documentos/archivo'
 }
 
+// ─── Clic derecho / pulsación larga en un registro ───
+
+const viewer = useFileViewer()
+
+async function setIncluded(r: Row, include: boolean) {
+  try {
+    await $fetch(`/api/imports/${id}/items/${r.id}`, { method: 'PATCH', body: { include } })
+    toast.info(include ? 'Vuelve a la importación' : 'Excluido: no se importará', r.title)
+    await refresh()
+  }
+  catch (err) {
+    toast.error('No se pudo cambiar', errorMessage(err))
+  }
+}
+
+async function importOne(r: Row) {
+  try {
+    const res = await $fetch<{ imported: number, failed: Array<{ message: string }> }>(`/api/imports/${id}/commit`, { method: 'POST', body: { itemIds: [r.id] } })
+    if (res.imported) toast.success('Importado', r.title)
+    else toast.error('No se pudo importar', res.failed[0]?.message ?? 'Ábrelo para revisar los datos')
+    await refresh()
+  }
+  catch (err) {
+    toast.error('No se pudo importar', errorMessage(err))
+  }
+}
+
+function itemCtx(r: Row): CtxSpec {
+  const file = r.fileId ? data.value?.files.find(f => f.id === r.fileId) : null
+  const link = r.status === 'imported' ? resultLink(r) : null
+  const items: CtxItem[] = [
+    { label: r.status === 'imported' ? 'Ver lo leído' : 'Revisar', icon: 'ph:list-checks', keys: ['↵'], onClick: () => openItem(r) },
+    ...(link ? [{ label: 'Ir a lo importado', icon: 'ph:arrow-right', to: link }] : []),
+    ...(r.fileId ? [{ label: 'Ver documento original', icon: 'ph:file-magnifying-glass', onClick: () => viewer.open(storedFile({ id: r.fileId!, name: file?.name ?? r.file, mime: file?.mime, size: file?.size })) }] : []),
+    { divider: true },
+  ]
+  if (['ready', 'warning'].includes(r.status) && !running.value) items.push({ label: 'Importar solo este', icon: 'ph:check', onClick: () => importOne(r) })
+  if (r.status === 'excluded') items.push({ label: 'Volver a incluir', icon: 'ph:arrow-u-up-left', onClick: () => setIncluded(r, true) })
+  else if (r.status !== 'imported') items.push({ label: 'Excluir de la importación', icon: 'ph:prohibit', onClick: () => setIncluded(r, false) })
+  const copy: CtxItem[] = [
+    { label: 'Título', sub: r.title, icon: 'ph:text-aa', onClick: () => copyText(r.title, 'Texto') },
+    ...(r.amount != null ? [{ label: 'Importe', sub: eur(r.amount), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(r.amount!), 'Importe') }] : []),
+    ...(r.file ? [{ label: 'Nombre del archivo', sub: r.file, icon: 'ph:file', onClick: () => copyText(r.file, 'Nombre') }] : []),
+  ]
+  items.push({ label: 'Copiar', icon: 'ph:copy', children: copy })
+  return { title: r.title, subtitle: [rowType(r).label, r.amount != null ? eur(r.amount) : null].filter(Boolean).join(' · '), icon: rowType(r).icon, items }
+}
+
 const SOURCE: Record<string, string> = { upload: 'Subida de archivos', scan: 'Escaneo', email: 'Correo' }
 const done = computed(() => data.value?.batch.status === 'done')
 const summary = computed(() => {
@@ -323,7 +372,7 @@ const summary = computed(() => {
         <div class="lrow lhead" aria-hidden="true">
           <span>Documento</span><span>Fecha</span><span class="r">Importe</span><span>Estado</span><span />
         </div>
-        <div v-for="r in shown" :key="r.id" class="lrow item" :class="[r.status, { child: nested.has(r.id) }]" role="button" tabindex="0" :aria-label="`Revisar ${r.title}`" @click="openItem(r)" @keydown.enter.prevent="openItem(r)" @keydown.space.prevent="openItem(r)">
+        <div v-for="r in shown" :key="r.id" v-ctx="() => itemCtx(r)" class="lrow item" :class="[r.status, { child: nested.has(r.id) }]" role="button" tabindex="0" :aria-label="`Revisar ${r.title}`" @click="openItem(r)" @keydown.enter.prevent="openItem(r)" @keydown.space.prevent="openItem(r)">
           <span class="doc">
             <span class="t-ic" :class="rowType(r).tone" aria-hidden="true"><Icon :name="rowType(r).icon" /></span>
             <span class="min0">

@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
   const c = tables.contacts
   const recent = await useDb().select({
     id: s.id, kind: s.kind, status: s.status, number: s.number, issueDate: s.issueDate, dueDate: s.dueDate,
-    total: s.total, paidTotal: s.paidTotal, description: s.description,
+    total: s.total, paidTotal: s.paidTotal, description: s.description, contactId: s.contactId,
     contactName: sql<string | null>`COALESCE(${c.name}, JSON_UNQUOTE(JSON_EXTRACT(${s.customer}, '$.name')))`,
   }).from(s).leftJoin(c, eq(c.id, s.contactId))
     .where(and(eq(s.companyId, company.id), inArray(s.kind, ['invoice', 'rectifying'])))

@@ -2,6 +2,7 @@
 import type { ItemCategory } from '~/components/ItemCategoriesModal.vue'
 import type { BulkAction } from '~/components/ui/BulkBar.vue'
 import type { MenuItem } from '~/components/ui/Menu.vue'
+import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 
 interface Item {
   id: number
@@ -184,6 +185,85 @@ async function moveTo(ids: number[], categoryId: number | null) {
   }
 }
 
+// ─── Clic derecho (o pulsación larga): acciones del artículo o, dentro de la selección, las del lote ───
+
+// Un solo artículo desde su menú: no toca lo que haya seleccionado
+async function moveOne(i: Item, categoryId: number | null) {
+  if (i.categoryId === categoryId) return
+  try {
+    await $fetch('/api/items/bulk', { method: 'POST', body: { ids: [i.id], categoryId } })
+    toast.success(categoryId ? `Movido a ${catById.value.get(categoryId)?.name}` : 'Sin categoría', i.name)
+  }
+  catch (err) {
+    toast.error('No se pudo cambiar la categoría', errorMessage(err))
+  }
+  finally {
+    await refreshAll()
+  }
+}
+
+function categoryItems(current: number | null | undefined, apply: (id: number | null) => void): CtxItem[] {
+  return [
+    ...categories.value.map(c => ({ label: c.name, icon: 'ph:folder-simple-fill', active: current === c.id, onClick: () => apply(c.id) })),
+    ...(categories.value.length ? [{ label: 'Sin categoría', icon: 'ph:folder-simple-dashed', active: current === null, onClick: () => apply(null) }, { divider: true }] : []),
+    { label: categories.value.length ? 'Gestionar categorías…' : 'Crear categorías…', icon: 'ph:sliders-horizontal', onClick: () => (catsOpen.value = true) },
+  ]
+}
+
+function pickFromMenu(i: Item) {
+  sel.toggle(i.id)
+  if (!sel.selecting.value) sel.selecting.value = true
+}
+
+function rowCtx(i: Item): CtxSpec {
+  const ids = sel.selected.value
+  if (ids.length > 1 && sel.selectedSet.value.has(i.id)) {
+    return {
+      title: `${ids.length} seleccionados`,
+      subtitle: describe(ids),
+      icon: 'ph:stack',
+      items: [
+        { label: 'Mover a la categoría', icon: 'ph:folder-simple', children: categoryItems(undefined, id => moveTo(sel.selected.value, id)) },
+        { divider: true },
+        { label: 'Quitar este de la selección', icon: 'ph:minus-circle', onClick: () => sel.toggle(i.id) },
+        { label: 'Seleccionar todo lo filtrado', icon: 'ph:checks', disabled: ids.length === filtered.value.length, onClick: sel.selectAll },
+        { label: 'Quitar la selección', icon: 'ph:x-circle', onClick: sel.clear },
+        { divider: true },
+        { label: `Eliminar ${ids.length}`, icon: 'ph:trash', danger: true, onClick: () => deleteBulk(sel.selected.value) },
+      ],
+    }
+  }
+  const on = sel.selectedSet.value.has(i.id)
+  return {
+    title: i.name,
+    subtitle: `${eur(withVat(i))}${i.unit ? ` / ${i.unit}` : ''}${i.uses ? ` · ${i.uses} ${i.uses === 1 ? 'vez' : 'veces'} en 12 m` : ''}`,
+    icon: i.kind === 'service' ? 'ph:handshake' : 'ph:package',
+    items: [
+      { label: 'Editar', icon: 'ph:pencil-simple', keys: ['↵'], onClick: () => openEdit(i.id) },
+      { divider: true },
+      { label: 'Nueva factura con él', icon: 'ph:receipt', to: `/facturas/nueva?producto=${i.id}` },
+      { label: 'Nuevo presupuesto con él', icon: 'ph:file-text', to: `/presupuestos/nuevo?producto=${i.id}` },
+      { divider: true },
+      { label: 'Categoría', icon: 'ph:folder-simple', children: categoryItems(i.categoryId, id => moveOne(i, id)) },
+      {
+        label: 'Copiar',
+        icon: 'ph:copy',
+        children: [
+          { label: 'Nombre', sub: i.name, icon: 'ph:text-aa', onClick: () => copyText(i.name, 'Nombre') },
+          { label: 'Precio con IVA', sub: eur(withVat(i)), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(withVat(i)), 'Precio') },
+          { label: 'Precio sin IVA', sub: eur(i.unitPrice), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(i.unitPrice), 'Precio') },
+          ...(i.sku ? [{ label: 'Referencia', sub: i.sku, icon: 'ph:barcode', onClick: () => copyText(i.sku, 'Referencia') }] : []),
+          ...(i.description ? [{ label: 'Descripción', sub: i.description, icon: 'ph:text-align-left', onClick: () => copyText(i.description, 'Descripción') }] : []),
+        ],
+      },
+      { divider: true },
+      { label: on ? 'Quitar de la selección' : 'Seleccionar', icon: on ? 'ph:minus-circle' : 'ph:check-square', onClick: () => pickFromMenu(i) },
+      { divider: true },
+      { label: 'Eliminar', icon: 'ph:trash', danger: true, onClick: () => remove(i) },
+    ],
+  }
+}
+
 const bulkActions = computed<BulkAction[]>(() => [
   {
     label: 'Categoría',
@@ -319,7 +399,7 @@ const bulkActions = computed<BulkAction[]>(() => [
         </div>
 
         <ul class="list">
-          <li v-for="(i, idx) in shown" :key="i.id" class="row rise" :class="{ sel: sel.selectedSet.value.has(i.id) }" :style="{ '--i': Math.min(idx, 10) }">
+          <li v-for="(i, idx) in shown" :key="i.id" v-ctx="() => rowCtx(i)" class="row rise" :class="{ sel: sel.selectedSet.value.has(i.id) }" :style="{ '--i': Math.min(idx, 10) }">
             <span class="pick" @click="sel.toggle(i.id, $event)">
               <input
                 type="checkbox"
@@ -372,7 +452,7 @@ const bulkActions = computed<BulkAction[]>(() => [
 
         <!-- Móvil: nombre y descripción enteros; debajo, uso y precio -->
         <ul class="mlist">
-          <li v-for="i in shown" :key="i.id">
+          <li v-for="i in shown" :key="i.id" v-ctx="() => rowCtx(i)">
             <UiListRow :selecting="sel.selecting.value" :selected="sel.selectedSet.value.has(i.id)" @toggle="sel.toggle(i.id)" @open="openEdit(i.id)">
               <template #lead>
                 <span class="ic" :class="[i.kind, { pic: i.imageUrl }]" aria-hidden="true">
