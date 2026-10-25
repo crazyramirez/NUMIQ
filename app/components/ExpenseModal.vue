@@ -1568,7 +1568,7 @@ async function remove() {
   }
 
   .card-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .c-8, .c-6, .c-4 {
@@ -1576,7 +1576,7 @@ async function remove() {
   }
 
   .amounts-bottom {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--s-4);
   }
 
@@ -1588,11 +1588,11 @@ async function remove() {
   }
 
   .fiscal-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .pay-toggle-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   /* Aviso de escaneo: el botón baja a su propia fila para que el texto no quede en una columna estrecha */
