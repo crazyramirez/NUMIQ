@@ -33,6 +33,9 @@ type Doc = PaperDoc & {
 const props = defineProps<{ id: number }>()
 const router = useRouter()
 const toast = useToast()
+const viewer = useFileViewer()
+// PDF del documento en el visor de la app (el nombre llega en la cabecera de la respuesta)
+const viewPdf = () => viewer.open({ url: pdfUrl.value, downloadUrl: `${pdfUrl.value}?download=1`, mime: 'application/pdf' })
 const { confirm } = useConfirm()
 const { verifactu } = useMe()
 
@@ -298,7 +301,7 @@ const moreItems = computed<MenuItem[]>(() => {
   const d = doc.value
   if (!d) return []
   const items: MenuItem[] = [
-    { label: 'Ver PDF', icon: 'ph:file-pdf', onClick: () => window.open(pdfUrl.value, '_blank', 'noopener') },
+    { label: 'Ver PDF', icon: 'ph:file-pdf', onClick: viewPdf },
     { label: 'Imprimir', icon: 'ph:printer', onClick: print },
   ]
   if (canLink.value) {
@@ -491,7 +494,7 @@ const moreItems = computed<MenuItem[]>(() => {
               <p class="muted small">{{ isQuote ? 'Hecho con otro programa: conserva su número.' : `Emitida con otro programa: conserva su número${verifactu ? ' y no genera registro VeriFactu en NUMIQ' : ''}.` }}</p>
             </div>
           </div>
-          <a v-if="doc.fileId" :href="`/api/files/${doc.fileId}`" target="_blank" rel="noopener" class="link small imp-link"><Icon name="ph:file-text" aria-hidden="true" /> Ver el documento original</a>
+          <button v-if="doc.fileId" type="button" class="link small imp-link" @click="viewer.open(storedFile({ id: doc.fileId }))"><Icon name="ph:file-text" aria-hidden="true" /> Ver el documento original</button>
         </section>
 
         <SalesAttachments :doc-id="doc.id" :items="doc.attachments" @changed="refresh" />

@@ -94,6 +94,8 @@ const quarterTotal = (q: Quarter) => modelRows(q).reduce((s, r) => s + Math.max(
 // ─── Presentación guiada ───
 const { confirm } = useConfirm()
 const toast = useToast()
+const viewer = useFileViewer()
+const viewReceipt = (id: number) => viewer.open(storedFile({ id }))
 const fileOpen = ref(false)
 const fileModel = ref<string | null>(null)
 const fileQuarter = ref<number | null>(null)
@@ -300,7 +302,7 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
                     <div class="d-act">
                       <template v-if="filingOf(q, r.model)">
                         <p class="filed"><Icon name="ph:seal-check-fill" aria-hidden="true" /> Presentado{{ filingOf(q, r.model)!.csv ? ` · CSV ${filingOf(q, r.model)!.csv}` : '' }}</p>
-                        <a v-if="filingOf(q, r.model)!.receiptFileId" :href="`/api/files/${filingOf(q, r.model)!.receiptFileId}`" target="_blank" rel="noopener" class="link small">Justificante</a>
+                        <button v-if="filingOf(q, r.model)!.receiptFileId" type="button" class="link small" @click="viewReceipt(filingOf(q, r.model)!.receiptFileId!)">Justificante</button>
                         <button type="button" class="link small" @click="unfile(filingOf(q, r.model)!.id, r.model)">Deshacer</button>
                       </template>
                       <UiButton v-else size="sm" :variant="q.closed ? 'primary' : 'secondary'" icon="ph:seal-check" @click="present(q.quarter, r.model)">Presentar en la AEAT</UiButton>
@@ -366,7 +368,7 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
                   <div class="d-act">
                     <template v-if="corpFiling('202', p.period)">
                       <p class="filed"><Icon name="ph:seal-check-fill" aria-hidden="true" /> Presentado{{ corpFiling('202', p.period)!.csv ? ` · CSV ${corpFiling('202', p.period)!.csv}` : '' }}</p>
-                      <a v-if="corpFiling('202', p.period)!.receiptFileId" :href="`/api/files/${corpFiling('202', p.period)!.receiptFileId}`" target="_blank" rel="noopener" class="link small">Justificante</a>
+                      <button v-if="corpFiling('202', p.period)!.receiptFileId" type="button" class="link small" @click="viewReceipt(corpFiling('202', p.period)!.receiptFileId!)">Justificante</button>
                       <button type="button" class="link small" @click="unfile(corpFiling('202', p.period)!.id, '202')">Deshacer</button>
                     </template>
                     <UiButton v-else size="sm" :variant="p.started ? 'primary' : 'secondary'" icon="ph:seal-check" @click="presentCorp('202', p.n)">Presentar en la AEAT</UiButton>

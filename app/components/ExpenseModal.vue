@@ -40,6 +40,12 @@ interface Supplier { id: number, name: string, nif: string | null, city: string 
 interface Category { id: number, kind: string, name: string, accountCode: string | null, icon: string | null, color: string | null, deductiblePct: number }
 
 const toast = useToast()
+const viewer = useFileViewer()
+// El documento leído se abre en el visor, encima del gasto
+function viewOriginal() {
+  const id = scan.value?.fileId ?? original.value?.id
+  if (id) viewer.open(storedFile({ id, name: scan.value?.fileName ?? original.value?.name, mime: scan.value?.mime ?? original.value?.mime }))
+}
 const { confirm } = useConfirm()
 const guardDuplicate = useDuplicateGuard()
 const formId = useId()
@@ -528,10 +534,10 @@ async function remove() {
             <UiBadge v-if="scan || original?.confidence != null" tone="ai" icon="ph:sparkle-fill" size="sm">
               Leído con IA{{ (scan?.confidence ?? original?.confidence) != null ? ` · ${scan?.confidence ?? original?.confidence} %` : '' }}
             </UiBadge>
-            <a :href="`/api/files/${scan?.fileId ?? original?.id}`" target="_blank" rel="noopener" class="link ar-link">
+            <button type="button" class="link ar-link" @click="viewOriginal">
               <Icon :name="fileIcon(scan?.fileName ?? original?.name ?? '', scan?.mime ?? original?.mime)" aria-hidden="true" />
               <span class="truncate">{{ scan?.fileName ?? original?.name ?? (scan ? 'Ver documento escaneado' : 'Documento original') }}</span>
-            </a>
+            </button>
           </div>
         </div>
         <ul v-if="scan?.warnings.length" class="ar-warn">
@@ -1021,6 +1027,9 @@ async function remove() {
 
 .ar-link {
   display: inline-flex;
+  max-width: 100%;
+  padding: 0;
+  text-align: left;
   align-items: center;
   gap: 6px;
   font-size: var(--text-sm);

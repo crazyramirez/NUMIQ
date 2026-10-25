@@ -43,6 +43,7 @@ const previewKindOptions = [
 ]
 
 const previewUrl = ref<string | null>(null)
+const viewer = useFileViewer()
 const previewBytes = shallowRef<ArrayBuffer | null>(null)
 const previewing = ref(false)
 const previewError = ref<string | null>(null)
@@ -449,9 +450,9 @@ function insertToken(kind: 'invoice' | 'quote', token: string) {
           />
           <div v-else-if="previewError" class="pv-empty"><Icon name="ph:warning-circle" /> {{ previewError }}</div>
           <div v-else class="pv-empty"><span class="skeleton pv-sk" /></div>
-          <a v-if="previewUrl" :href="previewUrl" target="_blank" rel="noopener" class="pv-open">
-            <Icon name="ph:arrow-square-out" /> Abrir vista previa
-          </a>
+          <button v-if="previewUrl" type="button" class="pv-open" @click="viewer.open({ url: previewUrl, name: 'Vista previa de factura.pdf', mime: 'application/pdf' })">
+            <Icon name="ph:arrows-out" /> Ampliar vista previa
+          </button>
         </div>
       </div>
     </div>

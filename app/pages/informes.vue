@@ -20,13 +20,14 @@ const isFuture = computed(() => periodIsFuture(period.value))
 // ─── Descargas ───
 
 const qs = computed(() => new URLSearchParams(Object.entries(query.value).map(([k, v]) => [k, String(v)])).toString())
+const viewer = useFileViewer()
 const exportUrl = (format: string, book?: string) => `/api/reports/export?${qs.value}&format=${format}${book ? `&book=${book}` : ''}`
 const download = (format: string, book?: string) => {
   window.location.href = exportUrl(format, book)
 }
 const exportItems = computed<MenuItem[]>(() => [
   { heading: 'Informe completo' },
-  { label: 'PDF con tu marca', icon: 'ph:file-pdf', onClick: () => window.open(exportUrl('pdf'), '_blank', 'noopener') },
+  { label: 'PDF con tu marca', icon: 'ph:file-pdf', onClick: () => viewer.open({ url: exportUrl('pdf'), mime: 'application/pdf' }) },
   { label: 'Excel: resumen, libros e IVA', icon: 'ph:file-xls', onClick: () => download('xlsx') },
   { divider: true },
   { heading: 'CSV para tu gestoría' },

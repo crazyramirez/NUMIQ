@@ -94,11 +94,11 @@ async function upload(list: DroppedFile[]) {
 
 // ─── Acciones ───
 
-const preview = ref<VaultFile | null>(null)
-const previewOpen = ref(false)
+// Visor de la app: recorre los documentos de la carpeta y el periodo que se están viendo
+const viewer = useFileViewer()
 function show(f: VaultFile) {
-  preview.value = f
-  previewOpen.value = true
+  const list = files.value
+  viewer.open(list.map(storedFile), Math.max(0, list.findIndex(x => x.id === f.id)))
 }
 
 const editing = ref<VaultFile | null>(null)
@@ -231,13 +231,6 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
       </ul>
       <UiPager v-model="page" v-model:size="pageSize" :pages="pages" :total="pageTotal" />
     </section>
-
-    <UiModal v-model="previewOpen" size="xl" :title="preview?.name">
-      <DocsFilePreview v-if="preview" class="big-preview" :file-id="preview.id" :name="preview.name" :mime="preview.mime" />
-      <template #footer>
-        <a v-if="preview" :href="`/api/files/${preview.id}?download=1`" class="dl"><Icon name="ph:download-simple" aria-hidden="true" /> Descargar</a>
-      </template>
-    </UiModal>
 
     <UiModal v-model="editOpen" size="sm" title="Mover o renombrar">
       <form id="vault-edit" class="form-grid" @submit.prevent="saveEdit">
@@ -445,22 +438,6 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
   font-size: var(--text-sm);
   color: var(--text-3);
   text-align: right;
-}
-
-.big-preview {
-  height: min(72dvh, 820px);
-}
-
-.dl {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 14px;
-  font-weight: 560;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
 }
 
 .form-grid .c-12 {

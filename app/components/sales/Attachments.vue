@@ -13,6 +13,8 @@ const props = withDefaults(defineProps<{ docId: number, items: Attachment[], can
 const emit = defineEmits<{ changed: [] }>()
 const toast = useToast()
 const { confirm } = useConfirm()
+const viewer = useFileViewer()
+const view = (i: number) => viewer.open(props.items.map(storedFile), i)
 
 const input = ref<HTMLInputElement>()
 const uploading = ref(false)
@@ -87,12 +89,14 @@ async function remove(a: Attachment) {
     </div>
 
     <ul v-if="items.length" class="list">
-      <li v-for="a in items" :key="a.id" class="item">
-        <span class="ic" :class="iconFor(a.mime).tone"><Icon :name="iconFor(a.mime).name" /></span>
-        <a :href="`/api/files/${a.id}`" target="_blank" rel="noopener" class="grow min0 name-link">
-          <span class="name truncate">{{ a.originalName }}</span>
-          <span class="meta">{{ sizeLabel(a.size) }} · {{ fdate(a.createdAt) }}</span>
-        </a>
+      <li v-for="(a, i) in items" :key="a.id" class="item">
+        <button type="button" class="grow min0 name-link" :aria-label="`Ver ${a.originalName}`" @click="view(i)">
+          <span class="ic" :class="iconFor(a.mime).tone"><Icon :name="iconFor(a.mime).name" /></span>
+          <span class="min0 name-text">
+            <span class="name truncate">{{ a.originalName }}</span>
+            <span class="meta">{{ sizeLabel(a.size) }} · {{ fdate(a.createdAt) }}</span>
+          </span>
+        </button>
         <a :href="`/api/files/${a.id}?download=1`" class="act" :aria-label="`Descargar ${a.originalName}`"><Icon name="ph:download-simple" /></a>
         <button v-if="canEdit" type="button" class="act danger" :aria-label="`Quitar ${a.originalName}`" @click="remove(a)"><Icon name="ph:trash" /></button>
       </li>
@@ -171,6 +175,21 @@ async function remove(a: Attachment) {
 
 .name-link {
   display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -4px 0 -4px -4px;
+  padding: 4px;
+  text-align: left;
+  border-radius: var(--r-md);
+  transition: background var(--t-fast);
+}
+
+.name-link:hover {
+  background: var(--surface-hover);
+}
+
+.name-text {
+  display: flex;
   flex-direction: column;
 }
 
@@ -181,8 +200,6 @@ async function remove(a: Attachment) {
 
 .name-link:hover .name {
   color: var(--brand-text);
-  text-decoration: underline;
-  text-underline-offset: 2px;
 }
 
 .meta {
