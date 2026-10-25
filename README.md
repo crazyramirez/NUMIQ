@@ -264,6 +264,12 @@ Se ejecutan dentro del propio servidor Nitro (`server/plugins`):
    NUXT_SITE_URL=https://tu-dominio
    ```
    Los `DB_*` son los del paso 1, tal como aparecen en Plesk. Si la contraseña lleva `#` o espacios, ponla entre comillas simples. Correo, IA y el resto, en [Variables de entorno](#variables-de-entorno).
+
+   Para generar `NUXT_SESSION_PASSWORD`, entra por SSH y ejecuta:
+   ```bash
+   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+   ```
+   Copia los 64 caracteres que imprime. Si `node` no está en el `PATH`, usa el de Plesk: `/opt/plesk/node/24/bin/node`. Cambiarla más adelante cierra la sesión de todos los usuarios.
 5. **Arranque.** Activa HTTPS (la cookie de sesión es `Secure`), reinicia la aplicación y crea la primera cuenta en `/registro`.
 
 Si la base no conecta, `https://tu-dominio/api/me` responde 503 con la causa (contraseña incorrecta, base inexistente…).
