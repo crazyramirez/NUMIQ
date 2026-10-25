@@ -71,7 +71,11 @@ const VF_STATUS: Record<string, { label: string, tone: 'brand' | 'success' | 'wa
 
 const isQuote = computed(() => doc.value?.kind === 'quote' || doc.value?.kind === 'proforma')
 const base = computed(() => (isQuote.value ? '/presupuestos' : '/facturas'))
-const { href: listHref, back } = useBackTo(base)
+const { href: backHref, back, from: backFrom } = useBackTo(base)
+const listHref = computed(() => (backFrom.value ? base.value : backHref.value))
+const backLabel = computed(() => (backFrom.value ? (backFrom.value.startsWith('/presupuestos') ? 'Volver al presupuesto' : 'Volver a la factura') : 'Volver al listado'))
+// Al abrir un documento vinculado, su «Volver» regresa aquí
+const linkTo = (id: number) => ({ path: `${isQuote.value ? '/facturas' : '/presupuestos'}/${id}`, query: { from: `${base.value}/${props.id}` } })
 const kindLabel = computed(() => KIND_LABEL[doc.value?.kind ?? 'invoice'] ?? 'Factura')
 const isOpen = computed(() => ['issued', 'sent', 'partial'].includes(doc.value?.status ?? ''))
 const overdue = computed(() => !isQuote.value && isOpen.value && !!doc.value?.dueDate && daysUntil(doc.value.dueDate) < 0)
@@ -339,7 +343,7 @@ const moreItems = computed<MenuItem[]>(() => {
   <div v-if="doc && company" class="view page">
     <div class="v-head no-print">
       <div class="head-nav">
-        <UiButton variant="ghost" square icon="ph:arrow-left" aria-label="Volver al listado" title="Volver al listado" @click="back()" />
+        <UiButton variant="ghost" square icon="ph:arrow-left" :aria-label="backLabel" :title="backLabel" @click="back()" />
         <div class="pager-btns" role="navigation" aria-label="Navegación entre documentos">
           <UiButton
             variant="ghost"
@@ -440,7 +444,7 @@ const moreItems = computed<MenuItem[]>(() => {
           </div>
           <p class="sg-text">
             {{ isQuote ? 'La factura' : 'El presupuesto' }}
-            <NuxtLink :to="`${isQuote ? '/facturas' : '/presupuestos'}/${suggestion.id}`" class="link num">{{ suggestion.number }}</NuxtLink>
+            <NuxtLink :to="linkTo(suggestion.id)" class="link num">{{ suggestion.number }}</NuxtLink>
             ({{ eur(suggestion.total) }}, {{ fdate(suggestion.issueDate) }}) encaja{{ suggestionWhy ? `: ${suggestionWhy}` : '' }}.
           </p>
           <div class="sg-actions">
@@ -454,7 +458,7 @@ const moreItems = computed<MenuItem[]>(() => {
           <ul>
             <li v-for="l in linkedDocs" :key="l.id">
               <span class="l-ic" aria-hidden="true"><Icon :name="isQuote ? 'ph:receipt' : 'ph:file-text'" /></span>
-              <NuxtLink :to="`${isQuote ? '/facturas' : '/presupuestos'}/${l.id}`" class="grow min0 l-doc">
+              <NuxtLink :to="linkTo(l.id)" class="grow min0 l-doc">
                 <p class="strong num truncate">{{ l.number ?? 'Sin número' }}</p>
                 <p class="muted small">{{ salesStatus(isQuote ? 'invoice' : (doc.source?.kind ?? 'quote'), l.status, false).label }}</p>
               </NuxtLink>

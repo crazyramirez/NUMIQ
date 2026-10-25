@@ -78,21 +78,29 @@ function patchQuery(router: Router, path: string, patch: Patch, delay = 0) {
 
 /**
  * «Volver» de una ficha a su listado: con la búsqueda, filtros y página con que se dejó. Si el listado es la
- * entrada anterior del historial, es un atrás de verdad (no apila otra entrada).
+ * entrada anterior del historial, es un atrás de verdad (no apila otra entrada). Si se llegó desde otra ficha
+ * con `?from=/ruta` (p. ej. la factura vinculada de un presupuesto), vuelve a esa ficha en vez de al listado.
  */
 export function useBackTo(path: MaybeRefOrGetter<string>) {
   const router = useRouter()
+  const route = useRoute()
   if (import.meta.client) track(router)
-  const href = computed(() => lastUrl.get(toValue(path)) ?? toValue(path))
+  // Solo rutas internas: nada de `//host` ni URLs absolutas
+  const from = computed(() => {
+    const f = route.query.from
+    return typeof f === 'string' && f.startsWith('/') && !f.startsWith('//') ? f : null
+  })
+  const href = computed(() => from.value ?? lastUrl.get(toValue(path)) ?? toValue(path))
   function back(e?: MouseEvent) {
     // Ctrl/⌘ o botón central: el enlace se abre aparte como siempre
     if (e && (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button > 0)) return
     e?.preventDefault()
     const prev = (window.history.state as { back?: string } | null)?.back
-    if (prev && prev.split(/[?#]/)[0] === toValue(path)) router.back()
+    const target = (from.value ?? toValue(path)).split(/[?#]/)[0]
+    if (prev && prev.split(/[?#]/)[0] === target) router.back()
     else navigateTo(href.value)
   }
-  return { href, back }
+  return { href, back, from }
 }
 
 /** Cambia parte de la query de la página actual junto con los `useQueryState` (undefined quita la clave) */
