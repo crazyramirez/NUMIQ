@@ -67,7 +67,7 @@ export async function buildBackup(company: Company, opts: BackupOptions) {
   const json = (name: string, rows: unknown) => add(`Datos (JSON)/${name}.json`, Buffer.from(JSON.stringify(rows, null, 1), 'utf8'))
 
   const t = tables
-  const [contacts, items, itemCategories, categories, series, sales, payments, expenses, bankAccounts, bankTx, recurrings, filings, verifactu, files, templates, emails, packs] = await Promise.all([
+  const [contacts, items, itemCategories, categories, series, sales, payments, expenses, bankAccounts, bankTx, recurrings, filings, verifactu, files, templates, emails, packs, calendar] = await Promise.all([
     db.select().from(t.contacts).where(eq(t.contacts.companyId, cid)).orderBy(asc(t.contacts.name)),
     db.select().from(t.items).where(eq(t.items.companyId, cid)).orderBy(asc(t.items.name)),
     db.select().from(t.itemCategories).where(eq(t.itemCategories.companyId, cid)).orderBy(asc(t.itemCategories.name)),
@@ -85,6 +85,7 @@ export async function buildBackup(company: Company, opts: BackupOptions) {
     db.select().from(t.invoiceTemplates).where(eq(t.invoiceTemplates.companyId, cid)),
     db.select().from(t.sentEmails).where(eq(t.sentEmails.companyId, cid)),
     db.select().from(t.advisorPacks).where(eq(t.advisorPacks.companyId, cid)),
+    db.select().from(t.calendarEvents).where(eq(t.calendarEvents.companyId, cid)).orderBy(asc(t.calendarEvents.startDate)),
   ])
   const saleIds = sales.map(s => s.id)
   const expenseIds = expenses.map(e => e.id)
@@ -110,6 +111,7 @@ export async function buildBackup(company: Company, opts: BackupOptions) {
   json('banco_cuentas', bankAccounts)
   json('banco_movimientos', bankTx.map(x => ({ ...x, hash: undefined })))
   json('recurrentes', recurrings)
+  json('calendario_eventos', calendar)
   json('modelos_presentados', filings)
   json('verifactu_registros', verifactu)
   json('plantillas_factura', templates)

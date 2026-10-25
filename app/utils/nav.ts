@@ -60,6 +60,7 @@ export const NAV: readonly NavArea[][] = Object.freeze([
       ],
     },
     { key: 'banco', label: 'Banco', to: '/banco', icon: 'ph:piggy-bank', keywords: 'extracto movimientos conciliar conciliación norma 43 cuenta saldo cobros pagos' },
+    { key: 'calendario', label: 'Calendario', to: '/calendario', icon: 'ph:calendar-dots', keywords: 'agenda fechas vencimientos plazos hacienda aeat eventos citas reuniones tareas google apple outlook icloud ical sincronizar' },
     {
       key: 'informes',
       label: 'Informes',
@@ -125,4 +126,5 @@ export const CREATE_ACTIONS = Object.freeze([
   { label: 'Escanear factura o ticket', icon: 'ph:scan', to: '?escanear=1', hint: 'E', keywords: 'ocr ia foto leer documento' },
   { label: 'Nuevo cliente', icon: 'ph:user-plus', to: '/clientes?nuevo=1', hint: 'C', keywords: 'contacto' },
   { label: 'Nuevo proveedor', icon: 'ph:storefront', to: '/proveedores?nuevo=1', keywords: 'contacto' },
+  { label: 'Nuevo evento', icon: 'ph:calendar-plus', to: '/calendario?nuevo=1', keywords: 'cita reunión tarea recordatorio agenda calendario' },
 ])

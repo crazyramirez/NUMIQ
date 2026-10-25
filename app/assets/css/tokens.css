@@ -139,6 +139,18 @@
   --chart-c7: #6250d6;
   --chart-c8: #e34948;
 
+  /* Calendario: un color por capa o elegido por el usuario (claves de shared/utils/calendar.ts) */
+  --cal-brand: #4f46e5;
+  --cal-violet: #7c3aed;
+  --cal-sky: #0284c7;
+  --cal-teal: #0d9488;
+  --cal-green: #059669;
+  --cal-amber: #d97706;
+  --cal-orange: #ea580c;
+  --cal-red: #dc2626;
+  --cal-pink: #db2777;
+  --cal-slate: #475569;
+
   /* Sombras: capas suaves con tinte frío */
   --shadow-xs: 0 1px 2px rgb(16 24 40 / 0.05);
   --shadow-sm: 0 1px 2px rgb(16 24 40 / 0.04), 0 1px 3px rgb(16 24 40 / 0.06);
@@ -207,6 +219,17 @@
   --chart-c6: #008300;
   --chart-c7: #9085e9;
   --chart-c8: #e66767;
+
+  --cal-brand: #818cf8;
+  --cal-violet: #a78bfa;
+  --cal-sky: #38bdf8;
+  --cal-teal: #2dd4bf;
+  --cal-green: #34d399;
+  --cal-amber: #fbbf24;
+  --cal-orange: #fb923c;
+  --cal-red: #f87171;
+  --cal-pink: #f472b6;
+  --cal-slate: #94a3b8;
 
   --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.3);
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3), 0 1px 3px rgb(0 0 0 / 0.25);

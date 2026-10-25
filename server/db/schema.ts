@@ -625,6 +625,79 @@ export const taxFilings = mysqlTable('tax_filings', {
   updatedAt: updatedAt(),
 }, t => [uniqueIndex('filings_period_uq').on(t.companyId, t.model, t.year, t.period)])
 
+// ─── Calendario: eventos propios, suscripción para el móvil y calendarios externos ─
+
+export const calendarEvents = mysqlTable('calendar_events', {
+  id: int('id').autoincrement().primaryKey(),
+  companyId: int('company_id').notNull(),
+  /** Evento (reunión, cita…) o tarea que se marca como hecha */
+  kind: mysqlEnum('kind', ['event', 'task']).notNull().default('event'),
+  title: varchar('title', { length: 200 }).notNull(),
+  notes: text('notes'),
+  location: varchar('location', { length: 200 }),
+  startDate: day('start_date').notNull(),
+  /** Último día (incluido) si dura varios; null = un solo día */
+  endDate: day('end_date'),
+  /** HH:MM; null = todo el día */
+  startTime: varchar('start_time', { length: 5 }),
+  endTime: varchar('end_time', { length: 5 }),
+  /** Clave de color del calendario (shared/utils/calendar.ts) */
+  color: varchar('color', { length: 16 }).notNull().default('brand'),
+  repeat: mysqlEnum('repeat', ['none', 'weekly', 'monthly', 'quarterly', 'yearly']).notNull().default('none'),
+  repeatInterval: smallint('repeat_interval').notNull().default(1),
+  repeatUntil: day('repeat_until'),
+  /** Aviso al móvil: minutos antes (los de todo el día cuentan desde las 9:00); null = sin aviso */
+  remindMinutes: int('remind_minutes'),
+  /** Última repetición avisada (YYYY-MM-DD): cada aviso sale una sola vez */
+  remindedFor: day('reminded_for'),
+  /** Tareas: fechas (de cada repetición) ya hechas */
+  doneDates: jsonText<string[]>('done_dates'),
+  contactId: int('contact_id'),
+  createdBy: int('created_by'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, t => [index('cal_events_company_idx').on(t.companyId, t.startDate)])
+
+/** Dirección privada del calendario (webcal) para suscribirse desde Google, Apple u Outlook */
+export const calendarLinks = mysqlTable('calendar_links', {
+  id: int('id').autoincrement().primaryKey(),
+  companyId: int('company_id').notNull(),
+  userId: int('user_id').notNull(),
+  token: varchar('token', { length: 64 }).notNull(),
+  /** Capas que se publican (income, expense, tax…) */
+  layers: jsonText<string[]>('layers'),
+  lastUsedAt: datetime('last_used_at'),
+  createdAt: createdAt(),
+}, t => [uniqueIndex('cal_links_token_uq').on(t.token), uniqueIndex('cal_links_user_uq').on(t.companyId, t.userId)])
+
+export interface FeedEvent {
+  uid: string
+  title: string
+  date: string
+  endDate?: string | null
+  time?: string | null
+  endTime?: string | null
+  location?: string | null
+  notes?: string | null
+}
+
+/** Calendario externo (dirección iCal secreta de Google, iCloud público, Outlook…) visto dentro de NUMIQ */
+export const calendarFeeds = mysqlTable('calendar_feeds', {
+  id: int('id').autoincrement().primaryKey(),
+  companyId: int('company_id').notNull(),
+  /** Solo lo ve quien lo añadió: es su calendario personal */
+  userId: int('user_id').notNull(),
+  name: varchar('name', { length: 80 }).notNull(),
+  url: varchar('url', { length: 1000 }).notNull(),
+  color: varchar('color', { length: 16 }).notNull().default('c1'),
+  active: boolean('active').notNull().default(true),
+  /** Eventos leídos en la última sincronización (ya expandidas las repeticiones) */
+  cache: jsonText<FeedEvent[]>('cache'),
+  lastSyncAt: datetime('last_sync_at'),
+  lastError: varchar('last_error', { length: 300 }),
+  createdAt: createdAt(),
+}, t => [index('cal_feeds_user_idx').on(t.companyId, t.userId)])
+
 // ─── VeriFactu: registros de facturación encadenados ─────────────────────────
 
 export const verifactuRecords = mysqlTable('verifactu_records', {
