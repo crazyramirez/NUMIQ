@@ -456,21 +456,32 @@ function paperCtx(): CtxSpec | null {
       </div>
       <div class="page-actions">
         <SalesInvoiceLinks v-if="isQuote && doc.invoices.length" :invoices="doc.invoices" size="md" />
-        <template v-if="canEdit">
-          <UiButton icon="ph:pencil-simple" :to="`${base}/${doc.id}/editar`">Editar</UiButton>
-        </template>
-        <UiButton icon="ph:file-pdf" :title="doc.status === 'draft' ? 'Ver el PDF (con la marca BORRADOR)' : 'Ver el PDF'" @click="viewPdf"><span class="hide-sm">Ver&nbsp;</span>PDF</UiButton>
-        <UiButton icon="ph:download-simple" :to="`${pdfUrl}?download=1`" external title="Descargar PDF">Descargar</UiButton>
-        <UiButton v-if="doc.status !== 'draft'" :icon="alreadySent ? 'ph:arrow-clockwise' : 'ph:paper-plane-tilt'" @click="openSend()">{{ alreadySent ? 'Reenviar' : 'Enviar' }}</UiButton>
+        <!-- Herramientas del documento: solo iconos, con su nombre al pasar el ratón -->
+        <div class="tools" role="toolbar" :aria-label="`Acciones de ${kindLabel.toLowerCase()}`">
+          <UiButton v-if="canEdit" variant="ghost" size="sm" square icon="ph:pencil-simple" :to="`${base}/${doc.id}/editar`" aria-label="Editar" data-tip="Editar" />
+          <UiButton variant="ghost" size="sm" square icon="ph:eye" aria-label="Ver PDF" :data-tip="doc.status === 'draft' ? 'Ver PDF (borrador)' : 'Ver PDF'" @click="viewPdf" />
+          <UiButton variant="ghost" size="sm" square icon="ph:download-simple" :to="`${pdfUrl}?download=1`" external aria-label="Descargar PDF" data-tip="Descargar PDF" />
+          <UiButton
+            v-if="doc.status !== 'draft'"
+            variant="ghost"
+            size="sm"
+            square
+            :icon="alreadySent ? 'ph:arrow-clockwise' : 'ph:paper-plane-tilt'"
+            :aria-label="alreadySent ? 'Reenviar por email' : 'Enviar por email'"
+            :data-tip="alreadySent ? 'Reenviar por email' : 'Enviar por email'"
+            @click="openSend()"
+          />
+          <span class="tools-sep" aria-hidden="true" />
+          <UiMenu :items="moreItems" :width="240">
+            <template #default="{ toggle }">
+              <UiButton variant="ghost" size="sm" square icon="ph:dots-three-bold" aria-label="Más acciones" data-tip="Más acciones" @click="toggle" />
+            </template>
+          </UiMenu>
+        </div>
         <UiButton v-if="doc.status === 'draft'" variant="primary" icon="ph:seal-check" :loading="busy === 'issue'" @click="issue">Emitir</UiButton>
         <UiButton v-else-if="!isQuote && isOpen" variant="primary" icon="ph:hand-coins" @click="openPayment()">Registrar cobro</UiButton>
         <UiButton v-else-if="!isQuote && doc.status === 'paid'" class="act-wide" icon="ph:arrow-u-up-left" :loading="busy === 'pending'" @click="markPending">Marcar como pendiente</UiButton>
         <UiButton v-else-if="isQuote && !['invoiced', 'rejected'].includes(doc.status)" variant="primary" icon="ph:receipt" :loading="busy === 'convert'" @click="convert">Convertir en factura</UiButton>
-        <UiMenu :items="moreItems" :width="240">
-          <template #default="{ toggle }">
-            <UiButton square icon="ph:dots-three-bold" aria-label="Más acciones" @click="toggle" />
-          </template>
-        </UiMenu>
       </div>
     </div>
 
@@ -647,7 +658,7 @@ function paperCtx(): CtxSpec | null {
   align-items: center;
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--r-md);
   padding: 2px;
   gap: 2px;
 }
@@ -656,13 +667,99 @@ function paperCtx(): CtxSpec | null {
   height: 32px;
   font-size: var(--text-xs);
   font-weight: 550;
-  border-radius: calc(var(--radius-md) - 2px);
+  border-radius: calc(var(--r-md) - 2px);
   padding: 0 9px;
 }
 
 .pager-btn:disabled {
   opacity: 0.38;
   cursor: not-allowed;
+}
+
+/* Barra de herramientas del documento: misma cápsula que Anterior/Siguiente, a la altura de los botones */
+.tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+
+.tools .btn.btn-square,
+.tools :deep(.menu) .btn.btn-square {
+  width: 34px;
+  height: 32px;
+  color: var(--text-2);
+  border-radius: calc(var(--r-md) - 2px);
+}
+
+.tools .btn.btn-square:hover:not(:disabled),
+.tools :deep(.menu) .btn.btn-square:hover:not(:disabled),
+.tools :deep(.menu) .btn.btn-square[aria-expanded='true'] {
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.tools :deep(.btn-icon) {
+  width: 17px;
+  height: 17px;
+}
+
+.tools-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: var(--border);
+}
+
+/* Nombre de cada icono al pasar el ratón o al llegar con el teclado (en pantallas táctiles, no) */
+@media (hover: hover) and (pointer: fine) {
+  .tools [data-tip]::after {
+    --tip-x: -50%;
+    content: attr(data-tip);
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 50%;
+    z-index: 30;
+    padding: 5px 9px;
+    font-size: var(--text-xs);
+    font-weight: 550;
+    line-height: 1.2;
+    white-space: nowrap;
+    color: var(--bg);
+    background: var(--text);
+    border-radius: var(--r-sm);
+    box-shadow: var(--shadow-md);
+    opacity: 0;
+    transform: translate(var(--tip-x), -3px);
+    transition: opacity var(--t-fast), transform var(--t-fast) var(--ease-out);
+    pointer-events: none;
+  }
+
+  /* El último, alineado a su borde derecho: nunca se sale de la pantalla */
+  .tools > :deep(.menu) [data-tip]::after {
+    --tip-x: 0%;
+    right: 0;
+    left: auto;
+  }
+
+  .tools [data-tip]:hover::after,
+  .tools [data-tip]:focus-visible::after {
+    opacity: 1;
+    transform: translate(var(--tip-x), 0);
+  }
+
+  .tools [data-tip]:hover::after {
+    transition-delay: 0.25s;
+  }
+
+  /* Con el menú abierto, el nombre sobra */
+  .tools [aria-expanded='true']::after {
+    display: none;
+  }
 }
 
 .v-head h1 {
@@ -1003,24 +1100,25 @@ function paperCtx(): CtxSpec | null {
     flex: 1 1 100%;
   }
 
-  /* Debajo, Editar · PDF · Descargar · Enviar · Más en una sola fila: icono encima del texto */
-  .v-head .page-actions > .btn:not(.btn-primary, .act-wide) {
+  /* Debajo, la barra a todo el ancho con los iconos repartidos y del tamaño de un dedo */
+  .v-head .page-actions > .tools {
+    flex: 1 1 100%;
+  }
+
+  .tools .btn.btn-square,
+  .tools > :deep(.menu) {
     flex: 1 1 0;
-    flex-direction: column;
-    gap: 3px;
-    min-width: 0;
-    height: 58px;
-    padding: 0 4px;
-    font-size: var(--text-xs);
   }
 
-  .v-head .page-actions > :deep(.menu) {
-    flex: none;
+  .tools .btn.btn-square,
+  .tools :deep(.menu) .btn.btn-square {
+    width: 100%;
+    height: 40px;
   }
 
-  .v-head .page-actions > :deep(.menu) .btn {
-    width: 44px;
-    height: 58px;
+  .tools :deep(.btn-icon) {
+    width: 19px;
+    height: 19px;
   }
 
   .pager-btn {
