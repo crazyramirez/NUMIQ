@@ -59,7 +59,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <Icon :name="area === 'gastos' ? 'ph:wallet-fill' : 'ph:wallet'" class="bi-ic" aria-hidden="true" />
       <span>Gastos</span>
     </NuxtLink>
-    <button type="button" class="bi" :class="{ on: isMore }" aria-label="Más: banco, impuestos, contactos, ajustes…" @click="navOpen = true">
+    <button type="button" class="bi" :class="{ on: isMore }" aria-label="Más: banco, informes, impuestos, contactos, ajustes…" @click="navOpen = true">
       <span class="bi-wrap">
         <Icon :name="isMore ? 'ph:dots-three-circle-fill' : 'ph:dots-three-circle'" class="bi-ic" aria-hidden="true" />
         <span v-if="inbox.count.value" class="bi-dot" aria-hidden="true" />

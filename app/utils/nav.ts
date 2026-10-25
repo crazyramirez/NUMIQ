@@ -14,7 +14,7 @@ export interface NavArea extends NavItem {
   tabs?: NavItem[]
 }
 
-/** Área y pestaña de una ruta: gana el prefijo más largo (/documentos/gestor es de Impuestos, no de Documentos) */
+/** Área y pestaña de una ruta: gana el prefijo más largo (/documentos/gestor es de Informes, no de Documentos) */
 export function areaOf(path: string): { area: NavArea | null, tab: NavItem | null } {
   let best: { area: NavArea, tab: NavItem | null, len: number } | null = null
   const hit = (to: string) => (to === '/' ? path === '/' : path === to || path.startsWith(`${to}/`))
@@ -29,7 +29,7 @@ export function areaOf(path: string): { area: NavArea | null, tab: NavItem | nul
 }
 
 /**
- * Pocas áreas y claras: lo de cada día arriba (cobrar, gastos, banco, impuestos) y el resto debajo.
+ * Pocas áreas y claras: lo de cada día arriba (cobrar, gastos, banco, informes e impuestos) y el resto debajo.
  * Las rutas no cambian: solo cómo se agrupan para no saturar el menú.
  */
 export const NAV: readonly NavArea[][] = Object.freeze([
@@ -61,14 +61,14 @@ export const NAV: readonly NavArea[][] = Object.freeze([
     },
     { key: 'banco', label: 'Banco', to: '/banco', icon: 'ph:piggy-bank', keywords: 'extracto movimientos conciliar conciliación norma 43 cuenta saldo cobros pagos' },
     {
-      key: 'impuestos',
-      label: 'Impuestos',
-      to: '/impuestos',
-      icon: 'ph:bank',
-      keywords: 'modelos 303 130 111 115 iva irpf aeat hacienda trimestre',
+      key: 'informes',
+      label: 'Informes',
+      to: '/informes',
+      icon: 'ph:chart-line-up',
+      keywords: 'estadísticas análisis impuestos modelos iva irpf gestoría trimestre',
       tabs: [
-        { label: 'Impuestos', to: '/impuestos', icon: 'ph:bank', keywords: 'modelos 303 130 111 115 iva irpf aeat hacienda trimestre' },
         { label: 'Informes', to: '/informes', icon: 'ph:chart-line-up', keywords: 'estadísticas análisis trimestre año libro registro excel pdf cuenta de resultados' },
+        { label: 'Impuestos', to: '/impuestos', icon: 'ph:bank', keywords: 'modelos 303 130 111 115 iva irpf aeat hacienda trimestre' },
         { label: 'Gestoría', to: '/documentos/gestor', icon: 'ph:paper-plane-tilt', keywords: 'gestor asesor enviar trimestre zip' },
       ],
     },
