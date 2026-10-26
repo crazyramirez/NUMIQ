@@ -4,6 +4,8 @@ useHead({ title: 'Recuperar contraseña · NUMIQ' })
 
 const route = useRoute()
 const email = ref(typeof route.query.email === 'string' ? route.query.email : '')
+// Desde una invitación: el enlace del correo vuelve a ella tras elegir la contraseña
+const back = typeof route.query.r === 'string' && route.query.r.startsWith('/') ? route.query.r : undefined
 const loading = ref(false)
 const sent = ref(false)
 const error = ref<string | null>(null)
@@ -12,7 +14,7 @@ async function submit() {
   loading.value = true
   error.value = null
   try {
-    await $fetch('/api/auth/forgot', { method: 'POST', body: { email: email.value } })
+    await $fetch('/api/auth/forgot', { method: 'POST', body: { email: email.value, r: back } })
     sent.value = true
   }
   catch (err) {
@@ -42,7 +44,7 @@ async function submit() {
       <h1 class="title">Revisa tu correo</h1>
       <p class="lead">Si hay una cuenta con <b>{{ email }}</b>, te hemos enviado un enlace para elegir una contraseña nueva. Caduca en una hora. Mira también en el spam.</p>
     </div>
-    <p class="switch"><NuxtLink to="/login" class="link"><Icon name="ph:arrow-left" aria-hidden="true" /> Volver a entrar</NuxtLink></p>
+    <p class="switch"><NuxtLink :to="{ path: '/login', query: back ? { r: back, ...(email ? { email } : {}) } : undefined }" class="link"><Icon name="ph:arrow-left" aria-hidden="true" /> Volver a entrar</NuxtLink></p>
   </div>
 </template>
 

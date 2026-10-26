@@ -5,6 +5,8 @@ useHead({ title: 'Nueva contraseña · NUMIQ' })
 const route = useRoute()
 const { fetch: refreshSession } = useUserSession()
 const token = typeof route.query.token === 'string' ? route.query.token : ''
+// Pedida desde una invitación: al guardar, de vuelta a ella para aceptarla
+const back = typeof route.query.r === 'string' && /^\/(?![/\\])/.test(route.query.r) ? route.query.r : '/'
 const password = ref('')
 const repeat = ref('')
 const show = ref(false)
@@ -21,7 +23,7 @@ async function submit() {
     await $fetch('/api/auth/reset', { method: 'POST', body: { token, password: password.value } })
     await refreshSession()
     useToast().success('Contraseña cambiada', 'Ya has entrado con la nueva')
-    await navigateTo('/')
+    await navigateTo(back)
   }
   catch (err) {
     error.value = errorMessage(err)

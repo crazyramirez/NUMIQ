@@ -1,14 +1,16 @@
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 
-const schema = z.object({ email: emailField() })
+const schema = z.object({ email: emailField(), r: z.string().max(300).optional() })
 
 /**
  * Enlace para restablecer la contraseña (válido 1 hora). Siempre responde lo mismo, exista o no la
  * cuenta: así no se puede averiguar qué emails están registrados.
  */
 export default defineEventHandler(async (event) => {
-  const { email } = await readInput(event, schema)
+  const { email, r } = await readInput(event, schema)
+  // Página a la que volver tras elegir la contraseña (una invitación pendiente): solo rutas de la app
+  const back = r && /^\/(?![/\\])\S*$/.test(r) ? `&r=${encodeURIComponent(r)}` : ''
   const ip = getRequestIP(event, { xForwardedFor: true }) ?? 'ip'
   rateLimit(`forgot:${ip}`, 8, 15 * 60_000)
   rateLimit(`forgot:${email}`, 3, 15 * 60_000, 'Ya te hemos enviado un enlace: revisa tu correo (también el spam)')
@@ -20,7 +22,7 @@ export default defineEventHandler(async (event) => {
         subject: 'Restablece tu contraseña · NUMIQ',
         title: `Hola, ${user.name.split(' ')[0]}`,
         lines: ['Has pedido restablecer tu contraseña. El enlace caduca en una hora y solo se puede usar una vez.'],
-        action: { label: 'Elegir una contraseña nueva', url: `${siteUrl(event)}/restablecer?token=${token}` },
+        action: { label: 'Elegir una contraseña nueva', url: `${siteUrl(event)}/restablecer?token=${token}${back}` },
         footer: 'Si no lo has pedido tú, ignora este correo: tu contraseña sigue igual.',
       })
     }

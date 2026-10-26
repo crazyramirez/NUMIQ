@@ -21,6 +21,8 @@ const { data: invite, error } = await useFetch<Invite>(`/api/invites/${token}`, 
 
 const mine = computed(() => !!invite.value && loggedIn.value && user.value?.email?.toLowerCase() === invite.value.email.toLowerCase())
 const here = computed(() => `/invitacion?token=${token}`)
+// Entrar o recuperar la contraseña sin perder la invitación
+const withInvite = computed(() => new URLSearchParams({ r: here.value, email: invite.value?.email ?? '' }).toString())
 const accepting = ref(false)
 const failure = ref<string | null>(null)
 
@@ -81,10 +83,13 @@ const ROLE_HINT: Record<string, string> = {
             <UiButton variant="primary" size="lg" block @click="switchAccount">Entrar con {{ invite.email }}</UiButton>
           </template>
         </template>
-        <template v-else>
-          <UiButton v-if="invite.hasAccount" variant="primary" size="lg" block :to="`/login?r=${encodeURIComponent(here)}&email=${encodeURIComponent(invite.email)}`">Entrar para aceptar</UiButton>
-          <UiButton v-else variant="primary" size="lg" block :to="`/registro?invitacion=${encodeURIComponent(token)}&email=${encodeURIComponent(invite.email)}`">Crear mi cuenta y aceptar</UiButton>
+        <!-- Con cuenta ya creada, el enlace no basta para entrar en ella (quien invita también lo tiene): se entra con la contraseña de siempre -->
+        <template v-else-if="invite.hasAccount">
+          <p class="note"><Icon name="ph:info" aria-hidden="true" /> Este email ya tiene cuenta en NUMIQ. Entra con su contraseña y acepta la invitación.</p>
+          <UiButton variant="primary" size="lg" block :to="`/login?${withInvite}`">Entrar para aceptar</UiButton>
+          <UiButton variant="ghost" size="lg" block :to="`/recuperar?${withInvite}`">No recuerdo la contraseña</UiButton>
         </template>
+        <UiButton v-else variant="primary" size="lg" block :to="`/registro?invitacion=${encodeURIComponent(token)}&email=${encodeURIComponent(invite.email)}`">Crear mi cuenta y aceptar</UiButton>
         <p v-if="failure" class="alert" role="alert"><Icon name="ph:warning-circle-fill" /> {{ failure }}</p>
       </div>
     </template>
@@ -167,5 +172,19 @@ const ROLE_HINT: Record<string, string> = {
 
 .actions .alert {
   margin-top: 0;
+}
+
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--text-sm);
+  color: var(--text-2);
+}
+
+.note .iconify {
+  flex: none;
+  margin-top: 2px;
+  color: var(--brand);
 }
 </style>

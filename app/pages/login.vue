@@ -8,7 +8,9 @@ const form = reactive({ email: typeof route.query.email === 'string' ? route.que
 const showPassword = ref(false)
 const loading = ref(false)
 const error = ref<string | null>(null)
-const target = () => (typeof route.query.r === 'string' && route.query.r.startsWith('/') ? route.query.r : '/')
+const back = typeof route.query.r === 'string' && route.query.r.startsWith('/') ? route.query.r : null
+const target = () => back ?? '/'
+const fromInvite = back?.startsWith('/invitacion') ?? false
 
 async function submit() {
   loading.value = true
@@ -66,8 +68,8 @@ async function withPasskey() {
 
 <template>
   <div class="rise">
-    <h1 class="title">Bienvenido de nuevo</h1>
-    <p class="lead">Entra para ver cómo va tu negocio hoy.</p>
+    <h1 class="title">{{ fromInvite ? 'Entra en tu cuenta' : 'Bienvenido de nuevo' }}</h1>
+    <p class="lead">{{ fromInvite ? 'Con tu contraseña de NUMIQ. Después aceptas la invitación.' : 'Entra para ver cómo va tu negocio hoy.' }}</p>
 
     <form class="form" novalidate @submit.prevent="submit">
       <UiInput v-model="form.email" label="Email" type="email" autocomplete="username webauthn" placeholder="tu@empresa.es" icon="ph:envelope-simple" required />
@@ -79,7 +81,7 @@ async function withPasskey() {
         </template>
       </UiInput>
 
-      <NuxtLink :to="{ path: '/recuperar', query: form.email ? { email: form.email } : undefined }" class="link forgot">¿Olvidaste tu contraseña?</NuxtLink>
+      <NuxtLink :to="{ path: '/recuperar', query: { ...(form.email ? { email: form.email } : {}), ...(back ? { r: back } : {}) } }" class="link forgot">¿Olvidaste tu contraseña?</NuxtLink>
 
       <Transition name="fade">
         <p v-if="error" class="alert" role="alert"><Icon name="ph:warning-circle-fill" /> {{ error }}</p>
