@@ -29,6 +29,12 @@ export async function deleteStoredFile(rel: string | null | undefined) {
   if (rel) await rm(absolute(rel), { force: true }).catch(() => {})
 }
 
+/** Todos los archivos de una empresa (logos, escaneos, adjuntos, firmas…): al eliminarla con la cuenta */
+export async function deleteCompanyFolder(companyId: number) {
+  if (!Number.isInteger(companyId) || companyId <= 0) return
+  await rm(absolute(String(companyId)), { recursive: true, force: true }).catch(() => {})
+}
+
 /** Quita una carpeta de subidas si se ha quedado vacía (si no, la deja como está) */
 export async function removeEmptyFolder(rel: string) {
   await rmdir(absolute(rel)).catch(() => {})

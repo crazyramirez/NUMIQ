@@ -300,7 +300,7 @@ export async function attributeAiKeys() {
 }
 
 /** Quien ve el coste de toda la app (todas las empresas): el titular de la cuenta de la app */
-export const canSeeAppAiCost = (user: { email: string }, role: string) => canReadWholeInbox(user, role)
+export const canSeeAppAiCost = (user: { email: string, emailVerifiedAt?: Date | string | null }, role: string) => canReadWholeInbox(user, role)
 
 /** Filas sin cambio guardado (el BCE no respondió): se convierten con el último conocido */
 export async function fillMissingRates() {

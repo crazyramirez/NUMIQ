@@ -1,6 +1,8 @@
 import { restoreFullClone } from '../../utils/clone'
 
 export default defineEventHandler(async (event) => {
+  // Sustituye la base de datos entera, la de todas las cuentas: solo quien administra el servidor
+  await requireServerAdmin(event)
   const { company, user } = await requireCompany(event, 'admin')
 
   const files = await readMultipartFormData(event)

@@ -1,6 +1,7 @@
 import { buildFullClone } from '../../utils/clone'
 
 export default defineEventHandler(async (event) => {
+  await requireServerAdmin(event)
   const { company, user } = await requireCompany(event, 'admin')
   rateLimit(`clone:${company.id}`, 4, 10 * 60_000, 'Ya has solicitado varias clonaciones: espera unos minutos')
 

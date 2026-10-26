@@ -22,15 +22,15 @@ export function companyAlias(company: Pick<Company, 'id' | 'tradeName' | 'legalN
 
 /**
  * Quién puede ver el buzón entero: el titular de la cuenta de correo (mismo email de usuario)
- * o los usuarios indicados en NUXT_MAIL_INBOX_OWNERS, siempre como dueños o administradores.
+ * o los usuarios indicados en NUXT_MAIL_INBOX_OWNERS, siempre como dueños o administradores y con el
+ * email confirmado (si no, bastaría con registrarse con ese email).
  */
-export function canReadWholeInbox(user: { email: string }, role: string) {
+export function canReadWholeInbox(user: { email: string, emailVerifiedAt?: Date | string | null }, role: string) {
   if (role !== 'owner' && role !== 'admin') return false
-  const c = mailConfig()
+  if (isServerAdmin(user)) return true
   const owners = String(useRuntimeConfig().mail.inboxOwners || process.env.NUXT_MAIL_INBOX_OWNERS || '')
     .split(/[,;\s]+/).map(s => s.trim().toLowerCase()).filter(Boolean)
-  const email = user.email.toLowerCase()
-  return email === c.user.toLowerCase() || owners.includes(email)
+  return !!user.emailVerifiedAt && owners.includes(user.email.toLowerCase())
 }
 
 const IMPORTABLE = /^(application\/(pdf|xml|zip|x-zip-compressed|msword|vnd\.ms-excel|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet)|vnd\.oasis\.opendocument\.(text|spreadsheet)|octet-stream)|image\/(jpeg|png|webp)|text\/(xml|csv|plain))$/

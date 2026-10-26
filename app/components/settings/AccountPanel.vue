@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** Tu cuenta: nombre, email (confirmado o no) y cambio de contraseña */
+/** Tu cuenta: nombre, email (confirmado o no), cambio de contraseña y eliminar la cuenta */
 const toast = useToast()
 const { me, refresh } = useMe()
 const { fetch: refreshSession } = useUserSession()
@@ -97,6 +97,8 @@ async function resend() {
         </div>
       </form>
     </UiCard>
+
+    <SettingsAccountDelete />
   </div>
 </template>
 

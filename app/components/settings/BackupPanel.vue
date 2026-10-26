@@ -12,9 +12,12 @@ const { data, refresh, status } = useFetch<{
   files: number
   filesSize: number
   last: { at: string, size: number } | null
+  /** Clonar y restaurar la base de datos entera: solo quien administra el servidor */
+  canClone: boolean
 }>('/api/backup', { lazy: true, server: false })
 
 const mode = ref<'clone' | 'archive'>('clone')
+const cloning = computed(() => mode.value === 'clone' && !!data.value?.canClone)
 
 const modeOptions = [
   { value: 'clone', label: 'Clonar a nuevo servidor (100% exacto)' },
@@ -32,16 +35,7 @@ async function downloadArchive() {
       query: { pdfs: opts.pdfs ? 1 : 0, originals: opts.originals ? 1 : 0 },
       responseType: 'blob',
     })
-    const disposition = res.headers.get('content-disposition') ?? ''
-    const name = decodeURIComponent(disposition.match(/filename\*=UTF-8''([^;]+)/)?.[1] ?? '') || 'copia-numiq.zip'
-    const url = URL.createObjectURL(res._data!)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = name
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 30_000)
+    saveDownload(res, 'copia-numiq.zip')
     toast.success('Copia descargada', `${fileSize(res._data!.size)} · guárdala en un lugar seguro`)
     refresh()
   }
@@ -65,18 +59,7 @@ async function downloadClone() {
   busyClone.value = true
   try {
     const res = await $fetch.raw<Blob>('/api/backup/clone', { responseType: 'blob' })
-    const disposition = res.headers.get('content-disposition') ?? ''
-    const name = decodeURIComponent(disposition.match(/filename\*=UTF-8''([^;]+)/)?.[1] || disposition.match(/filename="?([^";]+)"?/)?.[1] || '')
-      || `numiq-clon-completo-${new Date().toISOString().slice(0, 10)}.zip`
-
-    const url = URL.createObjectURL(res._data!)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = name
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    setTimeout(() => URL.revokeObjectURL(url), 30_000)
+    saveDownload(res, `numiq-clon-completo-${new Date().toISOString().slice(0, 10)}.zip`)
     toast.success('Clon completo generado', `${fileSize(res._data!.size)} · Base de datos SQL completa y archivos listos para migrar`)
   }
   catch (err) {
@@ -137,14 +120,14 @@ async function executeRestore() {
 <template>
   <div class="stack gap-4">
     <!-- Selector de modo: Clon vs Archivo -->
-    <div class="mode-header">
+    <div v-if="data?.canClone" class="mode-header">
       <UiSegmented v-model="mode" :options="modeOptions" label="Tipo de copia de seguridad" />
     </div>
 
     <!-- ═══════════════════════════════════════════════════════════════════════ -->
     <!-- MODO 1: CLONAR A NUEVO SERVIDOR                                         -->
     <!-- ═══════════════════════════════════════════════════════════════════════ -->
-    <template v-if="mode === 'clone'">
+    <template v-if="cloning">
       <UiCard
         title="Clonar a nuevo servidor"
         icon="ph:hard-drives"

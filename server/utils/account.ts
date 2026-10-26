@@ -69,7 +69,7 @@ export function clearRateLimit(key: string) {
 }
 
 /** Correo de la cuenta (verificación, contraseña, invitaciones) con la imagen de NUMIQ */
-export async function sendAccountEmail(to: string, m: { subject: string, title: string, lines: string[], action: { label: string, url: string }, footer?: string }) {
+export async function sendAccountEmail(to: string, m: { subject: string, title: string, lines: string[], action?: { label: string, url: string }, footer?: string }) {
   if (!mailEnabled()) throw createError({ statusCode: 503, statusMessage: 'El envío de correo no está configurado' })
   // Dominios reservados (RFC 2606): cuentas de prueba, nunca se entregan
   if (isTestAddress(to)) {

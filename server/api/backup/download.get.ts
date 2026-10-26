@@ -1,8 +1,10 @@
 /** Descarga la copia completa de la empresa (ZIP con Excel, JSON, PDF y documentos originales) */
 export default defineEventHandler(async (event) => {
-  const { company, user } = await requireCompany(event, 'admin')
-  rateLimit(`backup:${company.id}`, 6, 10 * 60_000, 'Ya has descargado varias copias: espera unos minutos')
   const q = getQuery(event)
+  // ?company=: otra de tus empresas, no la activa (antes de eliminar la cuenta)
+  const other = Number(q.company)
+  const { company, user } = await requireCompany(event, 'admin', Number.isInteger(other) && other > 0 ? other : undefined)
+  rateLimit(`backup:${company.id}`, 6, 10 * 60_000, 'Ya has descargado varias copias: espera unos minutos')
   const opts = { pdfs: q.pdfs !== '0', originals: q.originals !== '0' }
   const { zip, filename, counts } = await buildBackup(company, opts)
   await audit(event, { companyId: company.id, userId: user.id, action: 'backup.download', data: { ...counts, size: zip.length } })
