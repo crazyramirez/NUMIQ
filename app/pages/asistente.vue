@@ -236,9 +236,9 @@ function onKey(e: KeyboardEvent) {
 }
 
 // ─── Móvil: el chat ocupa justo lo que se ve ───
-// Con el teclado abierto, encima de él; al cerrarlo, la pantalla vuelve a su sitio.
-// Al enfocar, el navegador desplaza la página para enseñar el campo antes de que el chat se encoja,
-// y ese desplazamiento lo dejaba demasiado arriba: con teclado el chat se fija a la zona visible
+// En el móvil el chat va fijo a la pantalla y la página de debajo no se desplaza. Con el teclado abierto
+// ocupa exactamente la zona visible: iOS la mueve para enseñar el campo (offsetTop), a veces sin avisar
+// del último paso, así que mientras el teclado se abre o se cierra se mide en cada fotograma
 const viewH = ref<number | null>(null)
 const viewTop = ref(0)
 const keyboard = ref(false)
@@ -246,32 +246,49 @@ function fitViewport() {
   const vv = window.visualViewport
   if (!vv) return
   const was = keyboard.value
+  // La zona de diseño no encoge con el teclado (iOS, y Android por defecto): es la referencia
+  const full = Math.max(window.innerHeight, document.documentElement.clientHeight)
+  keyboard.value = full - vv.height > 120
+  viewTop.value = Math.max(0, Math.round(vv.offsetTop))
+  // Teclado cerrado: iOS puede dejar la pantalla desplazada (y Android, si se cierra con atrás sin perder el foco)
+  if (was && !keyboard.value) window.scrollTo(0, 0)
   const h = Math.round(vv.height)
-  keyboard.value = window.innerHeight - vv.height > 120
-  viewTop.value = Math.round(vv.offsetTop)
-  // Teclado cerrado sin perder el foco (botón atrás de Android): la página vuelve arriba
-  if (was && !keyboard.value) window.scrollTo({ top: 0 })
   if (h !== viewH.value) {
     viewH.value = h
     // Si estabas al final, la última respuesta sigue a la vista sobre el teclado
     nextTick(() => scrollDown())
   }
 }
-function onBlur() {
-  // Tras cerrar el teclado, iOS deja la página desplazada: se devuelve arriba
-  setTimeout(() => {
+let trackUntil = 0
+function track() {
+  const running = performance.now() < trackUntil
+  trackUntil = performance.now() + 900
+  if (running) return
+  const step = () => {
     fitViewport()
-    if (!keyboard.value) window.scrollTo({ top: 0, behavior: 'smooth' })
-  }, 80)
+    if (performance.now() < trackUntil) requestAnimationFrame(step)
+  }
+  requestAnimationFrame(step)
+}
+// Con el teclado abierto, arrastrar donde no hay nada que desplazar movía la pantalla entera (iOS)
+function lockPan(e: TouchEvent) {
+  if (!keyboard.value || e.touches.length > 1) return
+  for (let el = e.target as HTMLElement | null; el && el !== e.currentTarget; el = el.parentElement) {
+    const s = getComputedStyle(el)
+    if ((/auto|scroll/.test(s.overflowY) && el.scrollHeight > el.clientHeight) || (/auto|scroll/.test(s.overflowX) && el.scrollWidth > el.clientWidth)) return
+  }
+  e.preventDefault()
 }
 onMounted(() => {
-  window.visualViewport?.addEventListener('resize', fitViewport)
-  window.visualViewport?.addEventListener('scroll', fitViewport)
+  window.visualViewport?.addEventListener('resize', track)
+  window.visualViewport?.addEventListener('scroll', track)
+  window.addEventListener('scroll', track, { passive: true })
   fitViewport()
 })
 onBeforeUnmount(() => {
-  window.visualViewport?.removeEventListener('resize', fitViewport)
-  window.visualViewport?.removeEventListener('scroll', fitViewport)
+  window.visualViewport?.removeEventListener('resize', track)
+  window.visualViewport?.removeEventListener('scroll', track)
+  window.removeEventListener('scroll', track)
 })
 
 // Enlaces internos de las respuestas: navegación sin recargar
@@ -343,7 +360,7 @@ function messageCtx(m: Message, e: MouseEvent): CtxSpec | null {
 </script>
 
 <template>
-  <div class="ai-page" :class="{ kb: keyboard }" :style="viewH ? { '--view-h': `${viewH}px`, '--view-top': `${viewTop}px` } : undefined">
+  <div class="ai-page" :class="{ kb: keyboard }" :style="viewH ? { '--view-h': `${viewH}px`, '--view-top': `${viewTop}px` } : undefined" @touchmove="lockPan">
     <!-- Historial (escritorio) -->
     <aside class="side">
       <UiButton variant="secondary" icon="ph:plus" block @click="open(null)">Nueva conversación</UiButton>
@@ -412,7 +429,7 @@ function messageCtx(m: Message, e: MouseEvent): CtxSpec | null {
       <form class="composer" @submit.prevent="send()">
         <div class="box">
           <label for="ask" class="sr-only">Escribe tu pregunta</label>
-          <textarea id="ask" ref="input" v-model="draft" rows="1" :placeholder="ai.configured ? 'Pregunta o pide un cambio…' : 'Asistente no disponible'" :disabled="!ai.configured" @keydown="onKey" @blur="onBlur" />
+          <textarea id="ask" ref="input" v-model="draft" rows="1" :placeholder="ai.configured ? 'Pregunta o pide un cambio…' : 'Asistente no disponible'" :disabled="!ai.configured" @keydown="onKey" @focus="track" @blur="track" />
           <UiButton v-if="busy" variant="secondary" square icon="ph:stop-fill" aria-label="Detener" @click="stop" />
           <UiButton v-else type="submit" variant="ai" square icon="ph:paper-plane-right-fill" aria-label="Enviar" :disabled="!draft.trim() || tooLong || !ai.configured" />
         </div>
@@ -971,19 +988,21 @@ textarea {
   }
 }
 
-/* Con barra inferior (móvil y tablet estrecha): lo visible menos la barra de arriba y la de abajo;
-   con el teclado abierto, fijado a la zona visible (la barra de abajo queda bajo el teclado y la de arriba,
-   desplazada por el navegador, se tapa) */
+/* Con barra inferior (móvil y tablet estrecha): fijo entre la barra de arriba y la de abajo, sin que la página
+   se desplace; con el teclado abierto, justo la zona visible encima de él (las dos barras quedan tapadas) */
 @media (max-width: 767px) {
   .ai-page {
-    height: calc(var(--view-h, 100dvh) - var(--topbar-h) - var(--bnav) - var(--safe-b));
+    position: fixed;
+    top: var(--topbar-h);
+    right: 0;
+    bottom: calc(var(--bnav) + var(--safe-b));
+    left: 0;
+    height: auto;
   }
 
   .ai-page.kb {
-    position: fixed;
     top: var(--view-top, 0px);
-    left: 0;
-    right: 0;
+    bottom: auto;
     z-index: calc(var(--z-sticky) + 1);
     height: var(--view-h, 100dvh);
     background: var(--bg);
