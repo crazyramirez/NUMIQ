@@ -359,7 +359,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
     </section>
 
     <div class="cal-layout">
-      <section class="card cal-card rise" style="--i: 1" :class="{ busy: loading && !!data, fit: view === 'agenda' }">
+      <section class="card cal-card rise" style="--i: 1" :class="{ busy: loading && !!data }">
         <span class="loadbar" aria-hidden="true" />
         <header class="cal-bar">
           <div class="nav">
@@ -521,10 +521,11 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 
 /* ─── Resumen ─── */
 
+/* Mismas columnas y hueco que la cuadrícula de abajo: la última (Agenda) cae justo encima del lateral */
 .kpis {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: var(--s-4);
+  grid-template-columns: repeat(3, minmax(0, 1fr)) 340px;
+  gap: var(--s-5);
   margin-bottom: var(--s-5);
 }
 
@@ -1192,31 +1193,14 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
   flex-basis: 100%;
 }
 
-/* Agenda junto al lateral: mide lo mismo que él y su lista se desplaza por dentro */
-@container calpage (min-width: 1101px) {
-  .cal-card.fit {
-    display: flex;
-    flex-direction: column;
-    align-self: stretch;
-    height: 0;
-    min-height: 100%;
-  }
-
-  .cal-card.fit .cal-view {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-  }
-
-  .cal-card.fit :deep(.ag-date) {
-    top: 8px;
-  }
-}
-
 /* ─── Contenedor estrecho ─── */
 
 @container calpage (max-width: 1100px) {
+  .kpis {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--s-4);
+  }
+
   .cal-layout {
     grid-template-columns: minmax(0, 1fr);
   }
