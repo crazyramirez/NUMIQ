@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { MenuItem } from '~/components/ui/Menu.vue'
 
-const { me, companyName, switchCompany } = useMe()
+const { me, companyName, switchCompany, readOnly } = useMe()
 const { clear } = useUserSession()
 const { mode: colorMode } = useTheme()
 const { collapsed, mini, navOpen } = useSidebar()
@@ -12,9 +12,11 @@ watch(() => route.fullPath, () => (navOpen.value = false))
 const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path === to || route.path.startsWith(`${to}/`))
 // Área de la pantalla actual: Ingresos sigue marcada en Presupuestos, Impuestos en Gestoría…
 const activeArea = computed(() => areaOf(route.path).area?.key ?? null)
-// Contador de Documentos: importaciones leídas por la IA que esperan confirmación
+// Contador de Documentos: importaciones leídas por la IA que esperan confirmación (el gestor no las confirma)
 const inbox = useInboxCount()
 watch(() => route.path, () => inbox.refresh(), { immediate: true })
+// El gestor no importa: Documentos le lleva directo al archivo
+const navTo = (item: NavArea) => (readOnly.value && item.key === 'documentos' ? '/documentos/archivo' : item.to)
 
 const companyItems = computed<MenuItem[]>(() => [
   { heading: 'Tus empresas' },
@@ -104,7 +106,7 @@ const userItems = computed<MenuItem[]>(() => [
           <NuxtLink
             v-for="item in group"
             :key="item.key"
-            :to="item.to"
+            :to="navTo(item)"
             class="item"
             :class="{ active: activeArea === item.key, ai: item.key === 'asistente' }"
             :title="mini ? item.label : undefined"
@@ -112,7 +114,7 @@ const userItems = computed<MenuItem[]>(() => [
           >
             <Icon :name="activeArea === item.key ? `${item.icon}-fill` : item.icon" class="ic" aria-hidden="true" />
             <span v-if="!mini" class="grow truncate">{{ item.label }}</span>
-            <span v-if="item.key === 'documentos' && inbox.count.value" class="badge-n num" :aria-label="`${inbox.count.value} por revisar`">{{ inbox.count.value > 99 ? '99+' : inbox.count.value }}</span>
+            <span v-if="item.key === 'documentos' && inbox.count.value && !readOnly" class="badge-n num" :aria-label="`${inbox.count.value} por revisar`">{{ inbox.count.value > 99 ? '99+' : inbox.count.value }}</span>
             <span v-if="!mini && item.soon" class="soon">Pronto</span>
           </NuxtLink>
         </div>

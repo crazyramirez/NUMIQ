@@ -52,7 +52,8 @@ interface Category { id: number, kind: string, name: string, accountCode: string
 
 const toast = useToast()
 const { confirm } = useConfirm()
-const { verifactu } = useMe()
+// Gestor: ve la programación con los campos bloqueados, sin guardar ni eliminar
+const { verifactu, readOnly } = useMe()
 const formId = useId()
 const today = todayISO()
 
@@ -119,7 +120,7 @@ async function loadLists() {
   catalog.value = items
   company.value = comp
   // Solo administradores consultan el correo: si no, se asume configurado y el servidor avisará
-  mail.value ??= await $fetch<{ configured: boolean }>('/api/mail/status').catch(() => null)
+  if (!readOnly.value) mail.value ??= await $fetch<{ configured: boolean }>('/api/mail/status').catch(() => null)
 }
 
 interface Detail {
@@ -477,7 +478,7 @@ async function onContactCreated(id: number) {
 </script>
 
 <template>
-  <UiModal v-model="open" :title="isEdit ? 'Editar recurrente' : 'Nuevo recurrente'" :subtitle="isEdit ? undefined : 'Programa una vez: NUMIQ lo genera en cada fecha.'" size="xl">
+  <UiModal v-model="open" :title="readOnly ? 'Recurrente' : isEdit ? 'Editar recurrente' : 'Nuevo recurrente'" :subtitle="isEdit ? undefined : 'Programa una vez: NUMIQ lo genera en cada fecha.'" size="xl">
     <div v-if="loading" class="loading">
       <div class="skeleton" style="height: 40px" />
       <div class="sk-grid">
@@ -486,7 +487,8 @@ async function onContactCreated(id: number) {
       <div class="skeleton" style="height: 140px" />
     </div>
 
-    <form v-else :id="formId" class="rec-form" novalidate @submit.prevent="save">
+    <form v-else :id="formId" class="rec-form" :class="{ ro: readOnly }" novalidate @submit.prevent="save">
+      <fieldset class="ro-fs" :disabled="readOnly">
       <div v-if="!isEdit" class="kinds" role="radiogroup" aria-label="Qué se repite">
         <button type="button" role="radio" class="kind" :class="{ on: isInvoice }" :aria-checked="isInvoice" @click="setKind('invoice')">
           <span class="k-ic inc" aria-hidden="true"><Icon name="ph:receipt" /></span>
@@ -660,9 +662,13 @@ async function onContactCreated(id: number) {
 
         </aside>
       </div>
+      </fieldset>
     </form>
 
-    <template #footer>
+    <template v-if="readOnly" #footer>
+      <UiButton @click="open = false">Cerrar</UiButton>
+    </template>
+    <template v-else #footer>
       <UiButton v-if="isEdit" class="del" variant="ghost" icon="ph:trash" :loading="deleting" @click="remove">Eliminar</UiButton>
       <UiButton @click="open = false">Cancelar</UiButton>
       <UiButton type="submit" :form="formId" variant="primary" :loading="saving" :disabled="loading" icon="ph:check-bold">
@@ -689,6 +695,18 @@ async function onContactCreated(id: number) {
 .rec-form {
   display: grid;
   gap: var(--s-5);
+}
+
+/* Solo agrupa los campos para bloquearlos en modo consulta: no altera la maquetación */
+.ro-fs {
+  display: contents;
+}
+
+.ro .add,
+.ro .gross,
+.ro .ln > .btn,
+.ro .tx > .btn {
+  display: none;
 }
 
 /* ─── Tipo ─── */

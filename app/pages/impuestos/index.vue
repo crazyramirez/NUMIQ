@@ -2,7 +2,7 @@
 import type { CtxItem, CtxSpec } from '~/composables/useContextMenu'
 
 useHead({ title: 'Impuestos · NUMIQ' })
-const { verifactu } = useMe()
+const { verifactu, readOnly } = useMe()
 
 const currentYear = new Date().getFullYear()
 // Año en la URL (?anio=2025): al volver desde un modelo o un enlace se sigue en el mismo ejercicio. Sin él,
@@ -129,11 +129,12 @@ async function unfile(id: number, model: string) {
 // ─── Clic derecho en un modelo: presentar, justificante, desglose, copiar el importe ───
 
 function filingItems(model: string, filing: { id: number, receiptFileId?: number | null, csv?: string | null } | null, presentFn: () => void): CtxItem[] {
-  if (!filing) return [{ label: 'Presentar en la AEAT…', icon: 'ph:seal-check', onClick: presentFn }]
+  // El gestor consulta las casillas, pero no registra ni deshace presentaciones
+  if (!filing) return [readOnly.value ? { label: 'Ver casillas', icon: 'ph:list-numbers', onClick: presentFn } : { label: 'Presentar en la AEAT…', icon: 'ph:seal-check', onClick: presentFn }]
   return [
     ...(filing.receiptFileId ? [{ label: 'Ver justificante', icon: 'ph:file-pdf', onClick: () => viewReceipt(filing.receiptFileId!) }] : []),
     ...(filing.csv ? [{ label: 'Copiar CSV', sub: filing.csv, icon: 'ph:copy', onClick: () => copyText(filing.csv, 'CSV') }] : []),
-    { label: 'Deshacer presentación', icon: 'ph:arrow-counter-clockwise', onClick: () => unfile(filing.id, model) },
+    ...(readOnly.value ? [] : [{ label: 'Deshacer presentación', icon: 'ph:arrow-counter-clockwise', onClick: () => unfile(filing.id, model) }]),
   ]
 }
 
@@ -248,7 +249,7 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
         <p class="sub">Tus modelos trimestrales calculados con lo que registras. Sin sorpresas al llegar el plazo.</p>
       </div>
       <div class="page-actions">
-        <UiButton variant="primary" icon="ph:flag-checkered" to="/impuestos/cerrar">Cerrar trimestre</UiButton>
+        <UiButton :variant="readOnly ? 'secondary' : 'primary'" icon="ph:flag-checkered" to="/impuestos/cerrar">{{ readOnly ? 'Estado del trimestre' : 'Cerrar trimestre' }}</UiButton>
         <div class="year" role="group" aria-label="Año fiscal">
           <UiButton variant="ghost" size="sm" square icon="ph:caret-left" aria-label="Año anterior" @click="year--" />
           <span class="year-l num" aria-live="polite">{{ year }}</span>
@@ -342,9 +343,9 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
                       <template v-if="filingOf(q, r.model)">
                         <p class="filed"><Icon name="ph:seal-check-fill" aria-hidden="true" /> Presentado{{ filingOf(q, r.model)!.csv ? ` · CSV ${filingOf(q, r.model)!.csv}` : '' }}</p>
                         <button v-if="filingOf(q, r.model)!.receiptFileId" type="button" class="link small" @click="viewReceipt(filingOf(q, r.model)!.receiptFileId!)">Justificante</button>
-                        <button type="button" class="link small" @click="unfile(filingOf(q, r.model)!.id, r.model)">Deshacer</button>
+                        <button v-if="!readOnly" type="button" class="link small" @click="unfile(filingOf(q, r.model)!.id, r.model)">Deshacer</button>
                       </template>
-                      <UiButton v-else size="sm" :variant="q.closed ? 'primary' : 'secondary'" icon="ph:seal-check" @click="present(q.quarter, r.model)">Presentar en la AEAT</UiButton>
+                      <UiButton v-else size="sm" :variant="q.closed ? 'primary' : 'secondary'" icon="ph:seal-check" @click="present(q.quarter, r.model)">{{ readOnly ? 'Ver casillas' : 'Presentar en la AEAT' }}</UiButton>
                     </div>
                   </div>
                 </li>
@@ -363,13 +364,13 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
                 <h2 class="q-title">Impuesto sobre Sociedades {{ corp.year }}</h2>
                 <p class="q-range">{{ corpRates }}</p>
               </div>
-              <UiButton size="sm" variant="ghost" icon="ph:sliders-horizontal" @click="corpOpen = true">Ajustes</UiButton>
+              <UiButton v-if="!readOnly" size="sm" variant="ghost" icon="ph:sliders-horizontal" @click="corpOpen = true">Ajustes</UiButton>
             </header>
 
             <div v-if="needsQuota" class="corp-alert">
               <Icon name="ph:info-fill" aria-hidden="true" />
               <p class="grow">Para calcular los pagos fraccionados indica la cuota de tu último Impuesto sobre Sociedades.</p>
-              <UiButton size="sm" variant="secondary" @click="corpOpen = true">Indicarla</UiButton>
+              <UiButton v-if="!readOnly" size="sm" variant="secondary" @click="corpOpen = true">Indicarla</UiButton>
             </div>
 
             <ul class="models">
@@ -408,9 +409,9 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
                     <template v-if="corpFiling('202', p.period)">
                       <p class="filed"><Icon name="ph:seal-check-fill" aria-hidden="true" /> Presentado{{ corpFiling('202', p.period)!.csv ? ` · CSV ${corpFiling('202', p.period)!.csv}` : '' }}</p>
                       <button v-if="corpFiling('202', p.period)!.receiptFileId" type="button" class="link small" @click="viewReceipt(corpFiling('202', p.period)!.receiptFileId!)">Justificante</button>
-                      <button type="button" class="link small" @click="unfile(corpFiling('202', p.period)!.id, '202')">Deshacer</button>
+                      <button v-if="!readOnly" type="button" class="link small" @click="unfile(corpFiling('202', p.period)!.id, '202')">Deshacer</button>
                     </template>
-                    <UiButton v-else size="sm" :variant="p.started ? 'primary' : 'secondary'" icon="ph:seal-check" @click="presentCorp('202', p.n)">Presentar en la AEAT</UiButton>
+                    <UiButton v-else size="sm" :variant="p.started ? 'primary' : 'secondary'" icon="ph:seal-check" @click="presentCorp('202', p.n)">{{ readOnly ? 'Ver casillas' : 'Presentar en la AEAT' }}</UiButton>
                   </div>
                 </div>
               </li>
@@ -443,9 +444,9 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
                   <div class="d-act">
                     <template v-if="corpFiling('200', '0A')">
                       <p class="filed"><Icon name="ph:seal-check-fill" aria-hidden="true" /> Presentado{{ corpFiling('200', '0A')!.csv ? ` · CSV ${corpFiling('200', '0A')!.csv}` : '' }}</p>
-                      <button type="button" class="link small" @click="unfile(corpFiling('200', '0A')!.id, '200')">Deshacer</button>
+                      <button v-if="!readOnly" type="button" class="link small" @click="unfile(corpFiling('200', '0A')!.id, '200')">Deshacer</button>
                     </template>
-                    <UiButton v-else size="sm" :variant="corp.partial ? 'secondary' : 'primary'" icon="ph:seal-check" @click="presentCorp('200', null)">{{ corp.partial ? 'Ver borrador' : 'Presentar en la AEAT' }}</UiButton>
+                    <UiButton v-else size="sm" :variant="corp.partial ? 'secondary' : 'primary'" icon="ph:seal-check" @click="presentCorp('200', null)">{{ corp.partial ? 'Ver borrador' : readOnly ? 'Ver casillas' : 'Presentar en la AEAT' }}</UiButton>
                   </div>
                 </div>
               </li>
@@ -485,13 +486,13 @@ const quarterMonths = ['ene – mar', 'abr – jun', 'jul – sep', 'oct – dic
                   <span class="an-t">{{ a.label }}</span>
                   <span class="an-s">{{ annualFiling(a.model) ? `Presentado${annualFiling(a.model)!.csv ? ` · CSV ${annualFiling(a.model)!.csv}` : ''}` : a.hint }}</span>
                 </span>
-                <UiButton v-if="annualFiling(a.model)" size="sm" variant="ghost" icon="ph:arrow-counter-clockwise" :aria-label="`Deshacer ${a.model}`" @click="unfile(annualFiling(a.model)!.id, a.model)" />
-                <UiButton v-else size="sm" variant="secondary" @click="presentAnnual(a.model)">Preparar</UiButton>
+                <UiButton v-if="annualFiling(a.model) && !readOnly" size="sm" variant="ghost" icon="ph:arrow-counter-clockwise" :aria-label="`Deshacer ${a.model}`" @click="unfile(annualFiling(a.model)!.id, a.model)" />
+                <UiButton v-else-if="!annualFiling(a.model)" size="sm" variant="secondary" @click="presentAnnual(a.model)">{{ readOnly ? 'Ver' : 'Preparar' }}</UiButton>
               </li>
             </ul>
           </UiCard>
 
-          <div class="callout rise" style="--i: 8">
+          <div v-if="!readOnly" class="callout rise" style="--i: 8">
             <div class="callout-ic" aria-hidden="true"><Icon name="ph:seal-check-fill" /></div>
             <div>
               <p class="callout-title">Presentación guiada a la AEAT</p>

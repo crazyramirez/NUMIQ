@@ -44,7 +44,8 @@ const viewer = useFileViewer()
 // PDF del documento en el visor de la app (el nombre llega en la cabecera de la respuesta)
 const viewPdf = () => viewer.open({ url: pdfUrl.value, downloadUrl: `${pdfUrl.value}?download=1`, mime: 'application/pdf' })
 const { confirm } = useConfirm()
-const { verifactu } = useMe()
+// Gestor: modo consulta (ve el documento, su PDF y sus datos; no emite, cobra, envía, vincula ni borra)
+const { verifactu, readOnly } = useMe()
 
 const [{ data: doc, refresh, error }, { data: company }, { data: design }] = await Promise.all([
   useFetch<Doc>(`/api/sales/${props.id}`),
@@ -94,7 +95,7 @@ const remaining = computed(() => round2((doc.value?.total ?? 0) - (doc.value?.pa
 const paidPct = computed(() => (doc.value?.total ? Math.min(100, (doc.value.paidTotal / doc.value.total) * 100) : 0))
 const alreadySent = computed(() => doc.value?.status === 'sent' || !!doc.value?.emails.some(m => m.kind === 'document' && m.status === 'sent'))
 const canEdit = computed(() => {
-  if (!doc.value) return false
+  if (!doc.value || readOnly.value) return false
   if (doc.value.canEdit !== undefined) return doc.value.canEdit
   if (doc.value.status === 'draft') return true
   if (isQuote.value) return !['invoiced'].includes(doc.value.status)
@@ -264,7 +265,7 @@ async function copyHash() {
 
 // ─── Presupuesto ↔ factura ───
 const linkOpen = ref(false)
-const canLink = computed(() => !!doc.value && doc.value.status !== 'draft' && (isQuote.value || doc.value.kind === 'invoice'))
+const canLink = computed(() => !!doc.value && !readOnly.value && doc.value.status !== 'draft' && (isQuote.value || doc.value.kind === 'invoice'))
 const linkedDocs = computed(() => (isQuote.value ? doc.value?.invoices ?? [] : doc.value?.source ? [doc.value.source] : []))
 const suggestion = ref<LinkCandidate | null>(null)
 const DISMISSED_KEY = 'numiq-link-dismissed'
@@ -338,10 +339,18 @@ async function linksChanged() {
 const moreItems = computed<MenuItem[]>(() => {
   const d = doc.value
   if (!d) return []
-  const items: MenuItem[] = [
-    { label: 'Imprimir', icon: 'ph:printer', onClick: print },
-    { label: d.signature ? 'Quitar la firma' : 'Firmar el documento', icon: 'ph:signature', onClick: toggleSign },
-  ]
+  const items: MenuItem[] = [{ label: 'Imprimir', icon: 'ph:printer', onClick: print }]
+  if (readOnly.value) {
+    if (!isQuote.value && d.status !== 'draft' && publicUrl.value) {
+      items.push(
+        { label: 'Copiar enlace para el cliente', icon: 'ph:link-simple', onClick: copyLink },
+        { label: 'Ver como el cliente', icon: 'ph:eye', onClick: () => window.open(publicUrl.value!, '_blank', 'noopener') },
+      )
+    }
+    if (d.contactId) items.push({ label: 'Ver ficha del cliente', icon: 'ph:user', to: `/clientes/${d.contactId}` })
+    return items
+  }
+  items.push({ label: d.signature ? 'Quitar la firma' : 'Firmar el documento', icon: 'ph:signature', onClick: toggleSign })
   if (canLink.value) {
     items.push({
       label: isQuote.value ? 'Vincular a una factura…' : d.source ? 'Cambiar presupuesto vinculado…' : 'Vincular a un presupuesto…',
@@ -385,11 +394,12 @@ function paperCtx(): CtxSpec | null {
   if (!d) return null
   const party = d.customer ?? d.contact
   const main: CtxItem[] = []
-  if (d.status === 'draft') main.push({ label: 'Emitir', icon: 'ph:seal-check', onClick: issue })
+  const edit = !readOnly.value
+  if (edit && d.status === 'draft') main.push({ label: 'Emitir', icon: 'ph:seal-check', onClick: issue })
   if (canEdit.value) main.push({ label: 'Editar', icon: 'ph:pencil-simple', to: `${base.value}/${d.id}/editar` })
-  if (d.status !== 'draft') main.push({ label: alreadySent.value ? 'Reenviar por email…' : 'Enviar por email…', icon: alreadySent.value ? 'ph:arrow-clockwise' : 'ph:paper-plane-tilt', onClick: () => openSend() })
-  if (!isQuote.value && isOpen.value) main.push({ label: 'Registrar cobro…', icon: 'ph:hand-coins', sub: `Pendiente ${eur(remaining.value)}`, onClick: () => openPayment() })
-  if (isQuote.value && !['invoiced', 'rejected', 'draft'].includes(d.status)) main.push({ label: 'Convertir en factura', icon: 'ph:receipt', onClick: convert })
+  if (edit && d.status !== 'draft') main.push({ label: alreadySent.value ? 'Reenviar por email…' : 'Enviar por email…', icon: alreadySent.value ? 'ph:arrow-clockwise' : 'ph:paper-plane-tilt', onClick: () => openSend() })
+  if (edit && !isQuote.value && isOpen.value) main.push({ label: 'Registrar cobro…', icon: 'ph:hand-coins', sub: `Pendiente ${eur(remaining.value)}`, onClick: () => openPayment() })
+  if (edit && isQuote.value && !['invoiced', 'rejected', 'draft'].includes(d.status)) main.push({ label: 'Convertir en factura', icon: 'ph:receipt', onClick: convert })
   main.push(
     { label: 'Ver PDF', icon: 'ph:file-pdf', onClick: viewPdf },
     { label: 'Descargar PDF', icon: 'ph:download-simple', onClick: () => window.open(`${pdfUrl.value}?download=1`, '_blank') },
@@ -462,7 +472,7 @@ function paperCtx(): CtxSpec | null {
           <UiButton variant="ghost" size="sm" square icon="ph:eye" aria-label="Ver PDF" :data-tip="doc.status === 'draft' ? 'Ver PDF (borrador)' : 'Ver PDF'" @click="viewPdf" />
           <UiButton variant="ghost" size="sm" square icon="ph:download-simple" :to="`${pdfUrl}?download=1`" external aria-label="Descargar PDF" data-tip="Descargar PDF" />
           <UiButton
-            v-if="doc.status !== 'draft'"
+            v-if="doc.status !== 'draft' && !readOnly"
             variant="ghost"
             size="sm"
             square
@@ -478,10 +488,12 @@ function paperCtx(): CtxSpec | null {
             </template>
           </UiMenu>
         </div>
-        <UiButton v-if="doc.status === 'draft'" variant="primary" icon="ph:seal-check" :loading="busy === 'issue'" @click="issue">Emitir</UiButton>
-        <UiButton v-else-if="!isQuote && isOpen" variant="primary" icon="ph:hand-coins" @click="openPayment()">Registrar cobro</UiButton>
-        <UiButton v-else-if="!isQuote && doc.status === 'paid'" class="act-wide" icon="ph:arrow-u-up-left" :loading="busy === 'pending'" @click="markPending">Marcar como pendiente</UiButton>
-        <UiButton v-else-if="isQuote && !['invoiced', 'rejected'].includes(doc.status)" variant="primary" icon="ph:receipt" :loading="busy === 'convert'" @click="convert">Convertir en factura</UiButton>
+        <template v-if="!readOnly">
+          <UiButton v-if="doc.status === 'draft'" variant="primary" icon="ph:seal-check" :loading="busy === 'issue'" @click="issue">Emitir</UiButton>
+          <UiButton v-else-if="!isQuote && isOpen" variant="primary" icon="ph:hand-coins" @click="openPayment()">Registrar cobro</UiButton>
+          <UiButton v-else-if="!isQuote && doc.status === 'paid'" class="act-wide" icon="ph:arrow-u-up-left" :loading="busy === 'pending'" @click="markPending">Marcar como pendiente</UiButton>
+          <UiButton v-else-if="isQuote && !['invoiced', 'rejected'].includes(doc.status)" variant="primary" icon="ph:receipt" :loading="busy === 'convert'" @click="convert">Convertir en factura</UiButton>
+        </template>
       </div>
     </div>
 
@@ -579,13 +591,13 @@ function paperCtx(): CtxSpec | null {
           </div>
           <div v-if="doc.fileId" class="imp-acts">
             <button type="button" class="link small imp-link" @click="viewer.open(storedFile({ id: doc.fileId }))"><Icon name="ph:file-text" aria-hidden="true" /> Ver el documento original</button>
-            <button v-if="doc.original && signableMime(doc.original.mime)" type="button" class="link small imp-link" @click="viewer.open(storedFile(doc.original), 0, { sign: true })"><Icon name="ph:signature" aria-hidden="true" /> Firmar</button>
+            <button v-if="!readOnly && doc.original && signableMime(doc.original.mime)" type="button" class="link small imp-link" @click="viewer.open(storedFile(doc.original), 0, { sign: true })"><Icon name="ph:signature" aria-hidden="true" /> Firmar</button>
           </div>
         </section>
 
-        <SalesSignControl v-model="signing" :is-quote="isQuote" :saving="savingSign" settings-link />
+        <SalesSignControl v-if="!readOnly" v-model="signing" :is-quote="isQuote" :saving="savingSign" settings-link />
 
-        <SalesAttachments :doc-id="doc.id" :items="doc.attachments" @changed="refresh" />
+        <SalesAttachments :doc-id="doc.id" :items="doc.attachments" :can-edit="!readOnly" @changed="refresh" />
 
         <section v-if="doc.emails.length" class="card mails">
           <h2 class="section-title">Envíos</h2>
@@ -609,7 +621,7 @@ function paperCtx(): CtxSpec | null {
                 <p class="num strong">{{ eur(p.amount) }}</p>
                 <p class="muted small">{{ fdate(p.date) }} · {{ PAYMENT_METHODS[p.method] }}</p>
               </div>
-              <template v-if="!isQuote && ['issued', 'sent', 'partial', 'paid'].includes(doc.status)">
+              <template v-if="!readOnly && !isQuote && ['issued', 'sent', 'partial', 'paid'].includes(doc.status)">
                 <UiButton variant="ghost" size="sm" square icon="ph:pencil-simple" :aria-label="`Editar cobro de ${eur(p.amount)}`" :disabled="!!busy" @click="openPayment(p)" />
                 <UiButton variant="ghost" size="sm" square icon="ph:trash" :aria-label="`Eliminar cobro de ${eur(p.amount)}`" :loading="busy === `payment-${p.id}`" :disabled="!!busy" @click="removePayment(p)" />
               </template>
@@ -628,9 +640,9 @@ function paperCtx(): CtxSpec | null {
       </aside>
     </div>
 
-    <SalesPaymentModal v-if="!isQuote && (isOpen || doc.status === 'paid')" v-model="paymentOpen" :document-id="doc.id" :remaining="round2(remaining + (editingPayment?.amount ?? 0))" :number="doc.number" :payment="editingPayment" @saved="refresh" />
+    <SalesPaymentModal v-if="!readOnly && !isQuote && (isOpen || doc.status === 'paid')" v-model="paymentOpen" :document-id="doc.id" :remaining="round2(remaining + (editingPayment?.amount ?? 0))" :number="doc.number" :payment="editingPayment" @saved="refresh" />
     <SalesLinkModal v-if="canLink" v-model="linkOpen" :doc-id="doc.id" :is-quote="isQuote" :number="doc.number" @changed="linksChanged" />
-    <SalesSendModal v-if="doc.status !== 'draft'" v-model="sendOpen" :doc="doc" :company-name="company.tradeName || company.legalName" :reminder="sendReminder" @sent="refresh" />
+    <SalesSendModal v-if="!readOnly && doc.status !== 'draft'" v-model="sendOpen" :doc="doc" :company-name="company.tradeName || company.legalName" :reminder="sendReminder" @sent="refresh" />
   </div>
 </template>
 

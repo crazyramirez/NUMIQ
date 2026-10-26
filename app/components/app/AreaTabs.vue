@@ -4,9 +4,13 @@
  * Solo en las pantallas de lista de un área con varias: en fichas y editores no estorban.
  */
 const route = useRoute()
+const { readOnly } = useMe()
+// El gestor no importa nada: la pestaña Importar sobra
+const HIDDEN_READ_ONLY = new Set(['/documentos'])
 const current = computed(() => {
   const { area, tab } = areaOf(route.path)
-  return area?.tabs && tab && route.path === tab.to ? { area, tab } : null
+  if (!area?.tabs || !tab || route.path !== tab.to) return null
+  return { area, tab, tabs: readOnly.value ? area.tabs.filter(t => !HIDDEN_READ_ONLY.has(t.to)) : area.tabs }
 })
 </script>
 
@@ -14,7 +18,7 @@ const current = computed(() => {
   <div v-if="current" class="area-wrap">
     <nav class="area-tabs" :aria-label="current.area.label">
       <NuxtLink
-        v-for="t in current.area.tabs"
+        v-for="t in current.tabs"
         :key="t.to"
         :to="t.to"
         class="at"

@@ -63,6 +63,8 @@ interface ContactFull {
 const toast = useToast()
 const { confirm } = useConfirm()
 const isClient = computed(() => props.role === 'client')
+// Gestor: consulta la ficha y sus documentos, sin editar, crear, archivar ni borrar
+const { readOnly } = useMe()
 const listPath = computed(() => (isClient.value ? '/clientes' : '/proveedores'))
 const { href: listHref, back, label: backText } = useBackTo(listPath)
 
@@ -179,11 +181,15 @@ async function archive() {
 
 const moreItems = computed<MenuItem[]>(() => [
   ...(c.value?.email ? [{ label: 'Enviar email', icon: 'ph:envelope-simple', onClick: () => window.open(`mailto:${c.value!.email}`) }] : []),
-  ...(c.value?.isSupplier ? [{ label: 'Registrar gasto', icon: 'ph:wallet', to: `/gastos?nuevo=1&proveedor=${props.id}` }] : []),
-  ...(c.value?.isClient ? [{ label: 'Nuevo presupuesto', icon: 'ph:file-text', to: `/presupuestos/nuevo?cliente=${props.id}` }] : []),
-  { divider: true },
-  { label: 'Archivar', icon: 'ph:archive', onClick: archive },
-  { label: isClient.value ? 'Eliminar cliente' : 'Eliminar proveedor', icon: 'ph:trash', danger: true, onClick: remove },
+  ...(readOnly.value
+    ? []
+    : [
+        ...(c.value?.isSupplier ? [{ label: 'Registrar gasto', icon: 'ph:wallet', to: `/gastos?nuevo=1&proveedor=${props.id}` }] : []),
+        ...(c.value?.isClient ? [{ label: 'Nuevo presupuesto', icon: 'ph:file-text', to: `/presupuestos/nuevo?cliente=${props.id}` }] : []),
+        { divider: true },
+        { label: 'Archivar', icon: 'ph:archive', onClick: archive },
+        { label: isClient.value ? 'Eliminar cliente' : 'Eliminar proveedor', icon: 'ph:trash', danger: true, onClick: remove },
+      ]),
 ])
 
 const address = computed(() => {
@@ -279,7 +285,7 @@ function entryCtx(e: Entry): CtxSpec {
   const issued = !isExpense && e.state !== 'draft'
   const items: CtxItem[] = [
     { label: 'Abrir', icon: 'ph:eye', keys: ['↵'], to: e.path },
-    ...(!isExpense ? [{ label: 'Editar', icon: 'ph:pencil-simple', to: `${e.path}/editar` }] : []),
+    ...(!isExpense && !readOnly.value ? [{ label: 'Editar', icon: 'ph:pencil-simple', to: `${e.path}/editar` }] : []),
     ...(issued
       ? [
           { divider: true },
@@ -287,7 +293,7 @@ function entryCtx(e: Entry): CtxSpec {
           { label: 'Descargar PDF', icon: 'ph:download-simple', onClick: () => window.open(`${pdf}?download=1`, '_blank') },
         ]
       : []),
-    ...(!isExpense && !isQ && issued ? [{ label: 'Crear rectificativa', icon: 'ph:arrow-counter-clockwise', to: `/facturas/nueva?rectifica=${e.id}` }] : []),
+    ...(!isExpense && !isQ && issued && !readOnly.value ? [{ label: 'Crear rectificativa', icon: 'ph:arrow-counter-clockwise', to: `/facturas/nueva?rectifica=${e.id}` }] : []),
     { divider: true },
     {
       label: 'Copiar',
@@ -323,8 +329,7 @@ function dataCtx(): CtxSpec | null {
     subtitle: x.nif ?? undefined,
     icon: 'ph:identification-card',
     items: [
-      { label: 'Editar datos', icon: 'ph:pencil-simple', onClick: () => (editing.value = true) },
-      { divider: true },
+      ...(readOnly.value ? [] : [{ label: 'Editar datos', icon: 'ph:pencil-simple', onClick: () => (editing.value = true) }, { divider: true }]),
       ...(x.email ? [{ label: 'Escribir un email', sub: x.email, icon: 'ph:envelope-simple', onClick: () => (window.location.href = `mailto:${x.email}`) }] : []),
       ...(x.phone ? [{ label: 'Llamar', sub: x.phone, icon: 'ph:phone', onClick: () => (window.location.href = `tel:${x.phone!.replace(/\s/g, '')}`) }] : []),
       ...(line ? [{ label: 'Abrir en el mapa', icon: 'ph:map-trifold', onClick: () => window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(line)}`, '_blank', 'noopener') }] : []),
@@ -438,10 +443,12 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
           </div>
         </div>
         <div class="page-actions">
-          <UiButton icon="ph:pencil-simple" @click="editing = true">Editar</UiButton>
-          <UiButton v-if="isClient" variant="primary" icon="ph:receipt" :to="`/facturas/nueva?cliente=${c.id}`">Nueva factura</UiButton>
-          <UiButton v-else variant="primary" icon="ph:wallet" :to="`/gastos?nuevo=1&proveedor=${c.id}`">Registrar gasto</UiButton>
-          <UiMenu :items="moreItems" :width="210">
+          <template v-if="!readOnly">
+            <UiButton icon="ph:pencil-simple" @click="editing = true">Editar</UiButton>
+            <UiButton v-if="isClient" variant="primary" icon="ph:receipt" :to="`/facturas/nueva?cliente=${c.id}`">Nueva factura</UiButton>
+            <UiButton v-else variant="primary" icon="ph:wallet" :to="`/gastos?nuevo=1&proveedor=${c.id}`">Registrar gasto</UiButton>
+          </template>
+          <UiMenu v-if="moreItems.length" :items="moreItems" :width="210">
             <template #default="{ toggle }">
               <UiButton square icon="ph:dots-three-bold" aria-label="Más acciones" @click="toggle" />
             </template>
@@ -499,7 +506,7 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
           </template>
 
           <UiEmpty v-if="!entries.length" compact :icon="emptyOf.icon" :title="emptyOf.title" :text="emptyOf.text">
-            <UiButton variant="soft" icon="ph:plus-bold" :to="emptyOf.to">{{ emptyOf.cta }}</UiButton>
+            <UiButton v-if="!readOnly" variant="soft" icon="ph:plus-bold" :to="emptyOf.to">{{ emptyOf.cta }}</UiButton>
           </UiEmpty>
 
           <template v-else>
@@ -609,7 +616,7 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
         </UiCard>
 
         <UiCard v-ctx="dataCtx" title="Datos" icon="ph:identification-card" class="rise data" style="--i: 3">
-          <template #actions>
+          <template v-if="!readOnly" #actions>
             <UiButton size="sm" variant="ghost" icon="ph:pencil-simple" @click="editing = true">Editar</UiButton>
           </template>
           <ContactMap v-if="address" :contact-id="c.id" :address="address" />
@@ -661,7 +668,7 @@ const nifTypeLabel: Record<string, string> = { nif: 'NIF', vat_eu: 'NIF-IVA', pa
         </UiCard>
       </div>
 
-      <ContactModal v-model="editing" :role="role" :contact-id="c.id" @saved="refresh()" />
+      <ContactModal v-if="!readOnly" v-model="editing" :role="role" :contact-id="c.id" @saved="refresh()" />
     </template>
   </div>
 </template>

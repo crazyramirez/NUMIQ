@@ -9,6 +9,8 @@ import type { Tone } from '~/utils/labels'
 const props = defineProps<{ action: AiActionView }>()
 const emit = defineEmits<{ update: [action: AiActionView] }>()
 const toast = useToast()
+// El gestor solo consulta: no confirma ni deshace cambios en la empresa
+const { readOnly } = useMe()
 
 const VISIBLE = 5
 const busy = ref<'confirm' | 'cancel' | 'undo' | null>(null)
@@ -148,6 +150,7 @@ async function call(op: 'confirm' | 'cancel' | 'undo') {
         <div class="ac-btns">
           <UiButton variant="ghost" size="sm" :disabled="!!busy" :loading="busy === 'cancel'" @click="call('cancel')">Cancelar</UiButton>
           <UiButton
+            v-if="!readOnly"
             :variant="a.risk === 'high' ? 'danger' : 'primary'"
             size="sm"
             :icon="a.risk === 'high' ? 'ph:trash' : isEmail ? 'ph:paper-plane-tilt' : 'ph:check-bold'"
@@ -168,7 +171,7 @@ async function call(op: 'confirm' | 'cancel' | 'undo') {
         </p>
         <div class="ac-btns">
           <UiButton v-if="a.result?.url && a.status === 'done'" variant="ghost" size="sm" :to="a.result.url" icon-right="ph:arrow-right">Ver</UiButton>
-          <UiButton v-if="a.canUndo" variant="secondary" size="sm" icon="ph:arrow-counter-clockwise" :loading="busy === 'undo'" :disabled="!!busy" @click="call('undo')">Deshacer</UiButton>
+          <UiButton v-if="a.canUndo && !readOnly" variant="secondary" size="sm" icon="ph:arrow-counter-clockwise" :loading="busy === 'undo'" :disabled="!!busy" @click="call('undo')">Deshacer</UiButton>
         </div>
       </template>
     </footer>

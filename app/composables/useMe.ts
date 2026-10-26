@@ -33,8 +33,12 @@ export function useMe() {
   }
 
   const companyName = computed(() => me.value?.company?.tradeName || me.value?.company?.legalName || '')
+  /** Gestor: modo consulta. Ve todo, pero no crea, cambia ni borra nada de la empresa (el servidor también lo impide) */
+  const readOnly = computed(() => me.value?.company?.role === 'advisor')
+  /** Datos y ajustes de la empresa: solo el titular y los administradores */
+  const canManage = computed(() => me.value?.company?.role === 'owner' || me.value?.company?.role === 'admin')
   /** VeriFactu desactivado de la app por ahora (no exigible como mínimo hasta 2028) */
   const verifactu = computed(() => false)
 
-  return { me, refresh, switchCompany, companyName, verifactu }
+  return { me, refresh, switchCompany, companyName, readOnly, canManage, verifactu }
 }

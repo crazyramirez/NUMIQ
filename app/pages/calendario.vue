@@ -13,8 +13,9 @@ interface CalendarResponse { from: string, to: string, today: string, items: Cal
 
 const route = useRoute()
 const toast = useToast()
-const { me } = useMe()
-const canEdit = computed(() => me.value?.company?.role !== 'advisor')
+const { readOnly } = useMe()
+// Los eventos son de la empresa: el gestor los ve, pero no los crea ni cambia
+const canEdit = computed(() => !readOnly.value)
 const today = ref(todayISO())
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/

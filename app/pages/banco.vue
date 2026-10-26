@@ -52,8 +52,7 @@ interface BankData {
 
 const toast = useToast()
 const { confirm } = useConfirm()
-const { me } = useMe()
-const readOnly = computed(() => me.value?.company?.role === 'advisor')
+const { readOnly } = useMe()
 
 // Filtros, búsqueda y página en la URL: al volver atrás desde un documento conciliado, todo sigue igual
 const status = useQueryState<'pending' | 'matched' | 'ignored' | 'all'>('estado', 'all', { allowed: ['pending', 'matched', 'ignored', 'all'] })

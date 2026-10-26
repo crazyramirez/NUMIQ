@@ -23,8 +23,7 @@ const route = useRoute()
 const router = useRouter()
 const { href: taxesHref, back, label: backText } = useBackTo('/impuestos')
 const toast = useToast()
-const { me } = useMe()
-const readOnly = computed(() => me.value?.company?.role === 'advisor')
+const { readOnly } = useMe()
 
 const sel = ref<{ year?: number, quarter?: number }>({
   year: Number(route.query.anio) || undefined,
@@ -177,14 +176,18 @@ const outcome = (m: Model) => (m.result > 0 ? 'a ingresar' : m.result < 0 ? (m.m
                 <span v-if="m.filing?.csv" class="st-csv mono">CSV {{ m.filing.csv }}</span>
               </p>
             </div>
-            <div v-if="!readOnly && !m.nothing" class="st-acts">
+            <!-- El gestor ve las casillas, pero no registra presentaciones ni pagos -->
+            <div v-if="readOnly && !m.nothing" class="st-acts">
+              <UiButton size="sm" variant="ghost" icon="ph:list-numbers" @click="present(m)">Ver casillas</UiButton>
+            </div>
+            <div v-else-if="!m.nothing" class="st-acts">
               <UiButton v-if="!m.filing || m.filing.status === 'draft' || m.filing.status === 'ready'" size="sm" variant="primary" icon="ph:paper-plane-tilt" @click="present(m)">Presentar</UiButton>
               <UiButton v-else-if="m.filing.status === 'filed' && m.result > 0" size="sm" variant="secondary" icon="ph:hand-coins" :loading="busy === m.model" @click="setPaid(m, true)">Marcar pagado</UiButton>
               <UiButton v-else-if="m.filing.status === 'paid'" size="sm" variant="ghost" :loading="busy === m.model" @click="setPaid(m, false)">Deshacer pago</UiButton>
             </div>
           </li>
         </ul>
-        <p class="hint">«Presentar» te da las casillas ya calculadas y te lleva al formulario oficial de la AEAT. Al terminar, sube el justificante y queda guardado.</p>
+        <p v-if="!readOnly" class="hint">«Presentar» te da las casillas ya calculadas y te lleva al formulario oficial de la AEAT. Al terminar, sube el justificante y queda guardado.</p>
       </section>
 
       <!-- 3 · Gestoría -->

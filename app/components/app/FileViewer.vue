@@ -188,7 +188,9 @@ const meta = computed(() => {
   return parts.join(' · ')
 })
 
-const signable = computed(() => status.value === 'ready' && !!current.value && (kind.value === 'pdf' || kind.value === 'image'))
+// Firmar guarda una copia en la empresa: el gestor solo consulta
+const { readOnly } = useMe()
+const signable = computed(() => !readOnly.value && status.value === 'ready' && !!current.value && (kind.value === 'pdf' || kind.value === 'image'))
 
 function startSigning() {
   if (!signable.value) return

@@ -27,6 +27,8 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
   const e = tables.expenses
   const urgent: TodayTask[] = []
   const rest: TodayTask[] = []
+  // El gestor consulta: ve lo pendiente, pero los botones solo abren la lista
+  const readOnly = viewer?.role === 'advisor'
 
   const [recv, [bank], [drafts], [unpaid], [noFile], filings] = await Promise.all([
     receivables(company.id),
@@ -84,7 +86,7 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
           amount > 0 ? `unos ${eurText0(amount)} a ingresar` : null,
           `modelos ${pending.join(', ')}`,
         ].filter(Boolean).join(' · '),
-        action: { label: 'Cerrar trimestre', to: m ? `/impuestos/cerrar?anio=${year}&t=${m[1]}` : '/impuestos' },
+        action: { label: readOnly ? 'Ver' : 'Cerrar trimestre', to: m ? `/impuestos/cerrar?anio=${year}&t=${m[1]}` : '/impuestos' },
       })
     }
   }
@@ -118,7 +120,7 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
 
   // Lo que la IA ha leído y espera una decisión
   const review = await inboxCount(company)
-  if (review.imports > 0) {
+  if (review.imports > 0 && !readOnly) {
     rest.push({
       key: 'imports',
       icon: 'ph:upload-simple',
@@ -134,8 +136,8 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
       icon: 'ph:sparkle',
       tone: 'brand',
       title: `${plural(review.expenses, 'gasto leído', 'gastos leídos')} por la IA por revisar`,
-      detail: 'Comprueba importes y categoría; un toque y listo',
-      action: { label: 'Revisar', to: '/gastos?estado=review&anio=todos' },
+      detail: readOnly ? 'Pendientes de que la empresa compruebe importes y categoría' : 'Comprueba importes y categoría; un toque y listo',
+      action: { label: readOnly ? 'Ver' : 'Revisar', to: '/gastos?estado=review&anio=todos' },
     })
   }
 
@@ -146,7 +148,7 @@ export async function todayTasks(company: Company, now = new Date(), viewer?: { 
       tone: 'info',
       title: `${plural(bank!.n, 'movimiento del banco', 'movimientos del banco')} por revisar`,
       detail: 'NUMIQ ya propone a qué corresponde cada uno',
-      action: { label: 'Revisar', to: '/banco' },
+      action: { label: readOnly ? 'Ver' : 'Revisar', to: '/banco' },
     })
   }
 

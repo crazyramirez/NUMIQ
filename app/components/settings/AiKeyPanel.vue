@@ -6,6 +6,7 @@ interface AiKeyStatus {
   ownerName: string | null
   own: { hint: string, savedAt: string | null } | null
   owner: boolean
+  advisor?: boolean
 }
 
 const props = defineProps<{ status: AiKeyStatus | null | undefined }>()
@@ -82,6 +83,7 @@ const fdate = (d: string | null) => (d ? new Date(d).toLocaleDateString('es-ES',
         <p class="k-hint mono">{{ own.hint }}</p>
         <p v-if="own.savedAt" class="k-at">Guardada el {{ fdate(own.savedAt) }}</p>
         <p v-if="status?.owner" class="k-note"><Icon name="ph:users-three" class="n-ic" aria-hidden="true" /><span>Los miembros de tu equipo que no tengan su propia clave usan esta.</span></p>
+        <p v-else-if="status?.advisor && status.source === 'owner'" class="k-note"><Icon name="ph:briefcase" class="n-ic" aria-hidden="true" /><span>En esta empresa, como gestor, la IA usa la clave de {{ status.ownerName }}. La tuya se usa en tus empresas.</span></p>
       </div>
       <div class="k-act">
         <UiButton size="sm" variant="secondary" icon="ph:arrows-clockwise" @click="replacing = true">Cambiar</UiButton>
@@ -92,7 +94,8 @@ const fdate = (d: string | null) => (d ? new Date(d).toLocaleDateString('es-ES',
     <template v-if="showForm">
       <p v-if="status?.source === 'owner' && !replacing" class="borrowed">
         <Icon name="ph:info-fill" class="n-ic" aria-hidden="true" />
-        <span>Ahora usas la clave de <strong>{{ status.ownerName }}</strong>, titular de la empresa. Añade la tuya para que la IA use tu propia cuenta de OpenAI.</span>
+        <span v-if="status.advisor">Como gestor de esta empresa usas la clave de <strong>{{ status.ownerName }}</strong>: no necesitas la tuya. Si la añades, se usará en tus propias empresas.</span>
+        <span v-else>Ahora usas la clave de <strong>{{ status.ownerName }}</strong>, que comparte la empresa. Añade la tuya para que la IA use tu propia cuenta de OpenAI.</span>
       </p>
       <ol v-else-if="!replacing" class="steps">
         <li>Crea una clave en <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" class="link">platform.openai.com/api-keys</a> («Create new secret key»).</li>

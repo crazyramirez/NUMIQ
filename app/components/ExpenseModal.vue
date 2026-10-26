@@ -41,6 +41,8 @@ interface Category { id: number, kind: string, name: string, accountCode: string
 
 const toast = useToast()
 const viewer = useFileViewer()
+// Gestor: el gasto se abre para consultarlo, sin guardar ni borrar
+const { readOnly } = useMe()
 // El documento leído se abre en el visor, encima del gasto
 function viewOriginal(at = 0) {
   const id = scan.value?.fileId ?? original.value?.id
@@ -436,6 +438,7 @@ const payrollTip = computed(() => form.value.kind === 'payroll' && form.value.ir
 // ─── Guardar / eliminar ───
 
 async function save() {
+  if (readOnly.value) return
   errors.value = {}
   const lines = form.value.taxLines.filter(l => l.base != null)
   if (!form.value.issueDate) errors.value.issueDate = 'Indica la fecha'
@@ -515,7 +518,7 @@ async function remove() {
 </script>
 
 <template>
-  <UiModal v-model="open" :title="isEdit ? 'Editar gasto' : 'Nuevo gasto'" :subtitle="isEdit ? undefined : 'Factura recibida, ticket o cuota.'" size="lg">
+  <UiModal v-model="open" :title="readOnly ? 'Gasto' : isEdit ? 'Editar gasto' : 'Nuevo gasto'" :subtitle="readOnly ? 'Modo consulta' : isEdit ? undefined : 'Factura recibida, ticket o cuota.'" size="lg">
     <div v-if="loading" class="loading">
       <div class="skeleton" style="height: 38px" />
       <div class="sk-grid">
@@ -527,7 +530,7 @@ async function remove() {
     <form v-else :id="formId" class="expense-form" novalidate @submit.prevent="save">
       <!-- ─── BANNER IA / ESCANEO DE DOCUMENTO ─── -->
       <div
-        v-if="!isEdit && !scan"
+        v-if="!isEdit && !scan && !readOnly"
         class="ai-fill"
         :class="{ busy: reading }"
         @dragover.prevent
@@ -575,9 +578,9 @@ async function remove() {
           <ul class="rb-list">
             <li v-for="(n, i) in review" :key="i">{{ n }}</li>
           </ul>
-          <p class="rb-s">Corrige lo que haga falta y guarda: queda revisado.</p>
+          <p v-if="!readOnly" class="rb-s">Corrige lo que haga falta y guarda: queda revisado.</p>
         </div>
-        <div class="rb-acts">
+        <div v-if="!readOnly" class="rb-acts">
           <UiButton v-if="reviewCurrencyCode" size="sm" variant="ai" icon="ph:currency-eur" :loading="reviewing === 'convert'" @click="reviewAction('convert')">
             Pasar a euros
           </UiButton>
@@ -585,366 +588,373 @@ async function remove() {
         </div>
       </div>
 
-      <!-- ─── SECCIÓN 1: DATOS DEL GASTO ─── -->
-      <section class="form-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <span class="card-icon"><Icon name="ph:receipt" /></span>
-            <div>
-              <h3 class="card-title">Datos del gasto</h3>
-              <p class="card-subtitle">Proveedor, tipo de documento y fechas</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="card-grid">
-          <div class="c-8">
-            <UiCombobox
-              v-model="form.supplierId"
-              :label="form.kind === 'payroll' ? 'Perceptor / Empleado' : 'Proveedor'"
-              :options="supplierOptions"
-              :placeholder="form.kind === 'payroll' ? 'Busca o crea el perceptor (socio o empleado)' : 'Busca o crea un proveedor'"
-              :create-label="form.kind === 'payroll' ? 'Nuevo perceptor' : 'Nuevo proveedor'"
-              avatars
-              :error="errors.supplierId"
-              @create="onCreateSupplier"
-            />
-            <p v-if="scan?.newSupplier && !form.supplierId" class="new-sup">
-              <Icon name="ph:user-plus" aria-hidden="true" />
-              <span class="truncate">Nuevo proveedor detectado: <b>{{ scan.newSupplier.name }}</b>{{ scan.newSupplier.nif ? ` · ${scan.newSupplier.nif}` : '' }} (se creará al guardar)</span>
-            </p>
-          </div>
-
-          <div class="c-4">
-            <UiSelect v-model="form.kind" label="Tipo de gasto" :options="kindOptions" />
-          </div>
-
-          <div class="c-4">
-            <UiInput
-              v-model="form.number"
-              :label="form.kind === 'payroll' ? 'Nº de nómina / Ref.' : 'Nº de factura'"
-              :placeholder="form.kind === 'payroll' ? 'Ej. Nómina 10/2026' : 'Número del emisor'"
-              :error="errors.number"
-              autocomplete="off"
-            />
-          </div>
-
-          <div class="c-4">
-            <UiInput
-              v-model="form.issueDate"
-              :label="form.kind === 'payroll' ? 'Fecha devengo / pago' : 'Fecha de emisión'"
-              type="date"
-              :error="errors.issueDate"
-              required
-            />
-          </div>
-
-          <div class="c-4">
-            <UiInput
-              v-model="form.dueDate"
-              label="Fecha de vencimiento"
-              type="date"
-              :error="errors.dueDate"
-            />
-          </div>
-
-          <div class="c-6">
-            <UiSelect
-              v-model="form.categoryId"
-              label="Categoría contable"
-              :options="categoryOptions"
-              :hint="category && category.deductiblePct !== 100 ? `Deducible al ${pct(category.deductiblePct)} por defecto` : undefined"
-            />
-          </div>
-
-          <div class="c-6">
-            <UiInput
-              v-model="form.description"
-              label="Concepto"
-              :placeholder="form.kind === 'payroll' ? 'Ej. Nómina socio administrador octubre' : 'Ej. Fibra óptica y móvil del mes'"
-              :error="errors.description"
-              autocomplete="off"
-            />
-          </div>
-        </div>
-      </section>
-
-      <!-- ─── SECCIÓN 2: IMPORTES E IMPUESTOS ─── -->
-      <section class="form-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <span class="card-icon"><Icon name="ph:currency-eur" /></span>
-            <div>
-              <h3 class="card-title">Importes e impuestos</h3>
-              <p class="card-subtitle">Bases imponibles, tipos de IVA y retenciones</p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            class="quick-tool-btn"
-            :class="{ active: showGrossHelper }"
-            :title="showGrossHelper ? 'Cerrar asistente' : 'Desglosar base e IVA desde el importe total'"
-            @click="showGrossHelper = !showGrossHelper"
-          >
-            <Icon name="ph:magic-wand" />
-            <span>{{ form.kind === 'payroll' ? 'Calcular desde neto' : 'Desglosar desde total' }}</span>
-          </button>
-        </div>
-
-        <!-- Asistente rápido para desglosar total con IVA -->
-        <Transition name="fade">
-          <div v-if="showGrossHelper" class="gross-helper-card">
-            <div class="gross-helper-info">
-              <span class="gh-ic"><Icon name="ph:magic-wand-fill" /></span>
+      <!-- En modo consulta el navegador deja todos los campos sin editar -->
+      <fieldset class="ro-set" :disabled="readOnly">
+        <!-- ─── SECCIÓN 1: DATOS DEL GASTO ─── -->
+        <section class="form-card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <span class="card-icon"><Icon name="ph:receipt" /></span>
               <div>
-                <p class="gh-t">Desglose automático desde el total</p>
-                <p class="gh-s">{{ form.kind === 'payroll' ? 'Introduce el neto a pagar y calculamos el bruto:' : 'Introduce el total pagado con IVA y calculamos la base y la cuota exacta:' }}</p>
+                <h3 class="card-title">Datos del gasto</h3>
+                <p class="card-subtitle">Proveedor, tipo de documento y fechas</p>
               </div>
             </div>
-            <div class="gross-helper-action">
+          </div>
+
+          <div class="card-grid">
+            <div class="c-8">
+              <UiCombobox
+                v-model="form.supplierId"
+                :label="form.kind === 'payroll' ? 'Perceptor / Empleado' : 'Proveedor'"
+                :options="supplierOptions"
+                :placeholder="form.kind === 'payroll' ? 'Busca o crea el perceptor (socio o empleado)' : 'Busca o crea un proveedor'"
+                :create-label="form.kind === 'payroll' ? 'Nuevo perceptor' : 'Nuevo proveedor'"
+                avatars
+                :error="errors.supplierId"
+                @create="onCreateSupplier"
+              />
+              <p v-if="scan?.newSupplier && !form.supplierId" class="new-sup">
+                <Icon name="ph:user-plus" aria-hidden="true" />
+                <span class="truncate">Nuevo proveedor detectado: <b>{{ scan.newSupplier.name }}</b>{{ scan.newSupplier.nif ? ` · ${scan.newSupplier.nif}` : '' }} (se creará al guardar)</span>
+              </p>
+            </div>
+
+            <div class="c-4">
+              <UiSelect v-model="form.kind" label="Tipo de gasto" :options="kindOptions" />
+            </div>
+
+            <div class="c-4">
               <UiInput
-                v-model="gross"
-                numeric
-                suffix="€"
-                :placeholder="form.kind === 'payroll' ? 'Ej. 2000' : 'Ej. 121,00'"
-                :aria-label="form.kind === 'payroll' ? 'Importe neto' : 'Total con IVA'"
-                @keydown.enter.prevent="applyGross"
+                v-model="form.number"
+                :label="form.kind === 'payroll' ? 'Nº de nómina / Ref.' : 'Nº de factura'"
+                :placeholder="form.kind === 'payroll' ? 'Ej. Nómina 10/2026' : 'Número del emisor'"
+                :error="errors.number"
+                autocomplete="off"
               />
-              <UiButton size="sm" variant="primary" :disabled="gross == null" icon="ph:check-bold" @click="applyGross">
-                {{ form.kind === 'payroll' ? 'Calcular bruto' : 'Desglosar' }}
-              </UiButton>
+            </div>
+
+            <div class="c-4">
+              <UiInput
+                v-model="form.issueDate"
+                :label="form.kind === 'payroll' ? 'Fecha devengo / pago' : 'Fecha de emisión'"
+                type="date"
+                :error="errors.issueDate"
+                required
+              />
+            </div>
+
+            <div class="c-4">
+              <UiInput
+                v-model="form.dueDate"
+                label="Fecha de vencimiento"
+                type="date"
+                :error="errors.dueDate"
+              />
+            </div>
+
+            <div class="c-6">
+              <UiSelect
+                v-model="form.categoryId"
+                label="Categoría contable"
+                :options="categoryOptions"
+                :hint="category && category.deductiblePct !== 100 ? `Deducible al ${pct(category.deductiblePct)} por defecto` : undefined"
+              />
+            </div>
+
+            <div class="c-6">
+              <UiInput
+                v-model="form.description"
+                label="Concepto"
+                :placeholder="form.kind === 'payroll' ? 'Ej. Nómina socio administrador octubre' : 'Ej. Fibra óptica y móvil del mes'"
+                :error="errors.description"
+                autocomplete="off"
+              />
             </div>
           </div>
-        </Transition>
+        </section>
 
-        <!-- Tabla estructurada de líneas de IVA -->
-        <div class="tax-table" role="table" aria-label="Desglose de IVA">
-          <div class="tax-table-head" role="row">
-            <span role="columnheader">Base imponible</span>
-            <span role="columnheader">Tipo de IVA</span>
-            <span role="columnheader">Cuota IVA</span>
-            <span class="sr-only">Acciones</span>
-          </div>
+        <!-- ─── SECCIÓN 2: IMPORTES E IMPUESTOS ─── -->
+        <section class="form-card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <span class="card-icon"><Icon name="ph:currency-eur" /></span>
+              <div>
+                <h3 class="card-title">Importes e impuestos</h3>
+                <p class="card-subtitle">Bases imponibles, tipos de IVA y retenciones</p>
+              </div>
+            </div>
 
-          <div v-for="(l, i) in form.taxLines" :key="i" class="tax-table-row" role="row">
-            <UiInput
-              class="tl-base"
-              :model-value="l.base"
-              numeric
-              suffix="€"
-              placeholder="0,00"
-              :aria-label="`Base imponible ${i + 1}`"
-              :error="i === 0 ? errors.taxLines : undefined"
-              @update:model-value="setBase(l, $event)"
-            />
-            <UiSelect
-              class="tl-rate"
-              :model-value="l.vatRate"
-              :options="vatOptions"
-              :aria-label="`Tipo de IVA ${i + 1}`"
-              @update:model-value="setRate(l, $event)"
-            />
-            <UiInput
-              class="tl-quota"
-              :model-value="l.vatAmount"
-              numeric
-              suffix="€"
-              placeholder="0,00"
-              :aria-label="`Cuota de IVA ${i + 1}`"
-              @update:model-value="setVat(l, $event)"
+            <button
+              v-if="!readOnly"
+              type="button"
+              class="quick-tool-btn"
+              :class="{ active: showGrossHelper }"
+              :title="showGrossHelper ? 'Cerrar asistente' : 'Desglosar base e IVA desde el importe total'"
+              @click="showGrossHelper = !showGrossHelper"
             >
-              <template #end>
-                <button
-                  v-if="l.manual"
-                  type="button"
-                  class="reset-btn"
-                  title="Cuota editada a mano. Clic para volver a calcular automáticamente con el porcentaje"
-                  aria-label="Recalcular cuota automática"
-                  @click="resetVat(l)"
-                >
-                  <Icon name="ph:arrow-counter-clockwise" />
-                </button>
-              </template>
-            </UiInput>
-            <div class="row-del">
-              <UiButton
-                variant="ghost"
-                size="sm"
-                square
-                icon="ph:trash"
-                :aria-label="`Quitar línea ${i + 1}`"
-                :disabled="form.taxLines.length === 1 && l.base == null"
-                @click="removeLine(i)"
-              />
-            </div>
-          </div>
-
-          <div v-if="form.taxLines.length < 4" class="tax-table-foot">
-            <button type="button" class="add-tax-line-btn" @click="addLine">
-              <Icon name="ph:plus-bold" aria-hidden="true" />
-              <span>Añadir otro tipo de IVA</span>
+              <Icon name="ph:magic-wand" />
+              <span>{{ form.kind === 'payroll' ? 'Calcular desde neto' : 'Desglosar desde total' }}</span>
             </button>
           </div>
-        </div>
 
-        <!-- Zona inferior de importes: IRPF y Totales -->
-        <div class="amounts-bottom">
-          <div class="irpf-col">
-            <IrpfField
-              v-model="form.irpfRate"
-              :hint="form.kind === 'payroll' ? 'Nómina: el tipo exacto que figura en ella (p. ej. 12,43 %)' : 'Alquiler 19 %, profesionales 15 %'"
-            />
+          <!-- Asistente rápido para desglosar total con IVA -->
+          <Transition name="fade">
+            <div v-if="showGrossHelper" class="gross-helper-card">
+              <div class="gross-helper-info">
+                <span class="gh-ic"><Icon name="ph:magic-wand-fill" /></span>
+                <div>
+                  <p class="gh-t">Desglose automático desde el total</p>
+                  <p class="gh-s">{{ form.kind === 'payroll' ? 'Introduce el neto a pagar y calculamos el bruto:' : 'Introduce el total pagado con IVA y calculamos la base y la cuota exacta:' }}</p>
+                </div>
+              </div>
+              <div class="gross-helper-action">
+                <UiInput
+                  v-model="gross"
+                  numeric
+                  suffix="€"
+                  :placeholder="form.kind === 'payroll' ? 'Ej. 2000' : 'Ej. 121,00'"
+                  :aria-label="form.kind === 'payroll' ? 'Importe neto' : 'Total con IVA'"
+                  @keydown.enter.prevent="applyGross"
+                />
+                <UiButton size="sm" variant="primary" :disabled="gross == null" icon="ph:check-bold" @click="applyGross">
+                  {{ form.kind === 'payroll' ? 'Calcular bruto' : 'Desglosar' }}
+                </UiButton>
+              </div>
+            </div>
+          </Transition>
 
-            <!-- Sugerencias contextuales de IRPF -->
-            <div v-if="payrollTip" class="tax-tip">
-              <Icon name="ph:lightbulb-filament-fill" aria-hidden="true" />
-              <div class="tax-tip-body">
-                <span>Nómina societaria: suele retener el 19 % (o 15 % según tablas de IRPF).</span>
-                <div class="tax-tip-actions">
+          <!-- Tabla estructurada de líneas de IVA -->
+          <div class="tax-table" role="table" aria-label="Desglose de IVA">
+            <div class="tax-table-head" role="row">
+              <span role="columnheader">Base imponible</span>
+              <span role="columnheader">Tipo de IVA</span>
+              <span role="columnheader">Cuota IVA</span>
+              <span class="sr-only">Acciones</span>
+            </div>
+
+            <div v-for="(l, i) in form.taxLines" :key="i" class="tax-table-row" role="row">
+              <UiInput
+                class="tl-base"
+                :model-value="l.base"
+                numeric
+                suffix="€"
+                placeholder="0,00"
+                :aria-label="`Base imponible ${i + 1}`"
+                :error="i === 0 ? errors.taxLines : undefined"
+                @update:model-value="setBase(l, $event)"
+              />
+              <UiSelect
+                class="tl-rate"
+                :model-value="l.vatRate"
+                :options="vatOptions"
+                :aria-label="`Tipo de IVA ${i + 1}`"
+                @update:model-value="setRate(l, $event)"
+              />
+              <UiInput
+                class="tl-quota"
+                :model-value="l.vatAmount"
+                numeric
+                suffix="€"
+                placeholder="0,00"
+                :aria-label="`Cuota de IVA ${i + 1}`"
+                @update:model-value="setVat(l, $event)"
+              >
+                <template #end>
+                  <button
+                    v-if="l.manual"
+                    type="button"
+                    class="reset-btn"
+                    title="Cuota editada a mano. Clic para volver a calcular automáticamente con el porcentaje"
+                    aria-label="Recalcular cuota automática"
+                    @click="resetVat(l)"
+                  >
+                    <Icon name="ph:arrow-counter-clockwise" />
+                  </button>
+                </template>
+              </UiInput>
+              <div class="row-del">
+                <UiButton
+                  variant="ghost"
+                  size="sm"
+                  square
+                  icon="ph:trash"
+                  :aria-label="`Quitar línea ${i + 1}`"
+                  :disabled="form.taxLines.length === 1 && l.base == null"
+                  @click="removeLine(i)"
+                />
+              </div>
+            </div>
+
+            <div v-if="form.taxLines.length < 4 && !readOnly" class="tax-table-foot">
+              <button type="button" class="add-tax-line-btn" @click="addLine">
+                <Icon name="ph:plus-bold" aria-hidden="true" />
+                <span>Añadir otro tipo de IVA</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Zona inferior de importes: IRPF y Totales -->
+          <div class="amounts-bottom">
+            <div class="irpf-col">
+              <IrpfField
+                v-model="form.irpfRate"
+                :hint="form.kind === 'payroll' ? 'Nómina: el tipo exacto que figura en ella (p. ej. 12,43 %)' : 'Alquiler 19 %, profesionales 15 %'"
+              />
+
+              <!-- Sugerencias contextuales de IRPF -->
+              <div v-if="payrollTip" class="tax-tip">
+                <Icon name="ph:lightbulb-filament-fill" aria-hidden="true" />
+                <div class="tax-tip-body">
+                  <span>Nómina societaria: suele retener el 19 % (o 15 % según tablas de IRPF).</span>
+                  <div class="tax-tip-actions">
+                    <button type="button" class="tip-btn" @click="form.irpfRate = 19">Aplicar 19 %</button>
+                    <button type="button" class="tip-btn" @click="form.irpfRate = 15">Aplicar 15 %</button>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else-if="rentTip" class="tax-tip">
+                <Icon name="ph:lightbulb-filament-fill" aria-hidden="true" />
+                <div class="tax-tip-body">
+                  <span>Los alquileres de locales suelen llevar retención del 19 % (modelo 115).</span>
                   <button type="button" class="tip-btn" @click="form.irpfRate = 19">Aplicar 19 %</button>
+                </div>
+              </div>
+
+              <div v-else-if="proTip" class="tax-tip">
+                <Icon name="ph:lightbulb-filament-fill" aria-hidden="true" />
+                <div class="tax-tip-body">
+                  <span>Un profesional autónomo te factura con retención del 15 % (modelo 111).</span>
                   <button type="button" class="tip-btn" @click="form.irpfRate = 15">Aplicar 15 %</button>
                 </div>
               </div>
             </div>
 
-            <div v-else-if="rentTip" class="tax-tip">
-              <Icon name="ph:lightbulb-filament-fill" aria-hidden="true" />
-              <div class="tax-tip-body">
-                <span>Los alquileres de locales suelen llevar retención del 19 % (modelo 115).</span>
-                <button type="button" class="tip-btn" @click="form.irpfRate = 19">Aplicar 19 %</button>
-              </div>
+            <!-- Resumen de totales financiero -->
+            <div class="totals-panel">
+              <dl class="totals-list" aria-live="polite">
+                <div class="totals-item">
+                  <dt>Base imponible</dt>
+                  <dd class="num">{{ eur(totals.taxBase) }}</dd>
+                </div>
+                <div class="totals-item">
+                  <dt>IVA soportado</dt>
+                  <dd class="num">+{{ eur(totals.vatTotal) }}</dd>
+                </div>
+                <div v-if="totals.irpfTotal" class="totals-item irpf-neg">
+                  <dt>Retención IRPF ({{ num(form.irpfRate) }} %)</dt>
+                  <dd class="num neg">−{{ eur(totals.irpfTotal) }}</dd>
+                </div>
+                <div class="totals-item grand-total">
+                  <dt>Total a pagar</dt>
+                  <dd class="num">{{ eur(totals.total) }}</dd>
+                </div>
+                <div v-if="hasVat && form.vatDeductiblePct !== 100" class="totals-deductible-info">
+                  <span>IVA deducible en tus modelos:</span>
+                  <strong class="num">{{ eur(totals.vatDeductible) }}</strong>
+                </div>
+              </dl>
             </div>
+          </div>
+        </section>
 
-            <div v-else-if="proTip" class="tax-tip">
-              <Icon name="ph:lightbulb-filament-fill" aria-hidden="true" />
-              <div class="tax-tip-body">
-                <span>Un profesional autónomo te factura con retención del 15 % (modelo 111).</span>
-                <button type="button" class="tip-btn" @click="form.irpfRate = 15">Aplicar 15 %</button>
+        <!-- ─── SECCIÓN 3: FISCALIDAD Y DEDUCIBILIDAD ─── -->
+        <section class="form-card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <span class="card-icon"><Icon name="ph:scales" /></span>
+              <div>
+                <h3 class="card-title">Fiscalidad y Deducibilidad</h3>
+                <p class="card-subtitle">Tratamiento tributario en modelos 303 (IVA) y 130/100 o Sociedades</p>
               </div>
             </div>
           </div>
 
-          <!-- Resumen de totales financiero -->
-          <div class="totals-panel">
-            <dl class="totals-list" aria-live="polite">
-              <div class="totals-item">
-                <dt>Base imponible</dt>
-                <dd class="num">{{ eur(totals.taxBase) }}</dd>
-              </div>
-              <div class="totals-item">
-                <dt>IVA soportado</dt>
-                <dd class="num">+{{ eur(totals.vatTotal) }}</dd>
-              </div>
-              <div v-if="totals.irpfTotal" class="totals-item irpf-neg">
-                <dt>Retención IRPF ({{ num(form.irpfRate) }} %)</dt>
-                <dd class="num neg">−{{ eur(totals.irpfTotal) }}</dd>
-              </div>
-              <div class="totals-item grand-total">
-                <dt>Total a pagar</dt>
-                <dd class="num">{{ eur(totals.total) }}</dd>
-              </div>
-              <div v-if="hasVat && form.vatDeductiblePct !== 100" class="totals-deductible-info">
-                <span>IVA deducible en tus modelos:</span>
-                <strong class="num">{{ eur(totals.vatDeductible) }}</strong>
-              </div>
-            </dl>
-          </div>
-        </div>
-      </section>
+          <ExpenseDeductible
+            v-model:pct="form.deductiblePct"
+            v-model:vat-pct="form.vatDeductiblePct"
+            :has-vat="hasVat"
+            :base="totals.taxBase"
+            :vat="totals.vatTotal"
+            :learned="learned"
+          />
 
-      <!-- ─── SECCIÓN 3: FISCALIDAD Y DEDUCIBILIDAD ─── -->
-      <section class="form-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <span class="card-icon"><Icon name="ph:scales" /></span>
-            <div>
-              <h3 class="card-title">Fiscalidad y Deducibilidad</h3>
-              <p class="card-subtitle">Tratamiento tributario en modelos 303 (IVA) y 130/100 o Sociedades</p>
+          <!-- Opciones fiscales avanzadas (inversión y sujeto pasivo) -->
+          <div class="fiscal-adv">
+            <button
+              type="button"
+              class="adv-toggle"
+              :aria-expanded="advanced"
+              @click="advanced = !advanced"
+            >
+              <Icon :name="advanced ? 'ph:caret-down-bold' : 'ph:caret-right-bold'" aria-hidden="true" />
+              <span>Opciones fiscales adicionales</span>
+              <span v-if="form.isInvestment || form.reverseCharge" class="adv-badge">Activas</span>
+            </button>
+
+            <Transition name="fade">
+              <div v-if="advanced || form.isInvestment || form.reverseCharge" class="fiscal-grid">
+                <div class="switch-cell">
+                  <UiSwitch v-model="form.isInvestment" label="Bien de inversión" hint="Se amortiza en varios años (ordenadores, maquinaria, vehículos, mobiliario…)" />
+                </div>
+                <div class="switch-cell">
+                  <UiSwitch v-model="form.reverseCharge" label="Inversión del sujeto pasivo" hint="Compras intracomunitarias o servicios contratados fuera de la UE" />
+                </div>
+              </div>
+            </Transition>
+          </div>
+        </section>
+
+        <!-- ─── SECCIÓN 4: ESTADO DE PAGO Y NOTAS ─── -->
+        <section class="form-card">
+          <div class="card-header">
+            <div class="card-title-group">
+              <span class="card-icon"><Icon name="ph:credit-card" /></span>
+              <div>
+                <h3 class="card-title">Estado del pago</h3>
+                <p class="card-subtitle">Control de tesorería y observaciones internas</p>
+              </div>
             </div>
           </div>
-        </div>
 
-        <ExpenseDeductible
-          v-model:pct="form.deductiblePct"
-          v-model:vat-pct="form.vatDeductiblePct"
-          :has-vat="hasVat"
-          :base="totals.taxBase"
-          :vat="totals.vatTotal"
-          :learned="learned"
-        />
-
-        <!-- Opciones fiscales avanzadas (inversión y sujeto pasivo) -->
-        <div class="fiscal-adv">
-          <button
-            type="button"
-            class="adv-toggle"
-            :aria-expanded="advanced"
-            @click="advanced = !advanced"
-          >
-            <Icon :name="advanced ? 'ph:caret-down-bold' : 'ph:caret-right-bold'" aria-hidden="true" />
-            <span>Opciones fiscales adicionales</span>
-            <span v-if="form.isInvestment || form.reverseCharge" class="adv-badge">Activas</span>
-          </button>
-
-          <Transition name="fade">
-            <div v-if="advanced || form.isInvestment || form.reverseCharge" class="fiscal-grid">
-              <div class="switch-cell">
-                <UiSwitch v-model="form.isInvestment" label="Bien de inversión" hint="Se amortiza en varios años (ordenadores, maquinaria, vehículos, mobiliario…)" />
+          <div class="pay-wrap">
+            <div class="pay-toggle-row">
+              <div class="pay-switch-box">
+                <UiSwitch
+                  v-model="form.paid"
+                  label="Gasto ya pagado"
+                  :hint="form.paid ? 'Se anota el pago automáticamente por el importe total del gasto' : 'Quedará registrado como pendiente de pago en tesorería'"
+                />
               </div>
-              <div class="switch-cell">
-                <UiSwitch v-model="form.reverseCharge" label="Inversión del sujeto pasivo" hint="Compras intracomunitarias o servicios contratados fuera de la UE" />
+              <div v-if="form.paid" class="pay-method-field">
+                <UiSelect v-model="form.paymentMethod" label="Forma de pago" :options="methodOptions" />
               </div>
             </div>
-          </Transition>
-        </div>
-      </section>
 
-      <!-- ─── SECCIÓN 4: ESTADO DE PAGO Y NOTAS ─── -->
-      <section class="form-card">
-        <div class="card-header">
-          <div class="card-title-group">
-            <span class="card-icon"><Icon name="ph:credit-card" /></span>
-            <div>
-              <h3 class="card-title">Estado del pago</h3>
-              <p class="card-subtitle">Control de tesorería y observaciones internas</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="pay-wrap">
-          <div class="pay-toggle-row">
-            <div class="pay-switch-box">
-              <UiSwitch
-                v-model="form.paid"
-                label="Gasto ya pagado"
-                :hint="form.paid ? 'Se anota el pago automáticamente por el importe total del gasto' : 'Quedará registrado como pendiente de pago en tesorería'"
+            <div class="notes-field">
+              <UiTextarea
+                v-model="form.notes"
+                label="Notas internas"
+                rows="2"
+                placeholder="Para qué fue, a qué proyecto corresponde, justificación o cualquier apunte…"
               />
             </div>
-            <div v-if="form.paid" class="pay-method-field">
-              <UiSelect v-model="form.paymentMethod" label="Forma de pago" :options="methodOptions" />
-            </div>
           </div>
-
-          <div class="notes-field">
-            <UiTextarea
-              v-model="form.notes"
-              label="Notas internas"
-              rows="2"
-              placeholder="Para qué fue, a qué proyecto corresponde, justificación o cualquier apunte…"
-            />
-          </div>
-        </div>
-      </section>
+        </section>
+      </fieldset>
     </form>
 
     <template #footer>
-      <UiButton v-if="isEdit" class="del" variant="ghost" icon="ph:trash" :loading="deleting" @click="remove">Eliminar</UiButton>
-      <UiButton v-if="isEdit" variant="ghost" icon="ph:arrows-clockwise" :to="`/gastos/fijos?gasto=${expenseId}`" @click="open = false">Repetir cada mes</UiButton>
-      <UiButton @click="open = false">Cancelar</UiButton>
-      <UiButton type="submit" :form="formId" variant="primary" :loading="saving" :disabled="loading" icon="ph:check-bold">
-        {{ isEdit ? 'Guardar cambios' : 'Registrar gasto' }}
-      </UiButton>
+      <UiButton v-if="readOnly" @click="open = false">Cerrar</UiButton>
+      <template v-else>
+        <UiButton v-if="isEdit" class="del" variant="ghost" icon="ph:trash" :loading="deleting" @click="remove">Eliminar</UiButton>
+        <UiButton v-if="isEdit" variant="ghost" icon="ph:arrows-clockwise" :to="`/gastos/fijos?gasto=${expenseId}`" @click="open = false">Repetir cada mes</UiButton>
+        <UiButton @click="open = false">Cancelar</UiButton>
+        <UiButton type="submit" :form="formId" variant="primary" :loading="saving" :disabled="loading" icon="ph:check-bold">
+          {{ isEdit ? 'Guardar cambios' : 'Registrar gasto' }}
+        </UiButton>
+      </template>
     </template>
   </UiModal>
 
@@ -956,6 +966,34 @@ async function remove() {
   display: flex;
   flex-direction: column;
   gap: var(--s-4);
+}
+
+/* Solo agrupa (para desactivar los campos en modo consulta): las tarjetas siguen siendo hijas del formulario */
+.ro-set {
+  display: contents;
+}
+
+/* Modo consulta: los campos se leen como datos, no como un formulario apagado */
+.ro-set:disabled :deep(.control) {
+  background: var(--surface-sunken);
+  box-shadow: none;
+  cursor: default;
+}
+
+.ro-set:disabled :deep(:is(input, select, textarea)) {
+  color: var(--text);
+  -webkit-text-fill-color: var(--text);
+  opacity: 1;
+  cursor: default;
+}
+
+/* Un campo vacío se queda vacío: los ejemplos son para quien rellena */
+.ro-set:disabled :deep(::placeholder) {
+  -webkit-text-fill-color: transparent;
+}
+
+.ro-set:disabled .row-del {
+  visibility: hidden;
 }
 
 /* ─── AI Banner ─── */

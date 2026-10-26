@@ -4,11 +4,9 @@
  * para crear (con la foto del ticket primero). El menú completo se abre con la hamburguesa de arriba.
  */
 const route = useRoute()
-const { me } = useMe()
-const { open: openScan } = useScan()
-
 // El gestor entra en modo consulta: sin crear
-const readOnly = computed(() => me.value?.company?.role === 'advisor')
+const { readOnly } = useMe()
+const { open: openScan } = useScan()
 const area = computed(() => areaOf(route.path).area?.key ?? null)
 
 const sheet = ref(false)

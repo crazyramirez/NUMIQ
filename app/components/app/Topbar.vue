@@ -7,9 +7,8 @@ const inbox = useInboxCount()
 const palette = useState('paletteOpen', () => false)
 const { isDark, toggle: toggleTheme } = useTheme()
 const { open: openScan } = useScan()
-const { me } = useMe()
-// El gestor entra en modo consulta: sin crear ni escanear
-const readOnly = computed(() => me.value?.company?.role === 'advisor')
+// El gestor entra en modo consulta: sin crear ni escanear (ni aviso de importaciones por confirmar)
+const { readOnly } = useMe()
 const isMac = computed(() => import.meta.client && /Mac|iPhone|iPad/.test(navigator.platform))
 
 const createItems: MenuItem[] = CREATE_ACTIONS.map(a => ({ label: a.label, icon: a.icon, to: a.to }))
@@ -18,8 +17,8 @@ const createItems: MenuItem[] = CREATE_ACTIONS.map(a => ({ label: a.label, icon:
 <template>
   <header class="topbar">
     <span class="burger">
-      <UiButton variant="ghost" square icon="ph:list" :aria-label="inbox.count.value ? 'Abrir menú: hay documentos por revisar' : 'Abrir menú'" @click="navOpen = true" />
-      <span v-if="inbox.count.value" class="burger-dot" aria-hidden="true" />
+      <UiButton variant="ghost" square icon="ph:list" :aria-label="inbox.count.value && !readOnly ? 'Abrir menú: hay documentos por revisar' : 'Abrir menú'" @click="navOpen = true" />
+      <span v-if="inbox.count.value && !readOnly" class="burger-dot" aria-hidden="true" />
     </span>
     <!-- Móvil: menú y marca a la izquierda; crear está en la barra inferior y la apariencia en el menú -->
     <NuxtLink to="/" class="m-brand" aria-label="NUMIQ, inicio"><AppLogo :size="30" :wordmark="false" /></NuxtLink>

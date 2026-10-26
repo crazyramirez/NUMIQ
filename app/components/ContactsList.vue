@@ -28,6 +28,8 @@ const { confirm } = useConfirm()
 const route = useRoute()
 const router = useRouter()
 const isClient = computed(() => props.role === 'client')
+// Gestor: consulta las fichas, sin altas, importaciones, fusiones ni bajas
+const { readOnly } = useMe()
 const base = computed(() => (isClient.value ? '/clientes' : '/proveedores'))
 
 // Búsqueda y página en la URL: al volver atrás desde una ficha, el listado sigue igual
@@ -54,7 +56,7 @@ const totals = computed(() => ({
 // Alta: botón o ?nuevo=1 (paleta de comandos, menú Nuevo)
 const creating = ref(false)
 watch(() => route.query.nuevo, (v) => {
-  if (v) creating.value = true
+  if (v && !readOnly.value) creating.value = true
 }, { immediate: true })
 watch(creating, (v) => {
   if (!v && route.query.nuevo) router.replace({ query: { ...route.query, nuevo: undefined } })
@@ -180,12 +182,14 @@ function rowCtx(r: ContactRow): CtxSpec {
     }
   }
   const url = `${base.value}/${r.id}`
-  const create: CtxItem[] = isClient.value
-    ? [
-        { label: 'Nueva factura', icon: 'ph:receipt', to: `/facturas/nueva?cliente=${r.id}` },
-        { label: 'Nuevo presupuesto', icon: 'ph:file-text', to: `/presupuestos/nuevo?cliente=${r.id}` },
-      ]
-    : [{ label: 'Nuevo gasto', icon: 'ph:wallet', to: `/gastos?nuevo=1&proveedor=${r.id}` }]
+  const create: CtxItem[] = readOnly.value
+    ? []
+    : isClient.value
+      ? [
+          { label: 'Nueva factura', icon: 'ph:receipt', to: `/facturas/nueva?cliente=${r.id}` },
+          { label: 'Nuevo presupuesto', icon: 'ph:file-text', to: `/presupuestos/nuevo?cliente=${r.id}` },
+        ]
+      : [{ label: 'Nuevo gasto', icon: 'ph:wallet', to: `/gastos?nuevo=1&proveedor=${r.id}` }]
   const copy: CtxItem[] = [
     { label: 'Nombre', sub: r.name, icon: 'ph:user', onClick: () => copyText(r.name, 'Nombre') },
     ...(r.nif ? [{ label: 'NIF', sub: r.nif, icon: 'ph:identification-card', onClick: () => copyText(r.nif, 'NIF') }] : []),
@@ -202,10 +206,14 @@ function rowCtx(r: ContactRow): CtxSpec {
     ...(r.email ? [{ label: 'Escribir un email', sub: r.email, icon: 'ph:envelope-simple', onClick: () => (window.location.href = `mailto:${r.email}`) }] : []),
     ...(r.phone ? [{ label: 'Llamar', sub: r.phone, icon: 'ph:phone', onClick: () => (window.location.href = `tel:${r.phone!.replace(/\s+/g, '')}`) }] : []),
     { label: 'Copiar', icon: 'ph:copy', children: copy },
-    { divider: true },
-    { label: selectedSet.value.has(r.id) ? 'Quitar de la selección' : 'Seleccionar', icon: selectedSet.value.has(r.id) ? 'ph:minus-circle' : 'ph:check-square', onClick: () => pickFromMenu(r) },
-    { divider: true },
-    { label: isClient.value ? 'Eliminar cliente' : 'Eliminar proveedor', icon: 'ph:trash', danger: true, onClick: () => removeContact(r) },
+    ...(readOnly.value
+      ? []
+      : [
+          { divider: true },
+          { label: selectedSet.value.has(r.id) ? 'Quitar de la selección' : 'Seleccionar', icon: selectedSet.value.has(r.id) ? 'ph:minus-circle' : 'ph:check-square', onClick: () => pickFromMenu(r) },
+          { divider: true },
+          { label: isClient.value ? 'Eliminar cliente' : 'Eliminar proveedor', icon: 'ph:trash', danger: true, onClick: () => removeContact(r) },
+        ]),
   ]
   const sub = [r.nif, r.city, amountOf(r) ? eur(amountOf(r)) : null].filter(Boolean).join(' · ')
   return { title: r.name, subtitle: sub || undefined, icon: isClient.value ? 'ph:user' : 'ph:storefront', items }
@@ -229,7 +237,7 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
         <h1>{{ t.title }}</h1>
         <p class="sub">{{ t.sub }}</p>
       </div>
-      <div class="page-actions">
+      <div v-if="!readOnly" class="page-actions">
         <UiButton icon="ph:upload-simple" compact :to="`${base}/importar`">Importar</UiButton>
         <UiButton variant="primary" icon="ph:plus-bold" compact @click="creating = true">{{ t.add }}</UiButton>
       </div>
@@ -257,14 +265,14 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
       </div>
     </section>
 
-    <ContactDuplicates :role="role" @merged="refresh" />
+    <ContactDuplicates v-if="!readOnly" :role="role" @merged="refresh" />
 
     <UiCard padding="none" class="rise list-card" style="--i: 1">
       <div class="toolbar">
         <UiInput v-model="q" icon="ph:magnifying-glass" :placeholder="`Buscar por nombre, NIF, email o ciudad`" :aria-label="`Buscar ${t.title.toLowerCase()}`" class="search" type="search" />
         <span v-if="status === 'pending' && data" class="refreshing" aria-hidden="true"><Icon name="ph:circle-notch" /></span>
         <UiButton
-          v-if="rows.length"
+          v-if="rows.length && !readOnly"
           class="sel-toggle"
           :variant="selecting ? 'primary' : 'secondary'"
           :icon="selecting ? 'ph:x' : 'ph:check-square'"
@@ -286,7 +294,7 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
       </div>
 
       <UiEmpty v-else-if="!rows.length && !q" :icon="isClient ? 'ph:users' : 'ph:storefront'" :title="t.emptyTitle" :text="t.emptyText">
-        <div class="empty-actions">
+        <div v-if="!readOnly" class="empty-actions">
           <UiButton variant="primary" icon="ph:plus-bold" @click="creating = true">{{ t.add }}</UiButton>
           <UiButton icon="ph:upload-simple" :to="`${base}/importar`">Importar desde Excel o PDF</UiButton>
         </div>
@@ -301,7 +309,7 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
           <table class="table">
             <thead>
               <tr>
-                <th class="pick">
+                <th v-if="!readOnly" class="pick">
                   <input
                     type="checkbox"
                     :checked="allSelected"
@@ -330,7 +338,7 @@ useHead({ title: () => `${t.value.title} · NUMIQ` })
                 @click="navigateTo(`${base}/${r.id}`)"
                 @keydown.enter.self="navigateTo(`${base}/${r.id}`)"
               >
-                <td class="pick" @click.stop="pick(r.id, $event)">
+                <td v-if="!readOnly" class="pick" @click.stop="pick(r.id, $event)">
                   <input
                     type="checkbox"
                     :checked="selectedSet.has(r.id)"

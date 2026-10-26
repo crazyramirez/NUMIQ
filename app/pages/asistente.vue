@@ -26,7 +26,7 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const { confirm } = useConfirm()
-const { me } = useMe()
+const { me, readOnly } = useMe()
 const { data: ai } = await useFetch<{ configured: boolean }>('/api/ai/status', { default: () => ({ configured: true }) })
 const { data: conversations, refresh: refreshList } = await useFetch<Conversation[]>('/api/assistant/conversations', { default: () => [] })
 
@@ -397,7 +397,7 @@ function messageCtx(m: Message, e: MouseEvent): CtxSpec | null {
         <div v-else-if="!messages.length" class="welcome">
           <div class="orb" aria-hidden="true"><Icon name="ph:sparkle-fill" /></div>
           <h2 class="w-t">Hola{{ firstName ? `, ${firstName}` : '' }}. ¿En qué te ayudo?</h2>
-          <p class="w-s">Pregúntame por tus ventas, gastos, cobros o impuestos: miro tus datos de NUMIQ y te respondo con cifras exactas y consejos prácticos. También hago cambios por ti, como reasignar facturas, clasificar el banco o borrar gastos, siempre con tu confirmación.</p>
+          <p class="w-s">Pregúntame por tus ventas, gastos, cobros o impuestos: miro tus datos de NUMIQ y te respondo con cifras exactas y consejos prácticos.<template v-if="!readOnly"> También hago cambios por ti, como reasignar facturas, clasificar el banco o borrar gastos, siempre con tu confirmación.</template></p>
           <div v-if="ai.configured" class="sugs">
             <button v-for="s in SUGGESTIONS" :key="s.text" type="button" class="sug" @click="send(s.text)">
               <Icon :name="s.icon" class="sug-ic" aria-hidden="true" />
@@ -429,7 +429,7 @@ function messageCtx(m: Message, e: MouseEvent): CtxSpec | null {
       <form class="composer" @submit.prevent="send()">
         <div class="box">
           <label for="ask" class="sr-only">Escribe tu pregunta</label>
-          <textarea id="ask" ref="input" v-model="draft" rows="1" :placeholder="ai.configured ? 'Pregunta o pide un cambio…' : 'Asistente no disponible'" :disabled="!ai.configured" @keydown="onKey" @focus="track" @blur="track" />
+          <textarea id="ask" ref="input" v-model="draft" rows="1" :placeholder="!ai.configured ? 'Asistente no disponible' : readOnly ? 'Pregunta lo que quieras…' : 'Pregunta o pide un cambio…'" :disabled="!ai.configured" @keydown="onKey" @focus="track" @blur="track" />
           <UiButton v-if="busy" variant="secondary" square icon="ph:stop-fill" aria-label="Detener" @click="stop" />
           <UiButton v-else type="submit" variant="ai" square icon="ph:paper-plane-right-fill" aria-label="Enviar" :disabled="!draft.trim() || tooLong || !ai.configured" />
         </div>

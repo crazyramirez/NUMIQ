@@ -81,7 +81,7 @@ const categoryOptions = computed(() => [
 
 // Aprobación del equipo: ?aprobacion=pending|rejected abre la lista filtrada (desde «Hoy» o un aviso)
 const approvalFilter = useQueryState<'pending' | 'rejected' | null>('aprobacion', null, { allowed: ['pending', 'rejected'] })
-const { me } = useMe()
+const { me, readOnly } = useMe()
 const canApprove = computed(() => ['owner', 'admin'].includes(me.value?.company?.role ?? ''))
 
 const { data, status: fetchStatus, refresh: refreshList } = useFetch<ExpenseRow[]>('/api/expenses', {
@@ -225,7 +225,8 @@ watch(() => [route.query.nuevo, route.query.ver, route.query.proveedor], () => {
     prefillSupplier.value = null
     modalOpen.value = true
   }
-  else if (route.query.nuevo) {
+  // El gestor solo consulta: ?nuevo=1 no abre el alta
+  else if (route.query.nuevo && !readOnly.value) {
     editId.value = null
     prefillSupplier.value = Number(route.query.proveedor) || null
     modalOpen.value = true
@@ -510,6 +511,8 @@ async function pendingOne(e: ExpenseRow) {
 }
 
 function statusItems(e: ExpenseRow): MenuItem[] {
+  // Sin opciones, la etiqueta se queda en una etiqueta normal
+  if (readOnly.value) return []
   if (e.approval === 'pending') {
     return canApprove.value
       ? [
@@ -625,52 +628,57 @@ function rowCtx(e: ExpenseRow): CtxSpec {
     ...(e.fileId ? [{ label: 'Ver justificante', icon: 'ph:file-magnifying-glass', onClick: () => viewer.open(storedFile({ id: e.fileId!, name: nameOf(e) })) }] : []),
     { divider: true },
   ]
-  if (canApprove.value && e.approval === 'pending') {
+  // El gestor solo consulta: abrir, ver el justificante, copiar y filtrar
+  if (!readOnly.value) {
+    if (canApprove.value && e.approval === 'pending') {
+      items.push(
+        { label: 'Aprobar', icon: 'ph:check-bold', onClick: () => decide(one, 'approve') },
+        { label: 'Rechazar…', icon: 'ph:x-bold', onClick: () => decide(one, 'reject') },
+        { divider: true },
+      )
+    }
+    if (e.status !== 'paid') items.push({ label: 'Marcar como pagado', icon: 'ph:check-circle', sub: e.status === 'partial' ? `Pendiente ${eur(e.total - e.paidTotal)}` : undefined, onClick: () => markPaid(e) })
+    if (!e.reviewed) {
+      items.push({ label: 'Dar por revisado', icon: 'ph:sparkle', onClick: () => confirmReview(one, `row-${e.id}`) })
+      if (kindsOf(e).has('currency')) items.push({ label: 'Pasar a euros', icon: 'ph:currency-eur', onClick: () => convertToEur(one, `row-${e.id}`) })
+    }
     items.push(
-      { label: 'Aprobar', icon: 'ph:check-bold', onClick: () => decide(one, 'approve') },
-      { label: 'Rechazar…', icon: 'ph:x-bold', onClick: () => decide(one, 'reject') },
-      { divider: true },
+      {
+        label: 'Deducible',
+        icon: level === 'full' ? 'ph:check-circle' : level === 'partial' ? 'ph:circle-half' : 'ph:prohibit',
+        sub: deductibleLabel(e.deductiblePct, e.vatDeductiblePct, e.vatTotal !== 0),
+        children: deductibleMenu(e),
+      },
+      {
+        label: 'Categoría',
+        icon: 'ph:tag',
+        sub: e.categoryName ?? 'Sin categoría',
+        children: [
+          ...expenseCats.value.map(c => ({ label: c.name, icon: 'ph:tag', active: e.categoryId === c.id, onClick: () => e.categoryId !== c.id && apply(one, { categoryId: c.id }, `Movido a ${c.name}`) })),
+          { divider: true },
+          { label: 'Sin categoría', icon: 'ph:tag-simple', active: e.categoryId == null, onClick: () => e.categoryId != null && apply(one, { categoryId: null }, 'Sin categoría') },
+        ],
+      },
     )
   }
-  if (e.status !== 'paid') items.push({ label: 'Marcar como pagado', icon: 'ph:check-circle', sub: e.status === 'partial' ? `Pendiente ${eur(e.total - e.paidTotal)}` : undefined, onClick: () => markPaid(e) })
-  if (!e.reviewed) {
-    items.push({ label: 'Dar por revisado', icon: 'ph:sparkle', onClick: () => confirmReview(one, `row-${e.id}`) })
-    if (kindsOf(e).has('currency')) items.push({ label: 'Pasar a euros', icon: 'ph:currency-eur', onClick: () => convertToEur(one, `row-${e.id}`) })
-  }
   items.push(
-    {
-      label: 'Deducible',
-      icon: level === 'full' ? 'ph:check-circle' : level === 'partial' ? 'ph:circle-half' : 'ph:prohibit',
-      sub: deductibleLabel(e.deductiblePct, e.vatDeductiblePct, e.vatTotal !== 0),
-      children: deductibleMenu(e),
-    },
-    {
-      label: 'Categoría',
-      icon: 'ph:tag',
-      sub: e.categoryName ?? 'Sin categoría',
-      children: [
-        ...expenseCats.value.map(c => ({ label: c.name, icon: 'ph:tag', active: e.categoryId === c.id, onClick: () => e.categoryId !== c.id && apply(one, { categoryId: c.id }, `Movido a ${c.name}`) })),
-        { divider: true },
-        { label: 'Sin categoría', icon: 'ph:tag-simple', active: e.categoryId == null, onClick: () => e.categoryId != null && apply(one, { categoryId: null }, 'Sin categoría') },
-      ],
-    },
     { label: 'Copiar', icon: 'ph:copy', children: copy },
     { divider: true },
   )
   if (e.supplierId) {
-    items.push(
-      { label: 'Ficha del proveedor', icon: 'ph:storefront', to: `/proveedores/${e.supplierId}` },
-      { label: 'Nuevo gasto del proveedor', icon: 'ph:plus-circle', to: `/gastos?nuevo=1&proveedor=${e.supplierId}` },
-    )
+    items.push({ label: 'Ficha del proveedor', icon: 'ph:storefront', to: `/proveedores/${e.supplierId}` })
+    if (!readOnly.value) items.push({ label: 'Nuevo gasto del proveedor', icon: 'ph:plus-circle', to: `/gastos?nuevo=1&proveedor=${e.supplierId}` })
   }
   if (e.supplierName) items.push({ label: `Solo de ${e.supplierName}`, icon: 'ph:funnel', onClick: () => (q.value = e.supplierName!) })
   if (e.categoryId) items.push({ label: `Solo ${e.categoryName}`, icon: 'ph:funnel-simple', onClick: () => (categoryId.value = e.categoryId) })
-  items.push(
-    { divider: true },
-    { label: selectedSet.value.has(e.id) ? 'Quitar de la selección' : 'Seleccionar', icon: selectedSet.value.has(e.id) ? 'ph:minus-circle' : 'ph:check-square', onClick: () => pickFromMenu(e) },
-    { divider: true },
-    { label: 'Eliminar gasto', icon: 'ph:trash', danger: true, onClick: () => deleteBulk(one) },
-  )
+  if (!readOnly.value) {
+    items.push(
+      { divider: true },
+      { label: selectedSet.value.has(e.id) ? 'Quitar de la selección' : 'Seleccionar', icon: selectedSet.value.has(e.id) ? 'ph:minus-circle' : 'ph:check-square', onClick: () => pickFromMenu(e) },
+      { divider: true },
+      { label: 'Eliminar gasto', icon: 'ph:trash', danger: true, onClick: () => deleteBulk(one) },
+    )
+  }
   return { title: nameOf(e), subtitle: `${fdate(e.issueDate)} · ${eur(e.total)}`, icon: e.categoryIcon || 'ph:wallet', items }
 }
 
@@ -705,7 +713,7 @@ function savePartial() {
         <h1>Gastos</h1>
         <p class="sub">Facturas recibidas, tickets y cuotas. Todo lo que deduces, en un sitio.</p>
       </div>
-      <div class="page-actions">
+      <div v-if="!readOnly" class="page-actions">
         <UiButton icon="ph:scan" compact @click="openScan('received')">Escanear con IA</UiButton>
         <UiButton variant="primary" icon="ph:plus-bold" compact @click="openNew">Añadir gasto</UiButton>
       </div>
@@ -764,7 +772,7 @@ function savePartial() {
         <span class="rp-ic" aria-hidden="true"><Icon name="ph:sparkle-fill" /></span>
         <div>
           <h2>Por qué están por revisar</h2>
-          <p>Solo se marca lo que necesita tu ojo. Corrígelo y guarda, o dalo por bueno desde aquí.</p>
+          <p>{{ readOnly ? 'Solo se marca lo que necesita revisión.' : 'Solo se marca lo que necesita tu ojo. Corrígelo y guarda, o dalo por bueno desde aquí.' }}</p>
         </div>
       </header>
       <ul class="rp-list">
@@ -778,8 +786,10 @@ function savePartial() {
             <UiButton size="sm" variant="ghost" :aria-pressed="reviewFilter === g.kind" @click="reviewFilter = reviewFilter === g.kind ? null : g.kind">
               {{ reviewFilter === g.kind ? 'Ver todos' : 'Ver' }}
             </UiButton>
-            <UiButton v-if="g.kind === 'currency'" size="sm" variant="ai" icon="ph:currency-eur" :loading="reviewBusy === g.kind" @click="convertToEur(g.ids, g.kind)">Pasar a euros</UiButton>
-            <UiButton v-else size="sm" icon="ph:check-bold" :loading="reviewBusy === g.kind" @click="confirmReview(g.ids, g.kind)">Dar por buenos</UiButton>
+            <template v-if="!readOnly">
+              <UiButton v-if="g.kind === 'currency'" size="sm" variant="ai" icon="ph:currency-eur" :loading="reviewBusy === g.kind" @click="convertToEur(g.ids, g.kind)">Pasar a euros</UiButton>
+              <UiButton v-else size="sm" icon="ph:check-bold" :loading="reviewBusy === g.kind" @click="confirmReview(g.ids, g.kind)">Dar por buenos</UiButton>
+            </template>
           </div>
         </li>
       </ul>
@@ -804,7 +814,7 @@ function savePartial() {
             <Icon name="ph:paperclip" aria-hidden="true" /> Sin justificante <Icon name="ph:x-bold" class="x" aria-label="Quitar filtro" />
           </button>
           <UiButton
-            v-if="rows.length"
+            v-if="rows.length && !readOnly"
             class="mobile sel-toggle"
             :variant="selecting ? 'primary' : 'secondary'"
             :icon="selecting ? 'ph:x' : 'ph:check-square'"
@@ -833,8 +843,10 @@ function savePartial() {
         text="Registra facturas de proveedores, tickets y cuotas: cada gasto deducible reduce lo que pagas de IVA e IRPF."
       >
         <UiButton v-if="!isAll" icon="ph:infinity" @click="period = { year: null, quarter: null, month: null }">Ver todos los años</UiButton>
-        <UiButton variant="primary" icon="ph:plus-bold" @click="openNew">Añadir gasto</UiButton>
-        <UiButton icon="ph:scan" @click="openScan('received')">Escanear con IA</UiButton>
+        <template v-if="!readOnly">
+          <UiButton variant="primary" icon="ph:plus-bold" @click="openNew">Añadir gasto</UiButton>
+          <UiButton icon="ph:scan" @click="openScan('received')">Escanear con IA</UiButton>
+        </template>
       </UiEmpty>
 
       <UiEmpty v-else-if="!rows.length" compact icon="ph:funnel" title="Ningún gasto coincide" text="Cambia los filtros o el periodo.">
@@ -846,7 +858,7 @@ function savePartial() {
           <table class="table">
             <thead>
               <tr>
-                <th class="pick">
+                <th v-if="!readOnly" class="pick">
                   <input
                     type="checkbox"
                     :checked="allSelected"
@@ -875,7 +887,7 @@ function savePartial() {
                 @click="openEdit(e.id)"
                 @keydown.enter.self="openEdit(e.id)"
               >
-                <td class="pick" @click.stop="toggle(e.id, $event)">
+                <td v-if="!readOnly" class="pick" @click.stop="toggle(e.id, $event)">
                   <input
                     type="checkbox"
                     :checked="selectedSet.has(e.id)"
@@ -904,7 +916,11 @@ function savePartial() {
                   <span v-else class="muted">Sin categoría</span>
                 </td>
                 <td @click.stop>
-                  <UiMenu :items="deductibleMenu(e)" :width="236" align="start">
+                  <span v-if="readOnly" class="ded-pill ro" :class="levelOf(e)" :title="deductibleLabel(e.deductiblePct, e.vatDeductiblePct, e.vatTotal !== 0)">
+                    <Icon :name="levelOf(e) === 'full' ? 'ph:check-circle-fill' : levelOf(e) === 'partial' ? 'ph:circle-half-fill' : 'ph:prohibit'" aria-hidden="true" />
+                    <span>{{ levelOf(e) === 'full' ? 'Sí' : levelOf(e) === 'none' ? 'No' : deductibleLabel(e.deductiblePct, e.vatDeductiblePct, e.vatTotal !== 0) }}</span>
+                  </span>
+                  <UiMenu v-else :items="deductibleMenu(e)" :width="236" align="start">
                     <template #default="{ toggle: openMenu }">
                       <button
                         type="button"
@@ -1252,7 +1268,7 @@ input[type='checkbox'] {
   border-color: var(--border-subtle);
 }
 
-.ded-pill:hover {
+.ded-pill:not(.ro):hover {
   border-color: var(--border);
 }
 

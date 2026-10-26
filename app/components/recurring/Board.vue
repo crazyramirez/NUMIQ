@@ -41,6 +41,8 @@ const router = useRouter()
 const toast = useToast()
 const { confirm } = useConfirm()
 const today = todayISO()
+// Gestor: modo consulta (ve la programación, no crea, genera, pausa ni elimina)
+const { readOnly } = useMe()
 
 const { data, status: fetchStatus, refresh } = useFetch<Row[]>('/api/recurrings', { key: 'recurrings', lazy: true })
 const all = computed(() => data.value ?? [])
@@ -220,6 +222,7 @@ watch(() => [route.query.nuevo, route.query.ver, route.query.desde, route.query.
     return
   }
   if (q.ver) openEdit(Number(q.ver))
+  else if (readOnly.value) return
   else if (q.desde) fromInvoice(Number(q.desde))
   else if (q.gasto) fromExpense(Number(q.gasto))
   else if (q.nuevo) openNew(q.nuevo === 'gasto' ? 'expense' : 'invoice')
@@ -297,6 +300,12 @@ async function remove(r: Row) {
 }
 
 function menuOf(r: Row): MenuItem[] {
+  if (readOnly.value) {
+    return [
+      { label: 'Ver', icon: 'ph:eye', onClick: () => openEdit(r.id) },
+      ...(r.lastDocument ? [{ label: r.kind === 'invoice' ? 'Ver la última factura' : 'Ver el último gasto', icon: 'ph:arrow-square-out', to: docLink(r.lastDocument) }] : []),
+    ]
+  }
   const items: MenuItem[] = [
     { label: 'Editar', icon: 'ph:pencil-simple', onClick: () => openEdit(r.id) },
     { label: 'Generar ahora', icon: 'ph:lightning', onClick: () => runNow(r) },
@@ -328,8 +337,9 @@ function rowCtx(r: Row): CtxSpec {
       ...(r.status !== 'finished' ? [{ label: 'Próxima fecha', sub: fdate(r.nextDate), icon: 'ph:calendar-dots', onClick: () => copyText(fdate(r.nextDate), 'Fecha') }] : []),
     ],
   })
-  // Antes del separador de «Eliminar»
-  items.splice(items.length - 2, 0, { divider: true }, ...extra)
+  // Antes del separador de «Eliminar» (en modo consulta no lo hay: al final)
+  if (readOnly.value) items.push({ divider: true }, ...extra)
+  else items.splice(items.length - 2, 0, { divider: true }, ...extra)
   return {
     title: r.name,
     subtitle: `${eur(r.total)} · ${frequencyLabel(r.frequency, r.interval)}${r.status === 'active' ? ` · próxima ${fdate(r.nextDate)}` : r.status === 'paused' ? ' · en pausa' : ''}`,
@@ -355,7 +365,7 @@ const IDEAS = computed(() => ALL_IDEAS.filter(i => i.kind === props.kind))
         <h1>{{ isInvoice ? 'Facturas recurrentes' : 'Gastos fijos' }}</h1>
         <p class="sub">{{ isInvoice ? 'Cuotas, igualas y mantenimientos que se facturan solos en su fecha.' : 'Alquiler, cuota de autónomos, software… se registran solos cada mes.' }}</p>
       </div>
-      <div class="page-actions">
+      <div v-if="!readOnly" class="page-actions">
         <UiButton variant="primary" icon="ph:plus-bold" compact @click="openNew(kind)">{{ isInvoice ? 'Factura recurrente' : 'Gasto fijo' }}</UiButton>
       </div>
     </header>
@@ -424,7 +434,7 @@ const IDEAS = computed(() => ALL_IDEAS.filter(i => i.kind === props.kind))
         :title="isInvoice ? 'Lo que facturas cada mes, que se haga solo' : 'Lo que pagas cada mes, que se apunte solo'"
         :text="isInvoice ? 'Cuotas de mantenimiento, igualas o suscripciones: prográmalas una vez y NUMIQ genera cada factura en su fecha, como borrador o emitida y enviada.' : 'Alquiler, cuota de autónomos, gestoría o software: prográmalos una vez y NUMIQ registra cada gasto en su fecha, ya categorizado.'"
       >
-        <UiButton variant="primary" :icon="isInvoice ? 'ph:receipt' : 'ph:wallet'" @click="openNew(kind)">{{ isInvoice ? 'Factura recurrente' : 'Gasto fijo' }}</UiButton>
+        <UiButton v-if="!readOnly" variant="primary" :icon="isInvoice ? 'ph:receipt' : 'ph:wallet'" @click="openNew(kind)">{{ isInvoice ? 'Factura recurrente' : 'Gasto fijo' }}</UiButton>
       </UiEmpty>
 
       <UiEmpty v-else-if="!shown.length" compact icon="ph:funnel" title="Nada en este filtro">
@@ -463,7 +473,7 @@ const IDEAS = computed(() => ALL_IDEAS.filter(i => i.kind === props.kind))
             </span>
           </button>
           <div class="it-act">
-            <span v-if="r.status === 'finished'" class="spacer" aria-hidden="true" />
+            <span v-if="r.status === 'finished' || readOnly" class="spacer" aria-hidden="true" />
             <UiButton
               v-else
               class="pause"
@@ -520,7 +530,7 @@ const IDEAS = computed(() => ALL_IDEAS.filter(i => i.kind === props.kind))
       </template>
     </UiCard>
 
-    <section v-if="!firstLoad && !rows.length" class="ideas rise" style="--i: 3" aria-label="Ideas para empezar">
+    <section v-if="!firstLoad && !rows.length && !readOnly" class="ideas rise" style="--i: 3" aria-label="Ideas para empezar">
       <p class="eyebrow">Ideas para empezar</p>
       <div class="chips">
         <button v-for="idea in IDEAS" :key="idea.label" type="button" class="chip" @click="openNew(idea.kind, { name: idea.name })">

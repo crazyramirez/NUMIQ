@@ -25,6 +25,8 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const { confirm } = useConfirm()
+// Gestor: modo consulta (ve el catálogo y cada ficha; no crea, cambia, mueve ni borra)
+const { readOnly } = useMe()
 
 const { data, status, refresh } = useFetch<Item[]>('/api/items', { key: 'items', lazy: true })
 const items = computed(() => data.value ?? [])
@@ -89,7 +91,7 @@ function openEdit(id: number) {
 }
 
 watch(() => route.query.nuevo, (v) => {
-  if (v) openNew()
+  if (v && !readOnly.value) openNew()
 }, { immediate: true })
 watch(modalOpen, (v) => {
   if (!v && route.query.nuevo) router.replace({ query: { ...route.query, nuevo: undefined } })
@@ -226,10 +228,25 @@ function rowCtx(i: Item): CtxSpec {
     }
   }
   const on = sel.selectedSet.value.has(i.id)
-  return {
+  const copy: CtxItem = {
+    label: 'Copiar',
+    icon: 'ph:copy',
+    children: [
+      { label: 'Nombre', sub: i.name, icon: 'ph:text-aa', onClick: () => copyText(i.name, 'Nombre') },
+      { label: 'Precio con IVA', sub: eur(withVat(i)), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(withVat(i)), 'Precio') },
+      { label: 'Precio sin IVA', sub: eur(i.unitPrice), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(i.unitPrice), 'Precio') },
+      ...(i.sku ? [{ label: 'Referencia', sub: i.sku, icon: 'ph:barcode', onClick: () => copyText(i.sku, 'Referencia') }] : []),
+      ...(i.description ? [{ label: 'Descripción', sub: i.description, icon: 'ph:text-align-left', onClick: () => copyText(i.description, 'Descripción') }] : []),
+    ],
+  }
+  const head = {
     title: i.name,
     subtitle: `${eur(withVat(i))}${i.unit ? ` / ${i.unit}` : ''}${i.uses ? ` · ${i.uses} ${i.uses === 1 ? 'vez' : 'veces'} en 12 m` : ''}`,
     icon: i.kind === 'service' ? 'ph:handshake' : 'ph:package',
+  }
+  if (readOnly.value) return { ...head, items: [{ label: 'Ver', icon: 'ph:eye', keys: ['↵'], onClick: () => openEdit(i.id) }, { divider: true }, copy] }
+  return {
+    ...head,
     items: [
       { label: 'Editar', icon: 'ph:pencil-simple', keys: ['↵'], onClick: () => openEdit(i.id) },
       { divider: true },
@@ -237,17 +254,7 @@ function rowCtx(i: Item): CtxSpec {
       { label: 'Nuevo presupuesto con él', icon: 'ph:file-text', to: `/presupuestos/nuevo?producto=${i.id}` },
       { divider: true },
       { label: 'Categoría', icon: 'ph:folder-simple', children: categoryItems(i.categoryId, id => moveOne(i, id)) },
-      {
-        label: 'Copiar',
-        icon: 'ph:copy',
-        children: [
-          { label: 'Nombre', sub: i.name, icon: 'ph:text-aa', onClick: () => copyText(i.name, 'Nombre') },
-          { label: 'Precio con IVA', sub: eur(withVat(i)), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(withVat(i)), 'Precio') },
-          { label: 'Precio sin IVA', sub: eur(i.unitPrice), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(i.unitPrice), 'Precio') },
-          ...(i.sku ? [{ label: 'Referencia', sub: i.sku, icon: 'ph:barcode', onClick: () => copyText(i.sku, 'Referencia') }] : []),
-          ...(i.description ? [{ label: 'Descripción', sub: i.description, icon: 'ph:text-align-left', onClick: () => copyText(i.description, 'Descripción') }] : []),
-        ],
-      },
+      copy,
       { divider: true },
       { label: on ? 'Quitar de la selección' : 'Seleccionar', icon: on ? 'ph:minus-circle' : 'ph:check-square', onClick: () => pickFromMenu(i) },
       { divider: true },
@@ -273,13 +280,13 @@ const bulkActions = computed<BulkAction[]>(() => [
 </script>
 
 <template>
-  <div class="page">
+  <div class="page" :class="{ ro: readOnly }">
     <header class="page-head">
       <div>
         <h1>Productos y servicios</h1>
         <p class="sub">Tu catálogo con precios e IVA: añádelos a una factura en un clic.</p>
       </div>
-      <div class="page-actions">
+      <div v-if="!readOnly" class="page-actions">
         <UiButton variant="primary" icon="ph:plus-bold" compact @click="openNew">Nuevo</UiButton>
       </div>
     </header>
@@ -307,7 +314,7 @@ const bulkActions = computed<BulkAction[]>(() => [
         <UiInput v-model="q" icon="ph:magnifying-glass" placeholder="Buscar en el catálogo" aria-label="Buscar en el catálogo" type="search" class="search" />
         <UiSegmented v-model="kind" :options="kindOptions" label="Tipo" />
         <UiButton
-          v-if="filtered.length"
+          v-if="filtered.length && !readOnly"
           class="sel-toggle"
           :variant="sel.selecting.value ? 'primary' : 'secondary'"
           :icon="sel.selecting.value ? 'ph:x' : 'ph:check-square'"
@@ -343,7 +350,7 @@ const bulkActions = computed<BulkAction[]>(() => [
         >
           Sin categoría <span class="n num">{{ catCount(null) }}</span>
         </button>
-        <button type="button" class="chip manage" @click="catsOpen = true">
+        <button v-if="!readOnly" type="button" class="chip manage" @click="catsOpen = true">
           <Icon :name="categories.length ? 'ph:sliders-horizontal' : 'ph:folder-simple-plus'" aria-hidden="true" />
           {{ categories.length ? 'Gestionar' : 'Organiza con categorías' }}
         </button>
@@ -363,10 +370,10 @@ const bulkActions = computed<BulkAction[]>(() => [
       <UiEmpty
         v-else-if="!items.length"
         icon="ph:package"
-        title="Crea tu catálogo"
-        text="Guarda tus servicios y productos con su precio e IVA. Al facturar solo tendrás que elegirlos, y verás cuáles te dan más ingresos."
+        :title="readOnly ? 'El catálogo está vacío' : 'Crea tu catálogo'"
+        :text="readOnly ? 'Cuando la empresa guarde sus productos y servicios, aparecerán aquí.' : 'Guarda tus servicios y productos con su precio e IVA. Al facturar solo tendrás que elegirlos, y verás cuáles te dan más ingresos.'"
       >
-        <UiButton variant="primary" icon="ph:plus-bold" @click="openNew">Añadir el primero</UiButton>
+        <UiButton v-if="!readOnly" variant="primary" icon="ph:plus-bold" @click="openNew">Añadir el primero</UiButton>
       </UiEmpty>
 
       <UiEmpty v-else-if="!filtered.length" compact icon="ph:magnifying-glass" title="Sin resultados" text="Prueba con otro nombre o cambia el filtro.">
@@ -375,7 +382,7 @@ const bulkActions = computed<BulkAction[]>(() => [
 
       <template v-else>
         <div class="list-head" :class="{ on: sel.selected.value.length }">
-          <span class="pick">
+          <span v-if="!readOnly" class="pick">
             <input
               type="checkbox"
               :checked="sel.allSelected.value"
@@ -392,7 +399,7 @@ const bulkActions = computed<BulkAction[]>(() => [
 
         <ul class="list">
           <li v-for="(i, idx) in shown" :key="i.id" v-ctx="() => rowCtx(i)" class="row rise" :class="{ sel: sel.selectedSet.value.has(i.id) }" :style="{ '--i': Math.min(idx, 10) }">
-            <span class="pick" @click="sel.toggle(i.id, $event)">
+            <span v-if="!readOnly" class="pick" @click="sel.toggle(i.id, $event)">
               <input
                 type="checkbox"
                 :checked="sel.selectedSet.value.has(i.id)"
@@ -585,6 +592,12 @@ const bulkActions = computed<BulkAction[]>(() => [
 
 .row:last-child {
   border-bottom: 0;
+}
+
+/* Modo consulta: sin columna de casillas */
+.ro .row,
+.ro .list-head {
+  grid-template-columns: minmax(0, 1fr) 200px 190px 36px;
 }
 
 .row:hover {
@@ -882,6 +895,11 @@ input[type='checkbox'] {
   .row,
   .list-head {
     grid-template-columns: 16px minmax(0, 1fr) 170px 36px;
+  }
+
+  .ro .row,
+  .ro .list-head {
+    grid-template-columns: minmax(0, 1fr) 170px 36px;
   }
 
   .usage,

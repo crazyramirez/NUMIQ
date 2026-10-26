@@ -461,7 +461,7 @@ function insertToken(kind: 'invoice' | 'quote', token: string) {
             />
           </div>
           <span v-if="previewing || autoSaving || saving" class="pv-state"><span class="spin" /> Guardando y actualizando…</span>
-          <span v-else class="pv-state ok"><Icon name="ph:check-circle-fill" /> Guardado automáticamente</span>
+          <span v-else-if="canEdit" class="pv-state ok"><Icon name="ph:check-circle-fill" /> Guardado automáticamente</span>
         </div>
         <div class="pv-body">
           <DocsPdfPreview

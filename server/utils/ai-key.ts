@@ -1,15 +1,16 @@
-import { and, eq, isNotNull } from 'drizzle-orm'
+import { and, desc, eq, isNotNull, ne, or } from 'drizzle-orm'
 
 /**
  * Clave de OpenAI de cada usuario: la pega en Ajustes → Inteligencia artificial y se guarda cifrada con
  * AES-256-GCM (la misma custodia que los certificados, con NUXT_CERT_SECRET). Nunca vuelve al navegador
- * ni se registra. Quien no tiene clave propia usa la del titular de la empresa activa (empleados, gestores).
+ * ni se registra. Quien no tiene clave propia usa la del titular de la empresa activa; el gestor, siempre la
+ * de la empresa que lo invitó si la hay.
  */
 
 export interface AiKey {
   key: string
   source: 'own' | 'owner'
-  /** Titular de la empresa que presta su clave */
+  /** Quien presta su clave en la empresa (el titular o un administrador) */
   ownerName: string | null
   /** Quien paga en OpenAI: el propio usuario o el titular */
   userId: number
@@ -38,19 +39,48 @@ export function aiKeyHint(key: string) {
   return `${prefix}…${key.slice(-4)}`
 }
 
+/**
+ * Clave que presta la empresa: la del titular y, si no tiene, la del administrador que invitó a este usuario.
+ * Nunca la de otro administrador: no paga el uso de alguien a quien no ha invitado.
+ */
+async function companyAiKey(companyId: number, userId: number): Promise<AiKey | null> {
+  const db = useDb()
+  const m = tables.companyMembers
+  const i = tables.companyInvites
+  const [invite] = await db.select({ by: i.invitedBy }).from(i)
+    .where(and(eq(i.companyId, companyId), eq(i.acceptedBy, userId)))
+    .orderBy(desc(i.id)).limit(1)
+  const lenders = await db.select({ id: tables.users.id, name: tables.users.name, key: tables.users.openaiKey, hint: tables.users.openaiKeyHint, role: m.role })
+    .from(m)
+    .innerJoin(tables.users, eq(tables.users.id, m.userId))
+    .where(and(
+      eq(m.companyId, companyId),
+      ne(m.userId, userId),
+      isNotNull(tables.users.openaiKey),
+      invite?.by ? or(eq(m.role, 'owner'), and(eq(m.role, 'admin'), eq(m.userId, invite.by))) : eq(m.role, 'owner'),
+    ))
+  // Primero el titular
+  for (const l of lenders.sort((a, b) => Number(a.role !== 'owner') - Number(b.role !== 'owner'))) {
+    const key = openAiKey(l.key)
+    if (key) return { key, source: 'owner', ownerName: l.name, userId: l.id, hint: l.hint }
+  }
+  return null
+}
+
+/**
+ * Cada uno usa su clave y, sin ella, la de la empresa. El gestor al revés: trabaja para la empresa que lo
+ * invitó, así que la IA la paga ella; su clave propia solo cuenta si la empresa no tiene ninguna.
+ */
 export async function findAiKey(userId: number, companyId: number | null): Promise<AiKey | null> {
   const db = useDb()
   const [own] = await db.select({ key: tables.users.openaiKey, hint: tables.users.openaiKeyHint }).from(tables.users).where(eq(tables.users.id, userId))
   const key = openAiKey(own?.key)
-  if (key) return { key, source: 'own', ownerName: null, userId, hint: own!.hint }
-  if (!companyId) return null
-  const [owner] = await db.select({ id: tables.users.id, name: tables.users.name, key: tables.users.openaiKey, hint: tables.users.openaiKeyHint })
-    .from(tables.companyMembers)
-    .innerJoin(tables.users, eq(tables.users.id, tables.companyMembers.userId))
-    .where(and(eq(tables.companyMembers.companyId, companyId), eq(tables.companyMembers.role, 'owner'), isNotNull(tables.users.openaiKey)))
-    .limit(1)
-  const ownerKey = openAiKey(owner?.key)
-  return ownerKey ? { key: ownerKey, source: 'owner', ownerName: owner!.name, userId: owner!.id, hint: owner!.hint } : null
+  const mine: AiKey | null = key ? { key, source: 'own', ownerName: null, userId, hint: own!.hint } : null
+  if (!companyId) return mine
+  const [member] = await db.select({ role: tables.companyMembers.role }).from(tables.companyMembers)
+    .where(and(eq(tables.companyMembers.companyId, companyId), eq(tables.companyMembers.userId, userId)))
+  if (mine && member?.role !== 'advisor') return mine
+  return (await companyAiKey(companyId, userId)) ?? mine
 }
 
 /**

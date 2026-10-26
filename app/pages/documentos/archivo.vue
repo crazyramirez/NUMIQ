@@ -24,6 +24,8 @@ interface VaultData {
 
 const toast = useToast()
 const { confirm } = useConfirm()
+// Gestor: consulta y descarga; no sube, mueve, renombra, firma ni borra
+const { readOnly } = useMe()
 
 const now = new Date()
 // Periodo, carpeta y página en la URL: enlaces directos y, al volver atrás, el archivo sigue igual
@@ -155,10 +157,24 @@ async function moveTo(f: VaultFile, body: { folder?: string, quarter?: number },
 
 function ctxFor(f: VaultFile): CtxSpec {
   const current = f.folder ?? 'otros'
-  return {
+  const head = {
     title: f.name,
     subtitle: `${vaultFolder(f.folder).label} · ${f.quarter}T ${f.year} · ${fileSize(f.size)}`,
     icon: fileIcon(f.name, f.mime),
+  }
+  if (readOnly.value) {
+    return {
+      ...head,
+      items: [
+        { label: 'Ver', icon: 'ph:eye', keys: ['↵'], onClick: () => show(f) },
+        { label: 'Descargar', icon: 'ph:download-simple', onClick: () => { window.location.href = `/api/files/${f.id}?download=1` } },
+        { divider: true },
+        { label: 'Copiar nombre', icon: 'ph:copy', onClick: () => copyText(f.name, 'Nombre') },
+      ],
+    }
+  }
+  return {
+    ...head,
     items: [
       { label: 'Ver', icon: 'ph:eye', keys: ['↵'], onClick: () => show(f) },
       ...(signableMime(f.mime) ? [{ label: 'Firmar…', icon: 'ph:signature', onClick: () => show(f, true) }] : []),
@@ -195,7 +211,7 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
         <p class="sub">Extractos, contratos, nóminas y justificantes de cada trimestre, listos para tu gestoría.</p>
       </div>
       <div class="page-actions">
-        <UiButton variant="secondary" icon="ph:paper-plane-tilt" :to="`/documentos/gestor?anio=${year}${quarter !== 'all' ? `&t=${quarter}` : ''}`">Enviar al gestor</UiButton>
+        <UiButton variant="secondary" :icon="readOnly ? 'ph:file-zip' : 'ph:paper-plane-tilt'" :to="`/documentos/gestor?anio=${year}${quarter !== 'all' ? `&t=${quarter}` : ''}`">{{ readOnly ? 'Descargar el trimestre' : 'Enviar al gestor' }}</UiButton>
       </div>
     </header>
 
@@ -224,6 +240,7 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
     </div>
 
     <DocsDropzone
+      v-if="!readOnly"
       compact
       :title="uploading ? `Subiendo… ${pct} %` : `Arrastra documentos para ${vaultFolder(uploadFolder).label} · ${uploadQuarter}T ${year}`"
       hint="PDF, imágenes, Word, Excel, CSV, XML o ZIP · hasta 25 MB cada uno"
@@ -241,7 +258,7 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
         <p class="section-title">{{ folder === 'all' ? 'Todos los documentos' : vaultFolder(folder).label }} · {{ periodLabel }}</p>
         <span class="muted small num">{{ files.length }} documento{{ files.length === 1 ? '' : 's' }} · {{ fileSize(totalBytes) }}</span>
       </header>
-      <UiEmpty v-if="!files.length" compact icon="ph:archive" title="No hay documentos aquí" text="Sube extractos del banco, contratos o justificantes: tu gestoría los tendrá ordenados por trimestre." />
+      <UiEmpty v-if="!files.length" compact icon="ph:archive" title="No hay documentos aquí" :text="readOnly ? 'Nada guardado en esta carpeta y periodo.' : 'Sube extractos del banco, contratos o justificantes: tu gestoría los tendrá ordenados por trimestre.'" />
       <ul v-else class="files">
         <li v-for="f in shown" :key="f.id" v-ctx="() => ctxFor(f)" class="file">
           <button type="button" class="f-main" @click="show(f)">
@@ -260,7 +277,7 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
       <UiPager v-model="page" v-model:size="pageSize" :pages="pages" :total="pageTotal" />
     </section>
 
-    <UiModal v-model="editOpen" size="sm" title="Mover o renombrar">
+    <UiModal v-if="!readOnly" v-model="editOpen" size="sm" title="Mover o renombrar">
       <form id="vault-edit" class="form-grid" @submit.prevent="saveEdit">
         <UiInput v-model="edit.name" class="c-12" label="Nombre" required />
         <UiSelect v-model="edit.folder" class="c-12" label="Carpeta" :options="folderOptions" />

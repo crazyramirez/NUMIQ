@@ -19,6 +19,8 @@ interface ItemForm {
 }
 
 const toast = useToast()
+// Gestor: ve la ficha con los campos bloqueados, sin guardar ni eliminar
+const { readOnly } = useMe()
 const formId = useId()
 const unitsId = useId()
 
@@ -174,12 +176,13 @@ async function remove() {
 </script>
 
 <template>
-  <UiModal v-model="open" :title="isEdit ? 'Editar del catálogo' : 'Nuevo producto o servicio'" subtitle="Lo tendrás a un clic al hacer facturas y presupuestos." size="md">
+  <UiModal v-model="open" :title="readOnly ? 'Del catálogo' : isEdit ? 'Editar del catálogo' : 'Nuevo producto o servicio'" :subtitle="readOnly ? undefined : 'Lo tendrás a un clic al hacer facturas y presupuestos.'" size="md">
     <div v-if="loading" class="loading">
       <div v-for="i in 4" :key="i" class="skeleton" style="height: 38px" />
     </div>
 
-    <form v-else :id="formId" novalidate @submit.prevent="save" @paste="picker?.onPaste($event)">
+    <form v-else :id="formId" :class="{ ro: readOnly }" novalidate @submit.prevent="save" @paste="!readOnly && picker?.onPaste($event)">
+      <fieldset class="ro-fs" :disabled="readOnly">
       <div class="head-row">
         <UiImagePick ref="picker" v-model:pending="pending" v-model:remove="removeImage" :url="imageUrl" />
         <div class="head-fields">
@@ -221,9 +224,13 @@ async function remove() {
           <UiButton size="sm" variant="soft" :disabled="gross == null" @click="applyGross">Calcular base</UiButton>
         </div>
       </div>
+      </fieldset>
     </form>
 
-    <template #footer>
+    <template v-if="readOnly" #footer>
+      <UiButton @click="open = false">Cerrar</UiButton>
+    </template>
+    <template v-else #footer>
       <UiButton v-if="isEdit" class="del" variant="ghost" icon="ph:trash" :loading="deleting" :disabled="loading" @click="remove">
         Eliminar
       </UiButton>
@@ -237,6 +244,16 @@ async function remove() {
 </template>
 
 <style scoped>
+/* Solo agrupa los campos para bloquearlos en modo consulta: no altera la maquetación */
+.ro-fs {
+  display: contents;
+}
+
+.ro .gross,
+.ro :deep(.pick-del) {
+  display: none;
+}
+
 .spacer {
   flex: 1;
 }

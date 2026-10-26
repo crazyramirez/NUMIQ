@@ -40,6 +40,8 @@ interface Receipt {
 }
 
 const toast = useToast()
+// El gestor consulta las casillas y puede ir a la Sede, pero no registra la presentación en la empresa
+const { readOnly } = useMe()
 const draft = ref<Draft | null>(null)
 const loading = ref(false)
 const receipt = ref<Receipt | null>(null)
@@ -171,7 +173,7 @@ async function markFiled() {
 </script>
 
 <template>
-  <UiModal v-model="open" size="lg" :title="draft ? `Modelo ${draft.model} · ${draft.quarter ? `${draft.period} ` : ''}${draft.year}` : 'Presentar modelo'" :subtitle="draft?.title">
+  <UiModal v-model="open" size="lg" :title="draft ? `Modelo ${draft.model} · ${draft.quarter ? `${draft.period} ` : ''}${draft.year}` : (readOnly ? 'Modelo' : 'Presentar modelo')" :subtitle="draft?.title">
     <div v-if="loading || !draft" class="stack gap-3">
       <div class="skeleton" style="height: 64px" />
       <div v-for="i in 6" :key="i" class="skeleton" style="height: 30px" />
@@ -242,7 +244,7 @@ async function markFiled() {
       </section>
 
       <!-- 3 -->
-      <section class="step">
+      <section v-if="!readOnly" class="step">
         <div class="s-head">
           <span class="s-n">3</span>
           <h3 class="s-t">Guarda el justificante</h3>
@@ -264,7 +266,7 @@ async function markFiled() {
 
     <template v-if="draft" #footer>
       <UiButton variant="ghost" @click="open = false">Cerrar</UiButton>
-      <UiButton variant="primary" icon="ph:seal-check" :loading="saving" @click="markFiled">Marcar como presentado</UiButton>
+      <UiButton v-if="!readOnly" variant="primary" icon="ph:seal-check" :loading="saving" @click="markFiled">Marcar como presentado</UiButton>
     </template>
   </UiModal>
 </template>

@@ -20,13 +20,12 @@ watch(() => route.query.escanear, (v) => {
 }, { immediate: true })
 
 // Clic derecho en una zona sin menú propio: crear, buscar, escanear, tema… (enlaces e imágenes, el del navegador)
-const { me } = useMe()
+const { me, readOnly } = useMe()
 const { collapsed, desktop } = useSidebar()
 const { mode: colorMode } = useTheme()
 const palette = useState('paletteOpen', () => false)
 function pageMenu(e: MouseEvent): CtxSpec | null {
   if ((e.target as Element).closest('a[href], img, video, canvas, iframe, [data-native-ctx]')) return null
-  const readOnly = me.value?.company?.role === 'advisor'
   const theme = colorMode.store.value
   return {
     footer: 'Mayús + clic derecho: menú del navegador',
@@ -34,7 +33,7 @@ function pageMenu(e: MouseEvent): CtxSpec | null {
       { label: 'Atrás', icon: 'ph:arrow-left', keys: ['Alt', '←'], disabled: !window.history.state?.back, onClick: () => router.back() },
       { label: 'Recargar', icon: 'ph:arrow-clockwise', keys: ['F5'], onClick: () => window.location.reload() },
       { divider: true },
-      ...(readOnly
+      ...(readOnly.value
         ? []
         : [
             { label: 'Crear', icon: 'ph:plus-circle', children: CREATE_ACTIONS.filter(a => !a.to.includes('escanear')).map(a => ({ label: a.label, icon: a.icon, to: a.to })) },
@@ -71,7 +70,8 @@ onMounted(() => {
       return
     }
     const ai = await $fetch('/api/ai/status').catch(() => null)
-    if (!ai || ai.own) return
+    // El gestor usa la clave de la empresa que lo invitó: no tiene nada que hacer
+    if (!ai || ai.own || (ai.advisor && ai.configured)) return
     try {
       localStorage.setItem(seenKey, '1')
     }

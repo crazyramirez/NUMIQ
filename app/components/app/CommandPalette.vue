@@ -14,9 +14,8 @@ interface Entry {
 }
 
 const open = useState('paletteOpen', () => false)
-const { me } = useMe()
-// El gestor entra en modo consulta: sin atajos de crear
-const readOnly = computed(() => me.value?.company?.role === 'advisor')
+// El gestor entra en modo consulta: sin crear ni importar (ni en la lista ni con atajos)
+const { readOnly } = useMe()
 const query = ref('')
 const active = ref(0)
 const input = ref<HTMLInputElement>()
@@ -29,9 +28,9 @@ const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCa
 const staticEntries = computed<Entry[]>(() => {
   const q = norm(query.value.trim())
   const match = (s: string) => !q || norm(s).includes(q)
-  const create = CREATE_ACTIONS.filter(a => match(`${a.label} ${a.keywords}`))
+  const create = CREATE_ACTIONS.filter(a => !readOnly.value && match(`${a.label} ${a.keywords}`))
     .map(a => ({ id: `c:${a.to}`, group: 'Crear', label: a.label, icon: a.icon, to: a.to, hint: a.hint }))
-  const nav = ALL_NAV.filter(n => match(`${n.label} ${n.keywords ?? ''}`))
+  const nav = ALL_NAV.filter(n => !(readOnly.value && n.to === '/documentos') && match(`${n.label} ${n.keywords ?? ''}`))
     .map(n => ({ id: `n:${n.to}`, group: 'Ir a', label: n.label, icon: n.icon, to: n.to }))
   return q ? [...create, ...nav] : [...create.slice(0, 4), ...nav]
 })

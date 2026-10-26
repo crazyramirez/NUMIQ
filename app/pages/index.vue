@@ -3,7 +3,7 @@ import type { CtxSpec } from '~/composables/useContextMenu'
 
 useHead({ title: 'Inicio · NUMIQ' })
 
-const { me, companyName } = useMe()
+const { me, companyName, readOnly } = useMe()
 // Lo que ya es una tarea de «Hoy» no se repite como recomendación del asesor
 const TASK_INSIGHTS = /^(overdue|drafts|bank:)/
 // «Aparta X para impuestos» ya lo cuenta «Tu dinero libre» cuando hay banco
@@ -60,7 +60,6 @@ const severity = {
 // ─── Clic derecho: actividad reciente, mejores clientes y plazos ───
 
 const viewer = useFileViewer()
-const readOnly = computed(() => me.value?.company?.role === 'advisor')
 type Recent = NonNullable<typeof data.value>['recent'][number]
 type Top = NonNullable<typeof data.value>['topClients'][number]
 type Deadline = NonNullable<typeof data.value>['deadlines'][number]
@@ -354,7 +353,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
             </li>
           </ul>
           <UiEmpty v-else compact icon="ph:users" title="Aún sin facturación" text="Tus clientes con más volumen aparecerán aquí.">
-            <UiButton size="sm" variant="soft" icon="ph:user-plus" to="/clientes?nuevo=1">Añadir cliente</UiButton>
+            <UiButton v-if="!readOnly" size="sm" variant="soft" icon="ph:user-plus" to="/clientes?nuevo=1">Añadir cliente</UiButton>
           </UiEmpty>
         </UiCard>
       </div>
@@ -406,7 +405,7 @@ const deadlineMonth = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateS
             </li>
           </ul>
           <UiEmpty v-else compact icon="ph:receipt" title="Tu primera factura te espera" text="Crea una factura en menos de un minuto: cliente, concepto y listo.">
-            <UiButton size="sm" variant="primary" icon="ph:plus-bold" to="/facturas/nueva">Nueva factura</UiButton>
+            <UiButton v-if="!readOnly" size="sm" variant="primary" icon="ph:plus-bold" to="/facturas/nueva">Nueva factura</UiButton>
           </UiEmpty>
         </UiCard>
       </div>

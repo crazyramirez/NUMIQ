@@ -5,9 +5,9 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const { confirm } = useConfirm()
-const { refresh: refreshMe } = useMe()
+const { refresh: refreshMe, readOnly, canManage } = useMe()
 
-const SECTIONS = [
+const ALL_SECTIONS = [
   { id: 'empresa', label: 'Empresa', icon: 'ph:buildings' },
   { id: 'numeracion', label: 'Numeración', icon: 'ph:list-numbers' },
   { id: 'ia', label: 'Inteligencia artificial', icon: 'ph:sparkle' },
@@ -20,11 +20,15 @@ const SECTIONS = [
   { id: 'copia', label: 'Copia de seguridad', icon: 'ph:cloud-arrow-down' },
   { id: 'novedades', label: 'Novedades', icon: 'ph:rocket-launch' },
 ] as const
-type SectionId = typeof SECTIONS[number]['id']
+type SectionId = typeof ALL_SECTIONS[number]['id']
+// El gestor no usa las firmas de la empresa (solo consulta): la sección sobra
+const SECTIONS = computed(() => (readOnly.value ? ALL_SECTIONS.filter(s => s.id !== 'firmas') : ALL_SECTIONS))
+/** Secciones con datos de la empresa: solo el titular y los administradores los cambian */
+const COMPANY_SECTIONS = new Set<SectionId>(['empresa', 'numeracion', 'diseno', 'cobros', 'gestoria'])
 
 const news = useNews()
 const section = computed<SectionId>({
-  get: () => (SECTIONS.some(s => s.id === route.query.s) ? route.query.s as SectionId : 'empresa'),
+  get: () => (SECTIONS.value.some(s => s.id === route.query.s) ? route.query.s as SectionId : 'empresa'),
   set: s => router.replace({ query: { ...route.query, s } }),
 })
 
@@ -231,7 +235,6 @@ function load() {
 watch(company, load, { immediate: true })
 
 const dirty = computed(() => !!form.value && JSON.stringify(form.value) !== original.value)
-const canEdit = computed(() => company.value?.role === 'owner' || company.value?.role === 'admin')
 
 const nifCheck = computed(() => {
   const v = form.value?.nif?.trim()
@@ -308,13 +311,13 @@ async function save(silent: boolean | Event = false) {
 }
 
 const debouncedAutoSave = useDebounceFn(() => {
-  if (dirty.value && canEdit.value && !nifError.value && form.value?.legalName?.trim()) {
+  if (dirty.value && canManage.value && !nifError.value && form.value?.legalName?.trim()) {
     save(true)
   }
 }, 800)
 
 watch(form, () => {
-  if (dirty.value && canEdit.value) {
+  if (dirty.value && canManage.value) {
     debouncedAutoSave()
   }
 }, { deep: true })
@@ -325,7 +328,7 @@ function discard() {
 }
 
 onBeforeRouteLeave(async (to, from) => {
-  if (dirty.value && canEdit.value && !nifError.value && form.value?.legalName?.trim()) {
+  if (dirty.value && canManage.value && !nifError.value && form.value?.legalName?.trim()) {
     await save(true)
     return true
   }
@@ -388,13 +391,13 @@ function onDesignSaved(accent: string) {
         </div>
 
         <template v-else>
-          <p v-if="!canEdit" class="readonly-note">
+          <p v-if="!canManage && COMPANY_SECTIONS.has(section)" class="readonly-note">
             <Icon name="ph:lock-simple" aria-hidden="true" /> Solo los administradores de la empresa pueden cambiar estos datos.
           </p>
 
           <!-- ─── Empresa ─── -->
           <form v-show="section === 'empresa'" class="card form-card rise" style="--i: 2" novalidate @submit.prevent="save">
-            <fieldset :disabled="!canEdit">
+            <fieldset :disabled="!canManage">
               <section class="form-section">
                 <div class="form-section-head">
                   <h3>Identidad</h3>
@@ -475,7 +478,7 @@ function onDesignSaved(accent: string) {
                         <p class="email-banner-text">Se configuran en Diseño de factura, con la vista previa al lado.</p>
                       </div>
                     </div>
-                    <UiButton type="button" size="sm" variant="secondary" icon="ph:paint-brush" @click="section = 'diseno'">Configurar en Diseño</UiButton>
+                    <UiButton v-if="canManage" type="button" size="sm" variant="secondary" icon="ph:paint-brush" @click="section = 'diseno'">Configurar en Diseño</UiButton>
                   </div>
                 </div>
               </section>
@@ -485,7 +488,7 @@ function onDesignSaved(accent: string) {
           <!-- ─── Numeración ─── -->
           <UiCard v-show="section === 'numeracion'" class="rise" style="--i: 2" padding="none" title="Series de numeración" subtitle="Cada serie numera sus documentos de forma correlativa y sin saltos, como exige el reglamento de facturación.">
             <template #actions>
-              <UiButton v-if="canEdit" size="sm" variant="secondary" icon="ph:plus" @click="openNewSeries">Nueva serie</UiButton>
+              <UiButton v-if="canManage" size="sm" variant="secondary" icon="ph:plus" @click="openNewSeries">Nueva serie</UiButton>
             </template>
             <div class="table-wrap">
               <table class="table">
@@ -496,7 +499,7 @@ function onDesignSaved(accent: string) {
                     <th scope="col">Prefijo</th>
                     <th scope="col">Próximo número</th>
                     <th scope="col">Reinicio anual</th>
-                    <th v-if="canEdit" scope="col" class="text-right">Acciones</th>
+                    <th v-if="canManage" scope="col" class="text-right">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -509,12 +512,12 @@ function onDesignSaved(accent: string) {
                     <td><span class="mono">{{ s.prefix || '—' }}</span></td>
                     <td><span class="mono next">{{ s.nextNumber }}</span></td>
                     <td>{{ s.yearlyReset ? 'Sí, cada 1 de enero' : 'No (corrida)' }}</td>
-                    <td v-if="canEdit" class="text-right">
+                    <td v-if="canManage" class="text-right">
                       <UiButton variant="ghost" size="sm" icon="ph:pencil-simple" @click="openEditSeries(s)">Editar formato</UiButton>
                     </td>
                   </tr>
                   <tr v-if="!series">
-                    <td :colspan="canEdit ? 6 : 5"><div class="skeleton" style="height: 18px" /></td>
+                    <td :colspan="canManage ? 6 : 5"><div class="skeleton" style="height: 18px" /></td>
                   </tr>
                 </tbody>
               </table>
@@ -543,15 +546,16 @@ function onDesignSaved(accent: string) {
               </div>
               <SettingsAiKeyPanel v-if="ai" :status="ai" @changed="refreshAi" />
             </UiCard>
-            <SettingsAiCostPanel v-if="section === 'ia' && canEdit" class="rise" style="--i: 3" />
-            <div class="features rise" style="--i: 4">
-              <div class="feature card">
+            <SettingsAiCostPanel v-if="section === 'ia' && canManage" class="rise" style="--i: 3" />
+            <!-- El gestor solo consulta: escanear e importar no son para él -->
+            <div class="features rise" :class="{ one: readOnly }" style="--i: 4">
+              <div v-if="!readOnly" class="feature card">
                 <Icon name="ph:scan" class="f-ic" aria-hidden="true" />
                 <h3>Escaneo instantáneo</h3>
                 <p>Haz una foto a un ticket o sube un PDF: NIF, fecha, bases, tipos de IVA y retenciones se rellenan solos.</p>
                 <UiButton size="sm" variant="soft" icon="ph:scan" to="?escanear=1">Escanear ahora</UiButton>
               </div>
-              <div class="feature card">
+              <div v-if="!readOnly" class="feature card">
                 <Icon name="ph:files" class="f-ic" aria-hidden="true" />
                 <h3>Importación por lotes</h3>
                 <p>PDF, Word, Excel, CSV o un ZIP con carpetas: importa años de facturas emitidas y recibidas, creando clientes y productos.</p>
@@ -568,24 +572,24 @@ function onDesignSaved(accent: string) {
 
           <!-- ─── Diseño ─── -->
           <SettingsNewsPanel v-if="section === 'novedades'" class="rise" style="--i: 2" />
-          <SettingsSignaturesPanel v-if="section === 'firmas'" class="rise" style="--i: 2" :can-edit="canEdit" />
-          <SettingsInvoiceDesigner v-if="section === 'diseno'" class="rise" style="--i: 2" :can-edit="canEdit" @saved="onDesignSaved" />
+          <SettingsSignaturesPanel v-if="section === 'firmas'" class="rise" style="--i: 2" :can-edit="canManage" />
+          <SettingsInvoiceDesigner v-if="section === 'diseno'" class="rise" style="--i: 2" :can-edit="canManage" @saved="onDesignSaved" />
 
           <!-- ─── Copia de seguridad ─── -->
-          <SettingsBackupPanel v-if="section === 'copia' && canEdit" class="rise" style="--i: 2" />
+          <SettingsBackupPanel v-if="section === 'copia' && canManage" class="rise" style="--i: 2" />
           <UiCard v-else-if="section === 'copia'" class="rise" style="--i: 2" title="Copia de seguridad" icon="ph:cloud-arrow-down">
             <p class="muted">Solo el propietario o un administrador de la empresa puede descargar la copia completa.</p>
           </UiCard>
 
           <!-- ─── Recordatorios de cobro ─── -->
           <div v-if="section === 'cobros'" class="stack gap-4">
-            <SettingsOnlinePaymentsPanel class="rise" style="--i: 2" :can-edit="canEdit" />
-            <SettingsRemindersPanel class="rise" style="--i: 3" :can-edit="canEdit" />
+            <SettingsOnlinePaymentsPanel class="rise" style="--i: 2" :can-edit="canManage" />
+            <SettingsRemindersPanel class="rise" style="--i: 3" :can-edit="canManage" />
           </div>
 
           <!-- ─── Gestoría ─── -->
           <UiCard v-if="section === 'gestoria'" class="rise" style="--i: 2" title="Tu gestor o asesoría" icon="ph:briefcase" subtitle="NUMIQ prepara la documentación de cada mes, trimestre o año y se la envía con un clic: facturas, gastos con su original, extractos y un resumen en Excel y PDF.">
-            <SettingsAdvisorForm :can-edit="canEdit">
+            <SettingsAdvisorForm :can-edit="canManage">
               <template #actions>
                 <UiButton variant="ghost" icon="ph:paper-plane-tilt" to="/documentos/gestor">Preparar un envío</UiButton>
               </template>
@@ -600,7 +604,7 @@ function onDesignSaved(accent: string) {
           <div v-show="section === 'certificado'" class="stack gap-4">
             <UiCard class="rise" style="--i: 2">
               ... cabecera «Certificado digital y Cl@ve» ...
-              <SettingsCertificatePanel v-if="section === 'certificado'" :can-edit="canEdit" />
+              <SettingsCertificatePanel v-if="section === 'certificado'" :can-edit="canManage" />
             </UiCard>
           </div>
           ─── -->
@@ -610,7 +614,7 @@ function onDesignSaved(accent: string) {
 
     <!-- Barra de guardado -->
     <Transition name="bar">
-      <div v-if="dirty && canEdit" class="save-bar" role="region" aria-label="Cambios sin guardar">
+      <div v-if="dirty && canManage" class="save-bar" role="region" aria-label="Cambios sin guardar">
         <span class="save-dot" aria-hidden="true" />
         <span class="grow save-t">Tienes cambios sin guardar</span>
         <UiButton variant="ghost" :disabled="saving" @click="discard">Descartar</UiButton>
@@ -812,6 +816,13 @@ fieldset {
   min-width: 0;
 }
 
+/* Sin permiso para cambiarlos (el fieldset ya desactiva los campos): que se vean de solo lectura, también en los paneles */
+.settings :deep(fieldset:disabled .control) {
+  background: var(--surface-sunken);
+  color: var(--text-3);
+  box-shadow: none;
+}
+
 @media (min-width: 640px) {
   .form-grid .c-5 { grid-column: span 5; }
   .form-grid .c-12 { grid-column: span 12; }
@@ -947,6 +958,10 @@ fieldset {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--s-4);
+}
+
+.features.one {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .feature {

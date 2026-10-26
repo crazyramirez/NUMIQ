@@ -33,7 +33,8 @@ interface Pack {
 const route = useRoute()
 const toast = useToast()
 const { confirm } = useConfirm()
-const { me } = useMe()
+// Gestor: prepara y descarga el ZIP; enviarlo por correo, borrar envíos, subir documentos o cambiar sus datos es cosa de la empresa
+const { me, readOnly } = useMe()
 
 // ─── Periodo: por defecto el trimestre anterior (lo habitual al presentar impuestos) ───
 
@@ -249,8 +250,7 @@ function packCtx(p: Pack): CtxSpec {
     items: [
       { label: 'Descargar ZIP', icon: 'ph:download-simple', disabled: !p.available, sub: p.available ? undefined : 'Ya no está disponible', onClick: () => { window.location.href = `/api/advisor/packs/${p.id}/download` } },
       ...(p.sentTo ? [{ label: 'Copiar destinatario', sub: p.sentTo, icon: 'ph:at', onClick: () => copyText(p.sentTo, 'Email') }] : []),
-      { divider: true },
-      { label: 'Borrar envío…', icon: 'ph:trash', danger: true, onClick: () => removePack(p) },
+      ...(readOnly.value ? [] : [{ divider: true }, { label: 'Borrar envío…', icon: 'ph:trash', danger: true, onClick: () => removePack(p) }]),
     ],
   }
 }
@@ -280,7 +280,7 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
     <header class="page-head">
       <div>
         <h1>Gestoría</h1>
-        <p class="sub">Todo lo que tu gestoría necesita de un periodo, en un ZIP y con un correo preparado.</p>
+        <p class="sub">{{ readOnly ? 'Todo lo de un periodo en un ZIP: facturas, gastos con sus justificantes, libros registro y el archivo.' : 'Todo lo que tu gestoría necesita de un periodo, en un ZIP y con un correo preparado.' }}</p>
       </div>
     </header>
 
@@ -319,7 +319,7 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
         <section class="card block rise" style="--i: 2">
           <div class="b-head">
             <span class="step">2</span>
-            <h2 class="section-title">Qué se envía</h2>
+            <h2 class="section-title">{{ readOnly ? 'Qué incluye' : 'Qué se envía' }}</h2>
             <span v-if="loadingPreview" class="spinner-sm" aria-hidden="true" />
           </div>
 
@@ -352,7 +352,7 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
 
           <div class="vault">
             <p class="eyebrow">Documentación adicional del archivo</p>
-            <p v-if="!preview?.vault.length" class="muted small">No hay documentos en el archivo para este periodo. Añade extractos del banco, contratos o justificantes:</p>
+            <p v-if="!preview?.vault.length" class="muted small">No hay documentos en el archivo para este periodo.{{ readOnly ? '' : ' Añade extractos del banco, contratos o justificantes:' }}</p>
             <div v-for="[folder, list] in vaultByFolder" :key="folder" class="v-group">
               <p class="v-folder"><Icon :name="vaultFolder(folder).icon" aria-hidden="true" /> {{ vaultFolder(folder).label }}</p>
               <label v-for="v in list" :key="v.id" v-ctx="() => vaultCtx(v, list)" class="v-file">
@@ -362,7 +362,7 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
                 <span class="v-meta num">{{ v.quarter }}T · {{ fileSize(v.size) }}</span>
               </label>
             </div>
-            <DocsDropzone compact :title="uploading ? 'Subiendo…' : 'Añadir documentos a este envío'" :hint="`Se guardan también en el archivo (${target.quarter}T ${target.year})`" :disabled="uploading" @files="upload">
+            <DocsDropzone v-if="!readOnly" compact :title="uploading ? 'Subiendo…' : 'Añadir documentos a este envío'" :hint="`Se guardan también en el archivo (${target.quarter}T ${target.year})`" :disabled="uploading" @files="upload">
               <div class="dest">
                 <span class="label">Carpeta</span>
                 <UiSelect v-model="uploadFolder" :options="folderOptions" aria-label="Carpeta" />
@@ -372,7 +372,7 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
         </section>
 
         <!-- Correo -->
-        <section class="card block rise" style="--i: 3">
+        <section v-if="!readOnly" class="card block rise" style="--i: 3">
           <div class="b-head">
             <span class="step">3</span>
             <h2 class="section-title">Correo para tu gestor</h2>
@@ -390,17 +390,17 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
           <p class="ab-t">
             <Icon name="ph:file-zip" aria-hidden="true" />
             <span>ZIP de unos <b class="num">{{ fileSize(size) }}</b></span>
-            <span class="muted">· {{ size > 18 * 1024 * 1024 ? 'irá como enlace de descarga' : 'irá adjunto y con enlace' }}</span>
+            <span v-if="!readOnly" class="muted">· {{ size > 18 * 1024 * 1024 ? 'irá como enlace de descarga' : 'irá adjunto y con enlace' }}</span>
           </p>
           <div class="row gap-2">
-            <UiButton variant="secondary" icon="ph:download-simple" :loading="busy === 'download'" :disabled="!!busy || nothing || !rangeOk" @click="download">Descargar ZIP</UiButton>
-            <UiButton variant="primary" icon="ph:paper-plane-tilt" :loading="busy === 'send'" :disabled="!!busy || nothing || !rangeOk || !info.mail" @click="send">Enviar al gestor</UiButton>
+            <UiButton :variant="readOnly ? 'primary' : 'secondary'" icon="ph:download-simple" :loading="busy === 'download'" :disabled="!!busy || nothing || !rangeOk" @click="download">Descargar ZIP</UiButton>
+            <UiButton v-if="!readOnly" variant="primary" icon="ph:paper-plane-tilt" :loading="busy === 'send'" :disabled="!!busy || nothing || !rangeOk || !info.mail" @click="send">Enviar al gestor</UiButton>
           </div>
         </div>
       </div>
 
       <aside class="aside">
-        <UiCard class="rise" style="--i: 2">
+        <UiCard v-if="!readOnly" class="rise" style="--i: 2">
           <div class="adv">
             <span class="a-ic" aria-hidden="true"><Icon name="ph:briefcase" /></span>
             <div class="grow min0">
@@ -432,7 +432,7 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
                 <p class="pk-m num">{{ p.contents?.files ?? 0 }} archivos · {{ fileSize(p.size) }}<template v-if="p.downloads"> · {{ p.downloads }} descarga{{ p.downloads > 1 ? 's' : '' }} del gestor</template><template v-if="expired(p)"> · enlace caducado</template></p>
               </div>
               <a v-if="p.available" :href="`/api/advisor/packs/${p.id}/download`" class="pk-btn" :aria-label="`Descargar ${p.label}`"><Icon name="ph:download-simple" /></a>
-              <button type="button" class="pk-btn" :aria-label="`Borrar ${p.label}`" @click="removePack(p)"><Icon name="ph:trash" /></button>
+              <button v-if="!readOnly" type="button" class="pk-btn" :aria-label="`Borrar ${p.label}`" @click="removePack(p)"><Icon name="ph:trash" /></button>
             </li>
           </ul>
           <UiPager v-model="packPage" v-model:size="packSize" :pages="packPages" :total="packTotal" />
@@ -440,7 +440,7 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
       </aside>
     </div>
 
-    <UiModal v-model="advisorOpen" size="md" title="Tu gestor o asesoría" subtitle="A quién se envía la documentación de cada periodo">
+    <UiModal v-if="!readOnly" v-model="advisorOpen" size="md" title="Tu gestor o asesoría" subtitle="A quién se envía la documentación de cada periodo">
       <SettingsAdvisorForm @saved="onAdvisorSaved" />
     </UiModal>
   </div>

@@ -15,6 +15,8 @@ interface Task {
 defineProps<{ tasks: Task[] }>()
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+// El gestor no las hace él: ve lo que la empresa tiene pendiente
+const { readOnly } = useMe()
 </script>
 
 <template>
@@ -22,7 +24,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
     <header class="today-h">
       <div>
         <h2 class="today-t">Hoy</h2>
-        <p class="today-s">{{ tasks.length ? `${plural(tasks.length, 'cosa', 'cosas')} por hacer, de más a menos urgente` : 'Nada urgente' }}</p>
+        <p class="today-s">{{ tasks.length ? `${readOnly ? `${plural(tasks.length, 'cosa pendiente', 'cosas pendientes')} en la empresa` : `${plural(tasks.length, 'cosa', 'cosas')} por hacer`}, de más a menos urgente` : 'Nada urgente' }}</p>
       </div>
       <span v-if="tasks.length" class="today-n num" aria-hidden="true">{{ tasks.length }}</span>
     </header>
@@ -51,7 +53,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
       <span class="calm-ic" aria-hidden="true"><Icon name="ph:check-circle-fill" /></span>
       <div>
         <p class="calm-t">Todo al día</p>
-        <p class="calm-s">Sin vencidas, sin borradores y con el banco revisado. Buen momento para facturar.</p>
+        <p class="calm-s">Sin vencidas, sin borradores y con el banco revisado.{{ readOnly ? '' : ' Buen momento para facturar.' }}</p>
       </div>
     </div>
   </UiCard>

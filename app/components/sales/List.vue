@@ -27,7 +27,8 @@ interface Row {
 }
 
 const props = defineProps<{ kind: 'invoice' | 'quote' }>()
-const { verifactu } = useMe()
+// Gestor: modo consulta (sin altas, cambios de estado, cobros, selección ni borrado)
+const { verifactu, readOnly } = useMe()
 const isQuote = computed(() => props.kind === 'quote')
 const base = computed(() => (isQuote.value ? '/presupuestos' : '/facturas'))
 
@@ -198,6 +199,7 @@ function payToday(r: Row) {
 }
 
 function statusItems(r: Row): MenuItem[] {
+  if (readOnly.value) return []
   if (isQuote.value) {
     if (r.status === 'invoiced') return []
     return [{ heading: 'Cambiar estado' }, ...QUOTE_STATUS_OPTIONS.map(o => ({ label: o.label, icon: o.icon, active: r.status === o.value, onClick: () => setRowStatus(r, o.value) }))]
@@ -413,21 +415,22 @@ function rowCtx(r: Row): CtxSpec {
     ...(r.contactName ? [{ label: 'Cliente', sub: r.contactName, icon: 'ph:user', onClick: () => copyText(r.contactName, 'Cliente') }] : []),
     { label: 'Enlace a la ficha', icon: 'ph:link', onClick: () => copyText(`${window.location.origin}${url}`, 'Enlace') },
   ]
+  const edit = !readOnly.value
   const items: CtxItem[] = [
     { label: 'Abrir', icon: 'ph:eye', keys: ['↵'], to: url },
-    { label: 'Editar', icon: 'ph:pencil-simple', to: `${url}/editar` },
+    ...(edit ? [{ label: 'Editar', icon: 'ph:pencil-simple', to: `${url}/editar` }] : []),
     ...(desktopCtx() ? [{ label: 'Abrir en otra pestaña', icon: 'ph:arrow-square-out', onClick: () => window.open(url, '_blank', 'noopener') }] : []),
     { divider: true },
   ]
   // Cobro: de un toque (hoy, por lo pendiente) o con otra fecha o importe
-  if (!isQ && ['issued', 'sent', 'partial'].includes(r.status)) {
+  if (edit && !isQ && ['issued', 'sent', 'partial'].includes(r.status)) {
     items.push(
       { label: 'Cobrada hoy', sub: eur(r.total - r.paidTotal), icon: 'ph:hand-coins', onClick: () => payToday(r) },
       { label: 'Registrar cobro…', sub: 'Otra fecha, importe o forma de pago', icon: 'ph:calendar-dots', onClick: () => { payDoc.value = r } },
     )
   }
-  if (isQ && !['invoiced', 'rejected', 'draft'].includes(r.status)) items.push({ label: 'Convertir en factura', icon: 'ph:receipt', onClick: () => convertRow(r) })
-  if (isQ && r.status !== 'invoiced') {
+  if (edit && isQ && !['invoiced', 'rejected', 'draft'].includes(r.status)) items.push({ label: 'Convertir en factura', icon: 'ph:receipt', onClick: () => convertRow(r) })
+  if (edit && isQ && r.status !== 'invoiced') {
     items.push({
       label: 'Estado',
       icon: 'ph:flag',
@@ -440,21 +443,21 @@ function rowCtx(r: Row): CtxSpec {
       { label: 'Descargar PDF', icon: 'ph:download-simple', onClick: () => window.open(`${pdf}?download=1`, '_blank') },
     )
   }
-  if (!isQ && r.status !== 'draft') items.push({ label: 'Crear rectificativa', icon: 'ph:arrow-counter-clockwise', to: `/facturas/nueva?rectifica=${r.id}` })
+  if (edit && !isQ && r.status !== 'draft') items.push({ label: 'Crear rectificativa', icon: 'ph:arrow-counter-clockwise', to: `/facturas/nueva?rectifica=${r.id}` })
   items.push({ label: 'Copiar', icon: 'ph:copy', children: copy }, { divider: true })
   if (r.contactId) {
-    items.push(
-      { label: 'Ficha del cliente', icon: 'ph:user', to: `/clientes/${r.contactId}` },
-      { label: isQ ? 'Nuevo presupuesto para el cliente' : 'Nueva factura para el cliente', icon: 'ph:plus-circle', to: `${base.value}/${isQ ? 'nuevo' : 'nueva'}?cliente=${r.contactId}` },
-    )
+    items.push({ label: 'Ficha del cliente', icon: 'ph:user', to: `/clientes/${r.contactId}` })
+    if (edit) items.push({ label: isQ ? 'Nuevo presupuesto para el cliente' : 'Nueva factura para el cliente', icon: 'ph:plus-circle', to: `${base.value}/${isQ ? 'nuevo' : 'nueva'}?cliente=${r.contactId}` })
   }
   if (r.contactName) items.push({ label: `Solo de ${r.contactName}`, icon: 'ph:funnel', onClick: () => (q.value = r.contactName!) })
-  items.push(
-    { divider: true },
-    { label: selectedSet.value.has(r.id) ? 'Quitar de la selección' : 'Seleccionar', icon: selectedSet.value.has(r.id) ? 'ph:minus-circle' : 'ph:check-square', onClick: () => pickFromMenu(r) },
-    { divider: true },
-    { label: isQ ? 'Eliminar presupuesto' : 'Eliminar factura', icon: 'ph:trash', danger: true, onClick: () => removeDoc(r) },
-  )
+  if (edit) {
+    items.push(
+      { divider: true },
+      { label: selectedSet.value.has(r.id) ? 'Quitar de la selección' : 'Seleccionar', icon: selectedSet.value.has(r.id) ? 'ph:minus-circle' : 'ph:check-square', onClick: () => pickFromMenu(r) },
+      { divider: true },
+      { label: isQ ? 'Eliminar presupuesto' : 'Eliminar factura', icon: 'ph:trash', danger: true, onClick: () => removeDoc(r) },
+    )
+  }
   return { title: r.number ?? 'Borrador', subtitle: `${r.contactName ?? 'Sin cliente'} · ${eur(amountOf(r))}`, icon: isQ ? 'ph:file-text' : 'ph:receipt', items }
 }
 
@@ -472,7 +475,7 @@ const bulkActions = computed<BulkAction[]>(() => [
         <h1>{{ isQuote ? 'Presupuestos' : 'Facturas' }}</h1>
         <p class="sub">{{ isQuote ? 'Ofertas a clientes: conviértelas en factura con un clic.' : `Emitidas con numeración correlativa${verifactu ? ' y registro VeriFactu' : ''}.` }}</p>
       </div>
-      <div class="page-actions">
+      <div v-if="!readOnly" class="page-actions">
         <UiButton variant="primary" icon="ph:plus-bold" compact :to="`${base}/${isQuote ? 'nuevo' : 'nueva'}`">{{ isQuote ? 'Nuevo presupuesto' : 'Nueva factura' }}</UiButton>
       </div>
     </header>
@@ -521,7 +524,7 @@ const bulkActions = computed<BulkAction[]>(() => [
         </div>
       </div>
       <UiButton
-        v-if="list.length"
+        v-if="list.length && !readOnly"
         class="sel-toggle"
         :variant="selecting ? 'primary' : 'secondary'"
         :icon="selecting ? 'ph:x' : 'ph:check-square'"
@@ -539,11 +542,11 @@ const bulkActions = computed<BulkAction[]>(() => [
       <UiEmpty
         v-else-if="!rows?.length"
         :icon="isQuote ? 'ph:file-text' : 'ph:receipt'"
-        :title="q || status !== 'all' ? 'Nada con estos filtros' : !isAll ? `${isQuote ? 'Sin presupuestos' : 'Sin facturas'} ${periodPhrase(period)}` : isQuote ? 'Aún no hay presupuestos' : 'Emite tu primera factura'"
-        :text="q || status !== 'all' ? 'Prueba con otra búsqueda, otro estado o cambia el periodo.' : !isAll ? 'Elige otro periodo arriba o mira todos los años.' : isQuote ? 'Envía ofertas profesionales y conviértelas en factura cuando el cliente acepte.' : 'En menos de un minuto: elige cliente, añade conceptos de tu catálogo y emite. Los impuestos se calculan solos.'"
+        :title="q || status !== 'all' ? 'Nada con estos filtros' : !isAll ? `${isQuote ? 'Sin presupuestos' : 'Sin facturas'} ${periodPhrase(period)}` : isQuote ? 'Aún no hay presupuestos' : readOnly ? 'Aún no hay facturas' : 'Emite tu primera factura'"
+        :text="q || status !== 'all' ? 'Prueba con otra búsqueda, otro estado o cambia el periodo.' : !isAll ? 'Elige otro periodo arriba o mira todos los años.' : readOnly ? `Cuando la empresa ${isQuote ? 'haga presupuestos' : 'emita facturas'}, aparecerán aquí.` : isQuote ? 'Envía ofertas profesionales y conviértelas en factura cuando el cliente acepte.' : 'En menos de un minuto: elige cliente, añade conceptos de tu catálogo y emite. Los impuestos se calculan solos.'"
       >
         <UiButton v-if="!q && status === 'all' && !isAll" icon="ph:infinity" @click="period = { year: null, quarter: null, month: null }">Ver todos los años</UiButton>
-        <UiButton v-if="!(q || status !== 'all')" variant="primary" icon="ph:plus-bold" :to="`${base}/${isQuote ? 'nuevo' : 'nueva'}`">{{ isQuote ? 'Crear presupuesto' : 'Crear factura' }}</UiButton>
+        <UiButton v-if="!readOnly && !(q || status !== 'all')" variant="primary" icon="ph:plus-bold" :to="`${base}/${isQuote ? 'nuevo' : 'nueva'}`">{{ isQuote ? 'Crear presupuesto' : 'Crear factura' }}</UiButton>
       </UiEmpty>
 
       <template v-else>
@@ -551,7 +554,7 @@ const bulkActions = computed<BulkAction[]>(() => [
           <table class="table">
             <thead>
               <tr>
-                <th class="pick">
+                <th v-if="!readOnly" class="pick">
                   <input
                     type="checkbox"
                     :checked="allSelected"
@@ -571,7 +574,7 @@ const bulkActions = computed<BulkAction[]>(() => [
             </thead>
             <tbody>
               <tr v-for="r in shown" :key="r.id" v-ctx="() => rowCtx(r)" class="clickable" :class="{ sel: selectedSet.has(r.id) }" tabindex="0" @click="open(r)" @keydown.enter.self="open(r)">
-                <td class="pick" @click.stop="pick(r.id, $event)">
+                <td v-if="!readOnly" class="pick" @click.stop="pick(r.id, $event)">
                   <input
                     type="checkbox"
                     :checked="selectedSet.has(r.id)"

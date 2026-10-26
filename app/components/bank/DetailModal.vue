@@ -58,6 +58,8 @@ const emit = defineEmits<{
 
 const open = defineModel<boolean>({ default: false })
 const toast = useToast()
+// El gestor ve el detalle, pero no concilia, crea ni ignora movimientos
+const { readOnly } = useMe()
 const copied = ref(false)
 let copyTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -188,7 +190,7 @@ const linkUrl = computed(() => {
             <span>Ver documento</span>
             <Icon name="ph:arrow-right" aria-hidden="true" />
           </NuxtLink>
-          <button type="button" class="match-btn reassign" @click="emit('openMatch'); open = false">
+          <button v-if="!readOnly" type="button" class="match-btn reassign" @click="emit('openMatch'); open = false">
             <Icon name="ph:arrows-left-right" aria-hidden="true" />
             <span>Reasignar</span>
           </button>
@@ -206,7 +208,7 @@ const linkUrl = computed(() => {
           <p class="match-label">{{ tx.suggestion.label }}</p>
           <p v-if="tx.suggestion.detail" class="match-detail">{{ tx.suggestion.detail }}</p>
         </div>
-        <UiButton size="sm" variant="primary" icon="ph:check-bold" @click="emit('accept'); open = false">
+        <UiButton v-if="!readOnly" size="sm" variant="primary" icon="ph:check-bold" @click="emit('accept'); open = false">
           Aceptar propuesta
         </UiButton>
       </div>
@@ -214,7 +216,7 @@ const linkUrl = computed(() => {
 
     <template #footer>
       <div class="modal-footer-actions">
-        <div class="footer-left">
+        <div v-if="!readOnly" class="footer-left">
           <template v-if="tx && tx.status === 'pending'">
             <UiButton size="sm" icon="ph:magnifying-glass" @click="emit('openMatch'); open = false">
               Buscar documento…
@@ -571,6 +573,11 @@ const linkUrl = computed(() => {
   justify-content: space-between;
   width: 100%;
   gap: var(--s-2);
+}
+
+/* Sin acciones (gestor): «Cerrar» sigue a la derecha */
+.close-btn {
+  margin-left: auto;
 }
 
 .footer-left {
