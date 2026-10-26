@@ -23,7 +23,8 @@ export default defineEventHandler(async (event) => {
   }
   clearRateLimit(byEmail)
   await db.update(tables.users).set({ lastLoginAt: new Date() }).where(eq(tables.users.id, user.id))
-  await setUserSession(event, { user: sessionUser(user), loggedInAt: Date.now() })
+  // Sesión nueva, sin restos de otra: la app la asocia después a la llave del dispositivo si la tiene
+  await replaceUserSession(event, { user: sessionUser(user), loggedInAt: Date.now(), secure: { lock: freshLock() } })
   await audit(event, { userId: user.id, companyId: user.currentCompanyId, action: 'user.login' })
   return { user: sessionUser(user) }
 })

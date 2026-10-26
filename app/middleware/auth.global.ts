@@ -14,6 +14,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
   if (!loggedIn.value) return navigateTo({ path: '/login', query: to.fullPath !== '/' ? { r: to.fullPath } : undefined })
 
+  // Bloqueo con huella o Face ID: se mira antes de cargar nada. Bloqueada, la cuenta se carga al desbloquear
+  const { user } = useUserSession()
+  const lock = useAppLock()
+  if (lock.state.value.userId !== user.value?.id) await lock.sync().catch(() => null)
+  if (lock.state.value.locked && !lock.state.value.revealed) return
+
   const { me, refresh } = useMe()
   if (!me.value) {
     try {

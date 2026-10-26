@@ -23,7 +23,10 @@ const handler = defineWebAuthnAuthenticateEventHandler({
     if (!user) throw createError({ statusCode: 400, statusMessage: 'Cuenta no encontrada' })
     await db.update(tables.userPasskeys).set({ counter: authenticationInfo.newCounter, lastUsedAt: new Date() }).where(eq(tables.userPasskeys.id, credential.id))
     await db.update(tables.users).set({ lastLoginAt: new Date() }).where(eq(tables.users.id, user.id))
-    await setUserSession(event, { user: sessionUser(user), loggedInAt: Date.now() })
+    // La llave de este dispositivo (no la de un móvil escaneando un QR) es la que bloquea esta sesión
+    const body = await readBody<{ response?: { authenticatorAttachment?: string } }>(event)
+    const key = body?.response?.authenticatorAttachment === 'platform' ? credential.id : undefined
+    await replaceUserSession(event, { user: sessionUser(user), loggedInAt: Date.now(), secure: { lock: freshLock(key) } })
     await audit(event, { userId: user.id, companyId: user.currentCompanyId, action: 'user.login', data: { method: 'passkey' } })
   },
 })

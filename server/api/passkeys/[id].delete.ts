@@ -4,8 +4,12 @@ import { and, eq } from 'drizzle-orm'
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
   const id = decodeURIComponent(getRouterParam(event, 'id') ?? '')
+  // Sin llave no hay bloqueo: quitarla con el bloqueo activo pide confirmar antes la identidad
+  const status = await requireLockStatus(event)
+  if (status.mode !== 'off') requireRecentVerification(status)
   const r = await useDb().delete(tables.userPasskeys).where(and(eq(tables.userPasskeys.id, id), eq(tables.userPasskeys.userId, user.id)))
   if (!r[0].affectedRows) throw createError({ statusCode: 404, statusMessage: 'Llave no encontrada' })
+  forgetLockInfo(user.id)
   await audit(event, { userId: user.id, companyId: user.currentCompanyId, action: 'user.passkey.remove' })
   return { ok: true }
 })

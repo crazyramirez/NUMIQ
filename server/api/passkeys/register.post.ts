@@ -34,6 +34,10 @@ const handler = defineWebAuthnRegisterEventHandler({
       transports: credential.transports ?? [],
       name: deviceName(event),
     })
+    forgetLockInfo(user.id)
+    // Llave creada en este mismo dispositivo: desde ahora la sesión se bloquea con ella
+    const body = await readBody<{ response?: { authenticatorAttachment?: string } }>(event)
+    if (body?.response?.authenticatorAttachment === 'platform') await markUnlocked(event, credential.id)
     await audit(event, { userId: user.id, companyId: user.currentCompanyId, action: 'user.passkey.add' })
   },
 })

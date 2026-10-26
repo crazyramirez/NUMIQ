@@ -70,6 +70,11 @@ export const users = mysqlTable('users', {
   /** Principio y final de la clave («sk-…a1b2»), para reconocerla en Ajustes */
   openaiKeyHint: varchar('openai_key_hint', { length: 20 }),
   openaiKeyAt: datetime('openai_key_at'),
+  /**
+   * Bloqueo con huella, Face ID o PIN en los dispositivos que tienen su llave de acceso: al volver a NUMIQ
+   * (siempre), una vez al día o nunca (solo al entrar). Lo comprueba el servidor en cada petición
+   */
+  lockMode: mysqlEnum('lock_mode', ['always', 'daily', 'off']).notNull().default('always'),
   emailVerifiedAt: datetime('email_verified_at'),
   lastLoginAt: datetime('last_login_at'),
   createdAt: createdAt(),

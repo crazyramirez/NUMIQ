@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `lock_mode` enum('always','daily','off') DEFAULT 'always' NOT NULL;

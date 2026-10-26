@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { LockMode } from '~/composables/useAppLock'
+
 /** Llaves de acceso: entrar con huella, cara o el PIN del dispositivo en lugar de la contraseña */
 interface Passkey { id: string, name: string | null, backedUp: boolean, createdAt: string, lastUsedAt: string | null }
 
@@ -48,8 +50,12 @@ async function remove(k: Passkey) {
   if (!ok) return
   busy.value = k.id
   try {
-    await $fetch(`/api/passkeys/${encodeURIComponent(k.id)}` as string, { method: 'DELETE' })
+    // Con el bloqueo activo, antes se confirma la identidad (huella o contraseña)
+    const url: string = `/api/passkeys/${encodeURIComponent(k.id)}`
+    const done = await appLock.confirmed(() => $fetch<{ ok: boolean }>(url, { method: 'DELETE' }))
+    if (!done) return
     await refresh()
+    void appLock.sync().catch(() => null)
     toast.success('Llave quitada')
   }
   catch (err) {
@@ -58,6 +64,43 @@ async function remove(k: Passkey) {
   finally {
     busy.value = null
   }
+}
+
+// Cuándo pedir la huella o Face ID al abrir NUMIQ (para toda la cuenta, en los dispositivos con llave)
+const appLock = useAppLock()
+onMounted(() => void appLock.sync().catch(() => null))
+const savingMode = ref(false)
+const lockMode = computed<string>({
+  get: () => appLock.state.value.mode,
+  set: v => void changeMode(v as LockMode),
+})
+async function changeMode(mode: LockMode) {
+  if (mode === appLock.state.value.mode || savingMode.value) return
+  savingMode.value = true
+  try {
+    if (await appLock.setMode(mode)) toast.success(LOCK_TOASTS[mode])
+  }
+  catch (err) {
+    toast.error('No se pudo cambiar', errorMessage(err))
+  }
+  finally {
+    savingMode.value = false
+  }
+}
+const LOCK_OPTIONS = [
+  { value: 'always', label: 'Siempre' },
+  { value: 'daily', label: 'Cada 24 horas' },
+  { value: 'off', label: 'Solo al entrar' },
+]
+const LOCK_HINTS: Record<LockMode, string> = {
+  always: 'Cada vez que vuelvas a NUMIQ tras más de un minuto fuera, y tras 10 minutos sin tocarla. Lo más seguro en el móvil.',
+  daily: 'Una vez al día en cada dispositivo. Entre medias, NUMIQ se abre sin pedir nada.',
+  off: 'Solo al entrar en tu cuenta: quien coja tu móvil u ordenador desbloqueado podrá ver NUMIQ.',
+}
+const LOCK_TOASTS: Record<LockMode, string> = {
+  always: 'NUMIQ te pedirá la huella o Face ID siempre',
+  daily: 'NUMIQ te la pedirá una vez al día',
+  off: 'NUMIQ ya no se bloqueará',
 }
 
 const ICONS: Record<string, string> = { iPhone: 'ph:device-mobile', iPad: 'ph:device-tablet', Android: 'ph:android-logo', Mac: 'ph:laptop', Windows: 'ph:windows-logo' }
@@ -84,6 +127,18 @@ const ICONS: Record<string, string> = { iPhone: 'ph:device-mobile', iPad: 'ph:de
       </UiButton>
       <p v-else class="none">Este navegador no admite llaves de acceso.</p>
     </div>
+
+    <section v-if="keys.length" class="lock" aria-labelledby="lock-title">
+      <div class="lock-head">
+        <span class="lock-ic" aria-hidden="true"><Icon name="ph:lock-simple" /></span>
+        <div class="grow min0">
+          <p id="lock-title" class="k-name">Pedir al abrir NUMIQ</p>
+          <p class="k-sub">{{ LOCK_HINTS[appLock.state.value.mode] }}</p>
+        </div>
+      </div>
+      <UiSegmented v-model="lockMode" class="lock-seg" :class="{ saving: savingMode }" :options="LOCK_OPTIONS" label="Cuándo pedir la huella o Face ID" />
+      <p class="lock-note">En los dispositivos con la huella o Face ID activada. Si no funcionan, se desbloquea con la contraseña.</p>
+    </section>
   </UiCard>
 </template>
 
@@ -154,5 +209,50 @@ const ICONS: Record<string, string> = { iPhone: 'ph:device-mobile', iPad: 'ph:de
 
 .foot .none {
   margin: 0;
+}
+
+.lock {
+  display: grid;
+  gap: var(--s-3);
+  margin-top: var(--s-5);
+  padding-top: var(--s-5);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.lock-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.lock-ic {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  font-size: 19px;
+  color: var(--brand-text);
+  background: var(--brand-soft);
+  border-radius: 11px;
+}
+
+.lock-seg {
+  justify-self: start;
+  max-width: 100%;
+}
+
+.lock-seg.saving {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.lock-note {
+  font-size: var(--text-xs);
+  color: var(--text-3);
+}
+
+.min0 {
+  min-width: 0;
 }
 </style>

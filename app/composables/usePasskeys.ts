@@ -62,6 +62,7 @@ interface PreparedLogin { requestOptions: PublicKeyCredentialRequestOptionsJSON,
 /** Crear una llave en este dispositivo para el usuario con la sesión iniciada */
 export function usePasskeyRegistration() {
   const { user: sessionUser } = useUserSession()
+  const appLock = useAppLock()
   const isSupported = ref(false)
   let prepared: PreparedRegistration | null = null
   let preparing: Promise<PreparedRegistration | null> | null = null
@@ -89,6 +90,8 @@ export function usePasskeyRegistration() {
       const response = await startRegistration({ optionsJSON: p.creationOptions })
       await $fetch(REGISTER, { method: 'POST', body: { user, attemptId: p.attemptId, response, verify: true } })
       markPasskeyOnDevice(response.id)
+      // Desde ahora esta sesión se bloquea con la llave nueva
+      void appLock.sync().catch(() => null)
     }
     catch (err) {
       if (passkeyAlreadyHere(err)) markPasskeyOnDevice()
