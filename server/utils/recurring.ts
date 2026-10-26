@@ -135,6 +135,75 @@ export async function getRecurring(companyId: number, id: number) {
   return rec
 }
 
+/** Un recurrente guardado tal y como se editaría en su pantalla: para cambiarle algo y volver a guardarlo */
+export function recurringInputOf(rec: Recurring): z.input<typeof recurringInputSchema> {
+  const t = templateOf(rec)
+  return {
+    kind: rec.kind,
+    name: rec.name,
+    frequency: rec.frequency,
+    interval: rec.interval,
+    nextDate: rec.nextDate,
+    endDate: rec.endDate,
+    autoIssue: rec.autoIssue,
+    autoSend: rec.autoSend,
+    contactId: t.contactId ?? null,
+    categoryId: t.categoryId ?? null,
+    description: t.description ?? null,
+    irpfRate: t.irpfRate ?? 0,
+    seriesId: t.seriesId ?? null,
+    lines: t.lines ?? [],
+    paymentMethod: t.paymentMethod ?? 'transfer',
+    dueDays: t.dueDays ?? null,
+    notes: t.notes ?? null,
+    terms: t.terms ?? null,
+    customerReference: t.customerReference ?? null,
+    expenseKind: t.expenseKind ?? 'invoice',
+    taxLines: (t.taxLines ?? []).map(l => ({ base: l.base, vatRate: l.vatRate, vatAmount: l.vatAmount ?? null, surchargeRate: l.surchargeRate ?? 0 })),
+    deductiblePct: t.deductiblePct ?? 100,
+    vatDeductiblePct: t.vatDeductiblePct ?? 100,
+    paid: !!t.paid,
+  }
+}
+
+/**
+ * Cambia la plantilla o la programación. Si cambia la próxima fecha o la frecuencia, la serie se
+ * re-ancla en la nueva fecha (su día del mes manda a partir de ahí).
+ */
+export async function updateRecurring(companyId: number, rec: Recurring, input: RecurringInput) {
+  if (input.kind !== rec.kind) throw createError({ statusCode: 400, statusMessage: 'No se puede cambiar de factura a gasto: crea otro recurrente' })
+  await assertTemplateRefs(companyId, input)
+  const reschedule = input.nextDate !== rec.nextDate || input.frequency !== rec.frequency || input.interval !== rec.interval
+  const finished = !!input.endDate && input.nextDate > input.endDate
+  await useDb().update(tables.recurrings).set({
+    name: input.name,
+    frequency: input.frequency,
+    interval: input.interval,
+    ...(reschedule ? { startDate: input.nextDate, nextDate: input.nextDate } : {}),
+    endDate: input.endDate,
+    autoIssue: input.autoIssue,
+    autoSend: input.autoSend,
+    template: buildTemplate(input),
+    // Alargar la fecha final reactiva una serie terminada; acortarla por detrás de la próxima la termina
+    active: finished ? false : recurringStatus(rec) === 'finished' ? true : rec.active,
+    lastError: null,
+  }).where(and(eq(tables.recurrings.id, rec.id), eq(tables.recurrings.companyId, companyId)))
+}
+
+/** Pausa o reanuda. Al reanudar, lo atrasado no se genera: la serie sigue desde hoy. */
+export async function setRecurringActive(rec: Recurring, active: boolean) {
+  if (active && recurringStatus(rec) === 'finished') throw createError({ statusCode: 409, statusMessage: 'Esta serie ya terminó: cambia la fecha final para seguir' })
+  let nextDate = rec.nextDate
+  if (active) {
+    const today = toISODate(new Date())
+    const start = rec.startDate ?? rec.nextDate
+    while (nextDate < today) nextDate = nextOccurrence(start, rec.frequency, rec.interval, nextDate)
+    if (rec.endDate && nextDate > rec.endDate) throw createError({ statusCode: 409, statusMessage: 'No quedan fechas antes de la fecha final' })
+  }
+  await useDb().update(tables.recurrings).set({ active, nextDate, lastError: null }).where(eq(tables.recurrings.id, rec.id))
+  return { active, nextDate }
+}
+
 // ─── Generación de un documento ──────────────────────────────────────────────
 
 export interface Generated {

@@ -1,5 +1,6 @@
-import { and, eq, inArray, sql } from 'drizzle-orm'
-import type { PartySnapshot } from '../db/schema'
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
+import type { PartySnapshot, SalesStatus } from '../db/schema'
+import type { RichDoc } from '../../shared/utils/rich'
 import type { AiActionPreview, AiActionResult, AiActionRow } from '../../shared/types/assistant'
 
 /**
@@ -83,6 +84,21 @@ function checkRange(v: number | null | undefined, min: number, max: number, what
   return round2(v)
 }
 
+const MAX_AMOUNT = 99_999_999
+const round4 = (n: number) => Math.round(n * 10000) / 10000
+
+/** Un importe en euros (base, total, cuota): a céntimos */
+function amount(v: number, what: string) {
+  if (!Number.isFinite(v) || Math.abs(v) > MAX_AMOUNT) throw new OpError(`${capital(what)} no es un importe válido`)
+  return round2(v)
+}
+
+/** Un precio unitario: hasta 4 decimales, como en las líneas de factura */
+function price(v: number) {
+  if (!Number.isFinite(v) || Math.abs(v) > MAX_AMOUNT) throw new OpError('El precio no es un importe válido')
+  return round4(v)
+}
+
 function payMethod(v: string | null | undefined) {
   if (!v) return undefined
   const p = PAY_BY_ES[v] ?? (Object.values(PAY_BY_ES).includes(v as Pay) ? v as Pay : undefined)
@@ -106,29 +122,62 @@ function tooMany(n: number, what: string) {
 
 // ═══ Facturas y presupuestos ═════════════════════════════════════════════════
 
+export interface SalesLineOpIn {
+  accion: string
+  buscar: string | null
+  concepto: string | null
+  cantidad: number | null
+  precio: number | null
+  iva: number | null
+  descuento: number | null
+}
+
 export interface SalesChangesIn {
   cliente: string | null
   irpf: number | null
   iva: number | null
   fecha: string | null
   vencimiento: string | null
+  fecha_operacion: string | null
   forma_pago: string | null
   notas: string | null
   condiciones: string | null
   referencia: string | null
+  descripcion: string | null
+  descuento: number | null
+  base: number | null
+  total: number | null
+  lineas: SalesLineOpIn[] | null
+  vaciar: string[] | null
 }
+
+/** Cambio de líneas: añadir una, cambiar las que encajan con `match` (todas si es null) o quitarlas */
+type LineOp = { op: 'add' | 'edit' | 'remove', match: string | null, description?: string, quantity?: number, unitPrice?: number, vatRate?: number, discountPct?: number, itemId?: number | null }
 
 interface SalesChangeSet {
   contactId?: number
   irpfRate?: number
   vatRate?: number
   issueDate?: string
-  dueDate?: string
+  dueDate?: string | null
+  operationDate?: string | null
   paymentMethod?: Pay
-  notes?: string
-  terms?: string
-  customerReference?: string
+  notes?: string | null
+  terms?: string | null
+  customerReference?: string | null
+  description?: RichDoc | null
+  discountPct?: number
+  /** Base o total al que se ajustan los precios */
+  taxBase?: number
+  total?: number
+  lineOps?: LineOp[]
 }
+
+type SalesLine = SalesInput['lines'][number]
+
+const SALES_CLEAR: Readonly<Record<string, 'notes' | 'terms' | 'customerReference' | 'dueDate' | 'operationDate' | 'description'>> = Object.freeze({
+  notas: 'notes', condiciones: 'terms', referencia: 'customerReference', vencimiento: 'dueDate', fecha_operacion: 'operationDate', descripcion: 'description',
+})
 
 const isQuote = (kind: string) => kind === 'quote' || kind === 'proforma'
 const salesLabel = (r: { kind: string, number: string | null }) => r.number ?? (isQuote(r.kind) ? 'Presupuesto en borrador' : 'Borrador')
@@ -136,6 +185,22 @@ const salesUrl = (r: { kind: string, id: number }) => (isQuote(r.kind) ? `/presu
 const salesRow = (r: SalesTarget, extra: Partial<AiActionRow> = {}): AiActionRow => ({
   id: r.id, label: salesLabel(r), sub: [r.client, fd(r.issueDate)].filter(Boolean).join(' · '), amount: r.total, url: salesUrl(r), ...extra,
 })
+
+function statusText(kind: string, status: string) {
+  const quote = isQuote(kind)
+  switch (status) {
+    case 'draft': return 'Borrador'
+    case 'issued': return quote ? 'Pendiente' : 'Emitida'
+    case 'sent': return quote ? 'Enviado' : 'Enviada'
+    case 'accepted': return 'Aceptado'
+    case 'rejected': return 'Rechazado'
+    case 'invoiced': return 'Facturado'
+    case 'paid': return 'Cobrada'
+    case 'partial': return 'Cobro parcial'
+    case 'cancelled': return 'Anulada'
+    default: return status
+  }
+}
 
 type LineLike = { vatRate: number, surchargeRate: number, quantity: number, unitPrice: number, discountPct: number, irpfApplies: boolean }
 
@@ -149,23 +214,167 @@ function adjustLine<T extends LineLike>(l: T, ch: SalesChangeSet, contact: Pick<
 async function linesOf(ids: number[]) {
   const l = tables.salesDocumentLines
   const rows = ids.length ? await useDb().select().from(l).where(inArray(l.documentId, ids)).orderBy(l.documentId, l.position) : []
-  const map = new Map<number, typeof rows>()
-  for (const r of rows) map.set(r.documentId, [...(map.get(r.documentId) ?? []), r])
+  const map = new Map<number, SalesLine[]>()
+  for (const r of rows) {
+    const line: SalesLine = { itemId: r.itemId, description: r.description, quantity: r.quantity, unitPrice: r.unitPrice, discountPct: r.discountPct, vatRate: r.vatRate, surchargeRate: r.surchargeRate, irpfApplies: r.irpfApplies }
+    map.set(r.documentId, [...(map.get(r.documentId) ?? []), line])
+  }
   return map
 }
+
+/** ¿El concepto de la línea contiene el texto (o todas sus palabras)? */
+function lineMatches(l: { description: string }, q: string) {
+  const text = comparableName(l.description)
+  const target = comparableName(q)
+  if (!target) return false
+  if (text.includes(target)) return true
+  const words = target.split(' ').filter(w => w.length > 2)
+  return words.length > 0 && words.every(w => text.includes(w))
+}
+
+const touchesLines = (ch: SalesChangeSet) => ch.vatRate != null || ch.discountPct != null || ch.taxBase != null || ch.total != null || !!ch.lineOps?.length || ch.contactId != null
+
+/**
+ * Líneas nuevas de un documento: primero los cambios de líneas, después el descuento, el IVA y el
+ * recargo del cliente y, al final, el ajuste de precios para llegar a la base o al total pedidos.
+ * Si algo no encaja en este documento lanza OpError con el motivo («no tiene ninguna línea…»).
+ */
+function nextSalesLines(lines: SalesLine[], irpfRate: number, ch: SalesChangeSet, contact: Pick<Contact, 'equivalenceSurcharge'> | null): SalesLine[] {
+  let out = lines.map(l => ({ ...l }))
+  const withSurcharge = contact ? contact.equivalenceSurcharge : lines.some(l => l.surchargeRate > 0)
+  for (const op of ch.lineOps ?? []) {
+    if (op.op === 'add') {
+      const vatRate = op.vatRate ?? 21
+      out.push({ itemId: op.itemId ?? null, description: op.description ?? '', quantity: op.quantity ?? 1, unitPrice: op.unitPrice ?? 0, discountPct: op.discountPct ?? 0, vatRate, surchargeRate: withSurcharge ? SURCHARGE_BY_VAT[vatRate] ?? 0 : 0, irpfApplies: true })
+      continue
+    }
+    const hit = out.filter(l => !op.match || lineMatches(l, op.match))
+    if (!hit.length) throw new OpError(`no tiene ninguna línea «${op.match}»`)
+    if (op.op === 'remove') {
+      out = out.filter(l => !hit.includes(l))
+      continue
+    }
+    if (op.description && hit.length > 1) throw new OpError(op.match ? `tiene varias líneas «${op.match}»: concreta cuál` : 'tiene varias líneas: concreta cuál cambia de concepto')
+    for (const l of hit) {
+      if (op.description) l.description = op.description
+      if (op.quantity != null) l.quantity = op.quantity
+      if (op.unitPrice != null) l.unitPrice = op.unitPrice
+      if (op.discountPct != null) l.discountPct = op.discountPct
+      if (op.vatRate != null) {
+        l.vatRate = op.vatRate
+        l.surchargeRate = l.surchargeRate > 0 ? SURCHARGE_BY_VAT[op.vatRate] ?? 0 : 0
+      }
+    }
+  }
+  if (!out.length) throw new OpError('se quedaría sin líneas')
+  if (ch.discountPct != null) out = out.map(l => ({ ...l, discountPct: ch.discountPct! }))
+  if (ch.vatRate != null || contact) out = out.map(l => adjustLine(l, ch, contact))
+  if (ch.taxBase != null || ch.total != null) out = fitSalesLines(out, irpfRate, ch.taxBase != null ? { base: ch.taxBase } : { total: ch.total! })
+  return out
+}
+
+/**
+ * Precios en proporción para que el documento sume la base o el total pedidos (con sus impuestos);
+ * el céntimo que falte por redondeo se corrige en la línea de mayor importe.
+ */
+function fitSalesLines(lines: SalesLine[], irpfRate: number, goal: { base?: number, total?: number }): SalesLine[] {
+  const target = goal.base ?? goal.total ?? 0
+  const value = (ls: SalesLine[]) => {
+    const t = computeTotals(ls, irpfRate)
+    return goal.base != null ? t.taxBase : t.total
+  }
+  const now = value(lines)
+  if (!now && lines.length > 1) throw new OpError('suma 0: indica el precio de cada línea')
+  const out = lines.map(l => ({ ...l, unitPrice: now ? round4(l.unitPrice * target / now) : 0 }))
+  const big = out.reduce((m, l, i) => (Math.abs(lineAmounts(l).base) > Math.abs(lineAmounts(out[m]!).base) ? i : m), 0)
+  const l = out[big]!
+  const units = l.quantity * (1 - (l.discountPct || 0) / 100)
+  const rate = goal.base != null ? 1 : 1 + (l.vatRate + (l.surchargeRate || 0) - (l.irpfApplies !== false ? irpfRate : 0)) / 100
+  if (!units || !rate) return out
+  for (let i = 0; i < 6; i++) {
+    const diff = round2(target - value(out))
+    if (!diff) break
+    l.unitPrice = round4(l.unitPrice + diff / rate / units)
+  }
+  return out
+}
+
+const sameSalesLines = (a: SalesLine[], b: SalesLine[]) => a.length === b.length && a.every((l, i) => {
+  const o = b[i]!
+  return l.description === o.description && l.quantity === o.quantity && l.unitPrice === o.unitPrice && (l.discountPct || 0) === (o.discountPct || 0)
+    && l.vatRate === o.vatRate && (l.surchargeRate || 0) === (o.surchargeRate || 0) && l.irpfApplies === o.irpfApplies
+})
+
+/** Los cambios de líneas pedidos, validados; las líneas nuevas toman precio e IVA del catálogo si no se dan */
+async function resolveLineOps(ctx: OpCtx, ops: SalesLineOpIn[]): Promise<LineOp[]> {
+  if (ops.length > 50) throw new OpError('Demasiados cambios de líneas de una vez: divide la petición')
+  const catalog = ops.some(o => o.accion === 'anadir')
+    ? await useDb().select().from(tables.items).where(and(eq(tables.items.companyId, ctx.company.id), isNull(tables.items.archivedAt)))
+    : []
+  return ops.map((o): LineOp => {
+    if (o.iva != null && !VALID_VAT.has(o.iva)) throw new OpError('Tipo de IVA no válido: 21, 10, 5, 4 o 0')
+    const vatRate = o.iva ?? undefined
+    const quantity = o.cantidad != null ? checkRange(o.cantidad, -999_999, 999_999, 'la cantidad') : undefined
+    if (quantity === 0) throw new OpError('La cantidad no puede ser 0: para quitar una línea usa quitar')
+    const unitPrice = o.precio != null ? price(o.precio) : undefined
+    const discountPct = checkRange(o.descuento, 0, 100, 'el descuento')
+    const description = o.concepto?.trim().slice(0, 2000) || undefined
+    const match = o.buscar?.trim().slice(0, 120) || null
+    if (o.accion === 'anadir') {
+      if (!description) throw new OpError('Indica el concepto de la línea nueva')
+      const item = catalog.find(i => comparableName(i.name) === comparableName(description))
+      const p = unitPrice ?? item?.unitPrice
+      if (p == null) throw new OpError(`Indica el precio de «${description}»: no está en el catálogo`)
+      return { op: 'add', match: null, description, quantity: quantity ?? 1, unitPrice: p, vatRate: vatRate ?? item?.vatRate ?? (ctx.company.defaultVatRate || 21), discountPct: discountPct ?? 0, itemId: item?.id ?? null }
+    }
+    if (o.accion === 'quitar') {
+      if (!match) throw new OpError('Indica qué línea quitar (su concepto)')
+      return { op: 'remove', match }
+    }
+    if (o.accion !== 'modificar') throw new OpError(`Cambio de línea desconocido: ${o.accion}`)
+    if (description == null && quantity == null && unitPrice == null && discountPct == null && vatRate == null) throw new OpError('Indica qué cambia en la línea')
+    return { op: 'edit', match, description, quantity, unitPrice, vatRate, discountPct }
+  })
+}
+
+function lineOpText(op: LineOp) {
+  if (op.op === 'add') return `línea nueva «${short(op.description, 40)}» de ${eurText(op.unitPrice ?? 0)}${op.quantity !== 1 ? ` × ${op.quantity}` : ''}`
+  if (op.op === 'remove') return `sin la línea «${op.match}»`
+  const what = [
+    op.description ? `concepto «${short(op.description, 40)}»` : '',
+    op.quantity != null ? `cantidad ${op.quantity}` : '',
+    op.unitPrice != null ? `precio ${eurText(op.unitPrice)}` : '',
+    op.discountPct != null ? `descuento ${pctText(op.discountPct)}` : '',
+    op.vatRate != null ? `IVA ${pctText(op.vatRate)}` : '',
+  ].filter(Boolean).join(', ')
+  return `${op.match ? `línea «${op.match}»` : 'líneas'}: ${what}`
+}
+
+/** «No se tocan 2 facturas: no tienen…» para lo que el filtro encontró pero no se puede cambiar */
+function skippedText(reasons: Map<string, number>, n: (k: number) => string) {
+  return [...reasons].map(([why, k]) => `No se ${k === 1 ? 'toca' : 'tocan'} ${n(k)}: ${why}.`)
+}
+
+const STATUS_BY_ACTION: Readonly<Record<string, ManualStatus>> = Object.freeze({ marcar_enviadas: 'sent', marcar_aceptados: 'accepted', marcar_rechazados: 'rejected' })
 
 export async function planSales(ctx: OpCtx, family: SalesFamily, accion: string, rawFilter: unknown, cambios: SalesChangesIn): Promise<OpPlan> {
   const f = cleanFilter(rawFilter)
   const [one, many] = family === 'quote' ? ['presupuesto', 'presupuestos'] : ['factura', 'facturas']
   requireScope(f, many)
-  if (family === 'quote' && (accion === 'marcar_cobradas' || accion === 'marcar_pendientes')) {
-    throw new OpError('Los presupuestos no se cobran: primero hay que convertirlos en factura')
-  }
+  if (family === 'quote' && accion === 'marcar_cobradas') throw new OpError('Los presupuestos no se cobran: primero hay que convertirlos en factura (convertir_en_factura)')
   const { rows: found, matched } = await salesTargets(ctx.company, f, family)
-  if (!found.length) throw new OpError(`No hay ${many} que coincidan con ese filtro`, { clientes_coincidentes: matched })
+  if (!found.length) {
+    // «La factura PC-77» puede ser una recibida: se dice al modelo para que use la herramienta buena
+    const other = family === 'invoice' && (f.numeros || f.nombres || f.texto) ? (await expenseTargets(ctx.company, f, 50).catch(() => null))?.rows.length : 0
+    throw new OpError(`No hay ${many} que coincidan con ese filtro`, {
+      clientes_coincidentes: matched,
+      ...(other ? { sugerencia: `Coinciden ${count(other, 'gasto', 'gastos')} (facturas recibidas de proveedores): usa operar_gastos con el mismo filtro, sin preguntar` } : {}),
+    })
+  }
   tooMany(found.length, many)
   const scope = f.nombres && matched.length ? `Clientes: ${names(matched, 5)}` : null
   const n = (k: number) => count(k, one, many)
+  const labels = (list: SalesTarget[]) => labelsOf(list.map(r => ({ id: r.id, label: salesLabel(r) })))
 
   if (accion === 'eliminar') {
     const issued = found.filter(r => r.status !== 'draft' && !isQuote(r.kind)).length
@@ -174,7 +383,7 @@ export async function planSales(ctx: OpCtx, family: SalesFamily, accion: string,
       kind: 'ventas.eliminar',
       title: `Eliminar ${n(found.length)}`,
       risk: 'high',
-      params: { ids: found.map(r => r.id), labels: labelsOf(found.map(r => ({ id: r.id, label: salesLabel(r) }))) },
+      params: { ids: found.map(r => r.id), labels: labels(found) },
       preview: preview(found.map(r => salesRow(r)), {
         scope,
         total: sum(found.map(r => r.total)),
@@ -220,7 +429,7 @@ export async function planSales(ctx: OpCtx, family: SalesFamily, accion: string,
       kind: 'ventas.cobrar',
       title: `Marcar como ${open.length === 1 ? 'cobrada' : 'cobradas'} ${n(open.length)}`,
       risk: 'normal',
-      params: { ids: open.map(r => r.id), labels: labelsOf(open.map(r => ({ id: r.id, label: salesLabel(r) }))), date: day, method },
+      params: { ids: open.map(r => r.id), labels: labels(open), date: day, method },
       preview: preview(open.map(r => salesRow(r, { amount: round2(r.total - r.paidTotal), before: 'Pendiente', after: 'Cobrada' })), {
         scope,
         change: `Cobro de lo pendiente el ${fd(day)} por ${PAY_TEXT[method]}`,
@@ -231,19 +440,103 @@ export async function planSales(ctx: OpCtx, family: SalesFamily, accion: string,
     }
   }
 
-  if (accion === 'marcar_pendientes') {
+  if (accion === 'marcar_pendientes' && family === 'invoice') {
     const paid = found.filter(r => r.status === 'paid' || r.status === 'partial')
     if (!paid.length) throw new OpError('Ninguna de esas facturas tiene cobros registrados')
     return {
       kind: 'ventas.pendiente',
       title: `Quitar los cobros de ${n(paid.length)}`,
       risk: 'normal',
-      params: { ids: paid.map(r => r.id), labels: labelsOf(paid.map(r => ({ id: r.id, label: salesLabel(r) }))) },
+      params: { ids: paid.map(r => r.id), labels: labels(paid) },
       preview: preview(paid.map(r => salesRow(r, { before: r.status === 'paid' ? 'Cobrada' : 'Cobro parcial', after: 'Pendiente' })), {
         scope,
         total: sum(paid.map(r => r.total)),
         undoable: true,
         warnings: ['Se borran sus cobros y los movimientos del banco conciliados con ellos vuelven a pendientes.'],
+      }),
+    }
+  }
+
+  // ─── Estados: enviada, aceptado, rechazado, pendiente (presupuestos) ───
+  const wanted = STATUS_BY_ACTION[accion] ?? (accion === 'marcar_pendientes' ? 'issued' : null)
+  if (wanted) {
+    if (family === 'invoice' && wanted !== 'sent') throw new OpError('Aceptar o rechazar solo se hace con presupuestos')
+    const why = (r: SalesTarget) => r.status === wanted ? 'ya lo estaba'
+      : r.status === 'draft' ? 'es un borrador: hay que emitirlo antes'
+        : r.status === 'invoiced' ? 'ya está facturado'
+          : !isQuote(r.kind) && !['issued', 'sent'].includes(r.status) ? 'tiene cobros o está anulada: conserva su estado'
+            : null
+    const ok = found.filter(r => !why(r))
+    const reasons = new Map<string, number>()
+    for (const r of found) {
+      const w = why(r)
+      if (w) reasons.set(w, (reasons.get(w) ?? 0) + 1)
+    }
+    if (!ok.length) throw new OpError(capital(found.length === 1 ? why(found[0]!)! : `no se puede: ${[...reasons.keys()].join('; ')}`))
+    const label = statusText(found[0]!.kind, wanted).toLowerCase()
+    return {
+      kind: 'ventas.estado',
+      title: `Marcar como ${label}${ok.length === 1 ? '' : 's'} ${n(ok.length)}`,
+      risk: 'normal',
+      params: { ids: ok.map(r => r.id), labels: labels(ok), status: wanted },
+      preview: preview(ok.map(r => salesRow(r, { before: statusText(r.kind, r.status), after: statusText(r.kind, wanted) })), {
+        scope,
+        total: sum(ok.map(r => r.total)),
+        undoable: true,
+        warnings: skippedText(reasons, n),
+      }),
+    }
+  }
+
+  if (accion === 'pasar_a_borrador') {
+    if (family === 'quote') throw new OpError('Los presupuestos no tienen borrador: se pueden marcar como pendientes')
+    const locked = await verifactuLocked(ctx.company.id, found)
+    const issued = found.filter(r => r.status !== 'draft' && !locked.has(r.id))
+    if (!issued.length) throw new OpError(locked.size ? 'Tienen registro VeriFactu: solo se corrigen con una rectificativa' : 'Ya son borradores')
+    const withPayments = issued.filter(r => r.paidTotal !== 0).length
+    const already = found.length - issued.length - locked.size
+    return {
+      kind: 'ventas.borrador',
+      title: `Devolver a borrador ${n(issued.length)}`,
+      risk: 'high',
+      params: { ids: issued.map(r => r.id), labels: labels(issued) },
+      preview: preview(issued.map(r => salesRow(r, { before: statusText(r.kind, r.status), after: 'Borrador' })), {
+        scope,
+        total: sum(issued.map(r => r.total)),
+        undoable: false,
+        warnings: [
+          'Pierden su número: al emitirlas de nuevo reciben el siguiente de la serie y pueden quedar huecos en la numeración.',
+          'Si ya se enviaron al cliente, lo correcto es anularlas con una rectificativa.',
+          withPayments ? `${count(withPayments, 'tiene cobros', 'tienen cobros')}: se borran y los movimientos del banco conciliados vuelven a pendientes.` : '',
+          locked.size ? `${n(locked.size)} ${locked.size === 1 ? 'tiene' : 'tienen'} registro VeriFactu y no se ${locked.size === 1 ? 'toca' : 'tocan'}.` : '',
+          already > 0 ? `${count(already, 'ya era borrador', 'ya eran borradores')}.` : '',
+        ].filter(Boolean),
+      }),
+    }
+  }
+
+  if (accion === 'convertir_en_factura') {
+    if (family !== 'quote') throw new OpError('Solo los presupuestos se convierten en factura')
+    const s = tables.salesDocuments
+    const made = await useDb().selectDistinct({ id: s.sourceId }).from(s)
+      .where(and(eq(s.companyId, ctx.company.id), eq(s.kind, 'invoice'), inArray(s.sourceId, found.map(r => r.id))))
+    const invoiced = new Set(made.map(m => m.id))
+    const ready = found.filter(r => r.status !== 'invoiced' && !invoiced.has(r.id))
+    if (!ready.length) throw new OpError(found.length === 1 ? 'Ese presupuesto ya tiene su factura' : 'Esos presupuestos ya tienen su factura')
+    return {
+      kind: 'ventas.convertir',
+      title: `Convertir en factura ${n(ready.length)}`,
+      risk: 'normal',
+      params: { ids: ready.map(r => r.id), labels: labels(ready) },
+      preview: preview(ready.map(r => salesRow(r, { before: statusText(r.kind, r.status), after: 'Borrador de factura' })), {
+        scope,
+        total: sum(ready.map(r => r.total)),
+        undoable: true,
+        warnings: [
+          `Se crea un borrador de factura por ${one}, con sus mismas líneas y fecha de hoy: revísalo y emítelo.`,
+          `${ready.length === 1 ? 'El presupuesto queda aceptado' : 'Los presupuestos quedan aceptados'}.`,
+          found.length > ready.length ? `${count(found.length - ready.length, 'ya tenía su factura y no se toca', 'ya tenían su factura y no se tocan')}.` : '',
+        ].filter(Boolean),
       }),
     }
   }
@@ -265,69 +558,111 @@ export async function planSales(ctx: OpCtx, family: SalesFamily, accion: string,
   }
   ch.issueDate = date(cambios.fecha, 'fecha')
   ch.dueDate = date(cambios.vencimiento, 'fecha de vencimiento')
+  ch.operationDate = date(cambios.fecha_operacion, 'fecha de operación')
   ch.paymentMethod = payMethod(cambios.forma_pago)
-  if (cambios.notas != null && cambios.notas.trim()) ch.notes = cambios.notas.trim().slice(0, 5000)
-  if (cambios.condiciones != null && cambios.condiciones.trim()) ch.terms = cambios.condiciones.trim().slice(0, 5000)
-  if (cambios.referencia != null && cambios.referencia.trim()) ch.customerReference = cambios.referencia.trim().slice(0, 80)
+  if (cambios.notas?.trim()) ch.notes = cambios.notas.trim().slice(0, 5000)
+  if (cambios.condiciones?.trim()) ch.terms = cambios.condiciones.trim().slice(0, 5000)
+  if (cambios.referencia?.trim()) ch.customerReference = cambios.referencia.trim().slice(0, 80)
+  if (cambios.descripcion?.trim()) ch.description = plainToRich(cambios.descripcion.slice(0, 5000))
+  ch.discountPct = checkRange(cambios.descuento, 0, 100, 'el descuento')
+  if (cambios.base != null && cambios.total != null) throw new OpError('Indica la base o el total, no los dos: el otro sale de los impuestos')
+  if (cambios.base != null) ch.taxBase = amount(cambios.base, 'la base')
+  if (cambios.total != null) ch.total = amount(cambios.total, 'el total')
+  if (cambios.lineas?.length) ch.lineOps = await resolveLineOps(ctx, cambios.lineas)
+  for (const v of cambios.vaciar ?? []) {
+    const k = SALES_CLEAR[v]
+    if (!k) throw new OpError(`«${v}» no se puede dejar en blanco`)
+    if (ch[k] != null) throw new OpError(`«${v}»: indica un valor nuevo o vacíalo, no las dos cosas`)
+    ch[k] = null
+  }
   for (const k of Object.keys(ch) as Array<keyof SalesChangeSet>) if (ch[k] === undefined) delete ch[k]
   if (!Object.keys(ch).length) throw new OpError('Indica qué quieres cambiar')
 
   if (contact) parts.push(`${names(found.map(r => r.client)) || 'Sin cliente'} → ${contact.name}`)
+  for (const op of ch.lineOps ?? []) parts.push(lineOpText(op))
+  if (ch.taxBase != null) parts.push(`base ${eurText(ch.taxBase)}`)
+  if (ch.total != null) parts.push(`total ${eurText(ch.total)}`)
+  if (ch.discountPct != null) parts.push(ch.discountPct ? `descuento del ${pctText(ch.discountPct)}` : 'sin descuento')
   if (ch.irpfRate != null) parts.push(ch.irpfRate ? `retención del ${pctText(ch.irpfRate)}` : 'sin retención')
   if (ch.vatRate != null) parts.push(`IVA del ${pctText(ch.vatRate)}`)
   if (ch.issueDate) parts.push(`fecha ${fd(ch.issueDate)}`)
-  if (ch.dueDate) parts.push(`vence el ${fd(ch.dueDate)}`)
+  if (ch.dueDate !== undefined) parts.push(ch.dueDate ? `vence el ${fd(ch.dueDate)}` : 'sin vencimiento')
+  if (ch.operationDate !== undefined) parts.push(ch.operationDate ? `fecha de operación ${fd(ch.operationDate)}` : 'sin fecha de operación')
   if (ch.paymentMethod) parts.push(`pago por ${PAY_TEXT[ch.paymentMethod]}`)
-  if (ch.notes) parts.push('notas nuevas')
-  if (ch.terms) parts.push('condiciones nuevas')
-  if (ch.customerReference) parts.push(`referencia ${ch.customerReference}`)
+  if (ch.notes !== undefined) parts.push(ch.notes ? 'notas nuevas' : 'sin notas')
+  if (ch.terms !== undefined) parts.push(ch.terms ? 'condiciones nuevas' : 'sin condiciones')
+  if (ch.customerReference !== undefined) parts.push(ch.customerReference ? `referencia ${ch.customerReference}` : 'sin referencia')
+  if (ch.description !== undefined) parts.push(ch.description ? 'descripción nueva' : 'sin descripción')
 
-  const amounts = ch.irpfRate != null || ch.vatRate != null || !!contact
-  const lines = amounts ? await linesOf(found.map(r => r.id)) : new Map()
+  const linesChange = touchesLines(ch)
+  const amounts = linesChange || ch.irpfRate != null
+  const lines = amounts ? await linesOf(found.map(r => r.id)) : new Map<number, SalesLine[]>()
   const locked = await verifactuLocked(ctx.company.id, found)
   const rows: AiActionRow[] = []
   const targets: SalesTarget[] = []
+  const failed = new Map<string, number>()
   let unchanged = 0
   let paidTouched = 0
+  let unfit = 0
+  let scaled = false
+  // Lo que no se compara con el documento cuenta siempre como cambio
+  const COMPARED = new Set(['contactId', 'irpfRate', 'vatRate', 'issueDate', 'dueDate', 'discountPct', 'taxBase', 'total', 'lineOps'])
   for (const r of found) {
     if (locked.has(r.id)) continue
-    let changes = Object.keys(ch).some(k => !['contactId', 'irpfRate', 'vatRate', 'issueDate', 'dueDate'].includes(k))
+    const docLines = lines.get(r.id) ?? []
+    let next: SalesLine[] | null = null
+    if (linesChange) {
+      try {
+        next = nextSalesLines(docLines, ch.irpfRate ?? r.irpfRate, ch, contact)
+      }
+      catch (err) {
+        if (!(err instanceof OpError)) throw err
+        failed.set(err.message, (failed.get(err.message) ?? 0) + 1)
+        continue
+      }
+    }
+    let changes = Object.keys(ch).some(k => !COMPARED.has(k))
     if (ch.contactId != null && r.contactId !== ch.contactId) changes = true
     if (ch.irpfRate != null && r.irpfRate !== ch.irpfRate) changes = true
     if (ch.issueDate && r.issueDate !== ch.issueDate) changes = true
-    if (ch.dueDate && r.dueDate !== ch.dueDate) changes = true
-    let newTotal = r.total
-    if (amounts) {
-      const docLines = (lines.get(r.id) ?? []) as LineLike[]
-      if (ch.vatRate != null && docLines.some(l => l.vatRate !== ch.vatRate)) changes = true
-      newTotal = computeTotals(docLines.map(l => adjustLine(l, ch, contact)), ch.irpfRate ?? r.irpfRate).total
-    }
+    if (ch.dueDate !== undefined && r.dueDate !== ch.dueDate) changes = true
+    if (next && !sameSalesLines(docLines, next)) changes = true
     if (!changes) {
       unchanged++
       continue
     }
+    const after = amounts ? computeTotals(next ?? docLines, ch.irpfRate ?? r.irpfRate) : null
+    const newTotal = after?.total ?? r.total
+    if (after && ((ch.taxBase != null && after.taxBase !== ch.taxBase) || (ch.total != null && after.total !== ch.total))) unfit++
+    if ((ch.taxBase != null || ch.total != null) && docLines.length > 1) scaled = true
     const amountChanges = Math.abs(newTotal - r.total) > 0.004
     if (amountChanges && r.paidTotal !== 0) paidTouched++
     targets.push(r)
     rows.push(salesRow(r, contact
       ? { before: r.client ?? 'Sin cliente', after: contact.name, amount: newTotal }
-      : amountChanges ? { before: eurText(r.total), after: eurText(newTotal), amount: newTotal } : {}))
+      : ch.taxBase != null && after ? { before: `Base ${eurText(r.taxBase)}`, after: `Base ${eurText(after.taxBase)}`, amount: newTotal }
+        : amountChanges ? { before: eurText(r.total), after: eurText(newTotal), amount: newTotal } : {}))
   }
+  if (!targets.length && failed.size) throw new OpError(capital([...failed.keys()][0]!), { avisos: skippedText(failed, n) })
   if (!targets.length && locked.size) throw new OpError(`${locked.size === 1 ? 'Esa factura tiene' : 'Esas facturas tienen'} registro VeriFactu: solo se corrigen con una rectificativa`)
   if (!targets.length) throw new OpError(`${found.length === 1 ? `Ese ${one} ya lo tiene` : `Esos ${many} ya lo tienen`}: no hay nada que cambiar`)
 
   const issued = targets.filter(r => r.status !== 'draft' && !isQuote(r.kind)).length
-  const surchargeChange = contact && targets.some(r => (lines.get(r.id) ?? []).some((l: LineLike) => (l.surchargeRate > 0) !== contact!.equivalenceSurcharge))
+  const amountsChange = rows.some(x => x.before && x.after && x.amount != null) || ch.irpfRate != null || ch.vatRate != null
+  const surchargeChange = contact && targets.some(r => (lines.get(r.id) ?? []).some(l => (l.surchargeRate > 0) !== contact!.equivalenceSurcharge))
   const only = Object.keys(ch)
   const title = only.length === 1 && contact ? `Cambiar el cliente de ${n(targets.length)}`
     : only.length === 1 && ch.irpfRate != null ? (ch.irpfRate ? `Aplicar retención del ${pctText(ch.irpfRate)} a ${n(targets.length)}` : `Quitar la retención de ${n(targets.length)}`)
       : only.length === 1 && ch.vatRate != null ? `Poner IVA del ${pctText(ch.vatRate)} en ${n(targets.length)}`
-        : `Modificar ${n(targets.length)}`
+        : only.length === 1 && (ch.taxBase != null || ch.total != null) ? `Cambiar el importe de ${n(targets.length)}`
+          : only.length === 1 && ch.lineOps ? `Cambiar las líneas de ${n(targets.length)}`
+            : only.length === 1 && ch.discountPct != null ? `Aplicar un descuento del ${pctText(ch.discountPct)} a ${n(targets.length)}`
+              : `Modificar ${n(targets.length)}`
   return {
     kind: 'ventas.modificar',
     title,
     risk: 'normal',
-    params: { ids: targets.map(r => r.id), labels: labelsOf(targets.map(r => ({ id: r.id, label: salesLabel(r) }))), changes: ch },
+    params: { ids: targets.map(r => r.id), labels: labels(targets), changes: ch },
     preview: preview(rows, {
       scope,
       change: capital(parts.join(' · ')),
@@ -335,11 +670,14 @@ export async function planSales(ctx: OpCtx, family: SalesFamily, accion: string,
       undoable: true,
       warnings: [
         issued && contact ? `${n(issued)} ya ${issued === 1 ? 'está emitida' : 'están emitidas'}: el cliente cambia en la propia factura. Si ya se la enviaste al anterior, lo correcto es una rectificativa.` : '',
-        issued && (ch.irpfRate != null || ch.vatRate != null) && !contact ? `${n(issued)} ya ${issued === 1 ? 'está emitida' : 'están emitidas'}: si ya ${issued === 1 ? 'la enviaste' : 'las enviaste'}, cambiar importes requiere una rectificativa.` : '',
+        issued && amountsChange && !contact ? `${n(issued)} ya ${issued === 1 ? 'está emitida' : 'están emitidas'}: si ya ${issued === 1 ? 'la enviaste' : 'las enviaste'}, cambiar importes requiere una rectificativa.` : '',
         issued && ch.issueDate ? 'Cambiar la fecha de facturas emitidas puede romper el orden correlativo de la numeración.' : '',
+        scaled ? 'Los precios de cada línea se ajustan en proporción para llegar al importe.' : '',
+        unfit ? `${count(unfit, 'no cuadra', 'no cuadran')} al céntimo por el redondeo de los precios: revisa el importe final en la tarjeta.` : '',
         surchargeChange ? 'El recargo de equivalencia se ajusta al nuevo cliente.' : '',
         paidTouched ? `${count(paidTouched, 'tiene cobros', 'tienen cobros')}: su estado de cobro se recalcula con el nuevo total.` : '',
         locked.size ? `${n(locked.size)} ${locked.size === 1 ? 'tiene' : 'tienen'} registro VeriFactu y no se ${locked.size === 1 ? 'toca' : 'tocan'}: solo se corrigen con una rectificativa.` : '',
+        ...skippedText(failed, n),
         unchanged ? `${count(unchanged, 'ya lo tenía y no se toca', 'ya lo tenían y no se tocan')}.` : '',
       ].filter(Boolean),
     }),
@@ -417,12 +755,14 @@ async function salesModify(ctx: OpCtx, p: { ids: number[], labels: Record<string
         ...(ch.contactId ? { contactId: ch.contactId } : {}),
         ...(ch.irpfRate != null ? { irpfRate: ch.irpfRate } : {}),
         ...(ch.issueDate ? { issueDate: ch.issueDate } : {}),
-        ...(ch.dueDate ? { dueDate: ch.dueDate } : {}),
+        ...(ch.dueDate !== undefined ? { dueDate: ch.dueDate } : {}),
+        ...(ch.operationDate !== undefined ? { operationDate: ch.operationDate } : {}),
         ...(ch.paymentMethod ? { paymentMethod: ch.paymentMethod } : {}),
-        ...(ch.notes ? { notes: ch.notes } : {}),
-        ...(ch.terms ? { terms: ch.terms } : {}),
-        ...(ch.customerReference ? { customerReference: ch.customerReference } : {}),
-        lines: ch.vatRate != null || contact ? loaded.input.lines.map(l => adjustLine(l, ch, contact)) : loaded.input.lines,
+        ...(ch.notes !== undefined ? { notes: ch.notes } : {}),
+        ...(ch.terms !== undefined ? { terms: ch.terms } : {}),
+        ...(ch.customerReference !== undefined ? { customerReference: ch.customerReference } : {}),
+        ...(ch.description !== undefined ? { description: ch.description } : {}),
+        lines: touchesLines(ch) ? nextSalesLines(loaded.input.lines, ch.irpfRate ?? loaded.input.irpfRate, ch, contact) : loaded.input.lines,
       }
       await saveSalesDraft(ctx.company.id, ctx.actor.id, next, id)
       await keepSeries(ctx.company.id, id, loaded.input.seriesId)
@@ -430,7 +770,7 @@ async function salesModify(ctx: OpCtx, p: { ids: number[], labels: Record<string
       t.done++
     }
     catch (err) {
-      t.skip(id, errText(err))
+      t.skip(id, capital(errText(err)))
     }
   }
   return { result: t.result(), undo: { items: undo } }
@@ -550,6 +890,115 @@ async function salesUncollectRevert(ctx: OpCtx, u: { items: Array<{ id: number, 
   return t.result({ message: u.items.some(i => i.banked) ? 'Los cobros vuelven a estar, pero sin enlazar con el banco: concílialos de nuevo en Banco si hace falta.' : null })
 }
 
+type StatusUndo = { id: number, status: SalesStatus, sentAt: string | Date | null }
+
+async function salesSetStatus(ctx: OpCtx, p: { ids: number[], labels: Record<string, string>, status: ManualStatus }): Promise<OpOutcome> {
+  const t = new Tally(p.labels)
+  const s = tables.salesDocuments
+  const undo: StatusUndo[] = []
+  for (const id of p.ids) {
+    try {
+      const [doc] = await useDb().select({ status: s.status, sentAt: s.sentAt }).from(s).where(and(eq(s.id, id), eq(s.companyId, ctx.company.id)))
+      if (!doc) {
+        t.skip(id, 'Ya no existe')
+        continue
+      }
+      if (doc.status === p.status) {
+        t.skip(id, 'Ya lo estaba')
+        continue
+      }
+      await setSalesStatus(ctx.company.id, id, p.status)
+      undo.push({ id, status: doc.status, sentAt: doc.sentAt })
+      t.done++
+    }
+    catch (err) {
+      t.skip(id, errText(err))
+    }
+  }
+  return { result: t.result(), undo: { items: undo } }
+}
+
+async function salesSetStatusRevert(ctx: OpCtx, u: { items: StatusUndo[] }) {
+  const t = new Tally()
+  const s = tables.salesDocuments
+  for (const item of u.items) {
+    try {
+      const [doc] = await useDb().select({ status: s.status }).from(s).where(and(eq(s.id, item.id), eq(s.companyId, ctx.company.id)))
+      if (!doc) throw new OpError('Ya no existe')
+      if (doc.status === 'invoiced' || doc.status === 'paid' || doc.status === 'partial') throw new OpError('Ha cambiado después: ya está facturado o cobrado')
+      await useDb().update(s).set({ status: item.status, sentAt: item.sentAt ? new Date(item.sentAt) : null }).where(eq(s.id, item.id))
+      t.done++
+    }
+    catch (err) {
+      t.skip(item.id, errText(err))
+    }
+  }
+  return t.result()
+}
+
+async function salesBackToDraft(ctx: OpCtx, p: { ids: number[], labels: Record<string, string> }): Promise<OpOutcome> {
+  const t = new Tally(p.labels)
+  for (const id of p.ids) {
+    try {
+      if (await salesToDraft(ctx.company.id, id)) t.done++
+      else t.skip(id, 'Ya era un borrador')
+    }
+    catch (err) {
+      t.skip(id, errText(err))
+    }
+  }
+  return { result: t.result(), undo: null }
+}
+
+type ConvertUndo = { id: number, invoiceId: number, status: SalesStatus }
+
+async function salesConvert(ctx: OpCtx, p: { ids: number[], labels: Record<string, string> }): Promise<OpOutcome> {
+  const t = new Tally(p.labels)
+  const db = useDb()
+  const s = tables.salesDocuments
+  const undo: ConvertUndo[] = []
+  for (const id of p.ids) {
+    try {
+      const [doc] = await db.select({ status: s.status }).from(s).where(and(eq(s.id, id), eq(s.companyId, ctx.company.id)))
+      if (!doc) {
+        t.skip(id, 'Ya no existe')
+        continue
+      }
+      const [made] = await db.select({ id: s.id }).from(s).where(and(eq(s.companyId, ctx.company.id), eq(s.kind, 'invoice'), eq(s.sourceId, id))).limit(1)
+      if (made || doc.status === 'invoiced') {
+        t.skip(id, 'Ya tiene su factura')
+        continue
+      }
+      undo.push({ id, invoiceId: await quoteToInvoice(ctx.company, ctx.actor.id, id), status: doc.status })
+      t.done++
+    }
+    catch (err) {
+      t.skip(id, errText(err))
+    }
+  }
+  const url = undo.length === 1 ? `/facturas/${undo[0]!.invoiceId}` : '/facturas'
+  return { result: t.result({ url, message: undo.length ? 'Los borradores de factura están listos para revisarlos y emitirlos.' : null }), undo: { items: undo } }
+}
+
+async function salesConvertRevert(ctx: OpCtx, u: { items: ConvertUndo[] }) {
+  const t = new Tally()
+  const db = useDb()
+  const s = tables.salesDocuments
+  for (const item of u.items) {
+    try {
+      const [inv] = await db.select({ status: s.status }).from(s).where(and(eq(s.id, item.invoiceId), eq(s.companyId, ctx.company.id)))
+      if (inv && inv.status !== 'draft') throw new OpError('La factura ya está emitida: si sobra, anúlala con una rectificativa')
+      if (inv) await deleteSalesDocuments(ctx.company.id, [item.invoiceId])
+      await db.update(s).set({ status: item.status }).where(and(eq(s.id, item.id), eq(s.companyId, ctx.company.id)))
+      t.done++
+    }
+    catch (err) {
+      t.skip(item.id, errText(err))
+    }
+  }
+  return t.result()
+}
+
 // ═══ Gastos ═════════════════════════════════════════════════════════════════
 
 export interface ExpenseChangesIn {
@@ -560,10 +1009,24 @@ export interface ExpenseChangesIn {
   iva_deducible: number | null
   iva: number | null
   irpf: number | null
+  base: number | null
+  total: number | null
+  cuota_iva: number | null
+  desglose: Array<{ base: number, iva: number, cuota: number | null, recargo: boolean | null }> | null
   fecha: string | null
+  vencimiento: string | null
+  numero: string | null
   descripcion: string | null
+  notas: string | null
   forma_pago: string | null
+  bien_inversion: boolean | null
+  inversion_sujeto_pasivo: boolean | null
+  revisado: boolean | null
+  motivo: string | null
+  vaciar: string[] | null
 }
+
+type TaxLineIn = { base: number, vatRate: number, vatAmount: number | null, surchargeRate: number }
 
 interface ExpenseChangeSet {
   supplierId?: number | null
@@ -575,10 +1038,25 @@ interface ExpenseChangeSet {
   vatDeductiblePct?: number
   vatRate?: number
   irpfRate?: number
+  /** Importes: la base, el total (lo pagado), la cuota de IVA o el desglose completo por tipos */
+  taxBase?: number
+  total?: number
+  vatAmount?: number
+  taxLines?: TaxLineIn[]
   issueDate?: string
-  description?: string
-  paymentMethod?: Pay
+  dueDate?: string | null
+  number?: string | null
+  description?: string | null
+  notes?: string | null
+  paymentMethod?: Pay | null
+  isInvestment?: boolean
+  reverseCharge?: boolean
+  reviewed?: boolean
 }
+
+const EXPENSE_CLEAR: Readonly<Record<string, 'description' | 'notes' | 'number' | 'dueDate' | 'paymentMethod'>> = Object.freeze({
+  descripcion: 'description', notas: 'notes', numero: 'number', vencimiento: 'dueDate', forma_pago: 'paymentMethod',
+})
 
 const expenseLabel = (r: { supplier: string | null, description: string | null, number: string | null }) =>
   short(r.supplier || r.description || (r.number ? `Factura ${r.number}` : 'Gasto'), 70)
@@ -591,14 +1069,126 @@ const expenseRow = (r: ExpenseTarget, extra: Partial<AiActionRow> = {}): AiActio
   ...extra,
 })
 
+const EXPENSE_AMOUNT_KEYS = Object.freeze(['taxLines', 'taxBase', 'total', 'vatAmount', 'vatRate', 'irpfRate'] as const)
+const SEVERAL_VAT = 'con varios tipos de IVA hay que indicar el desglose completo'
+
+/** Bases repartidas en proporción hasta sumar `target`; el céntimo que sobre va a la línea mayor */
+function scaleBases(tl: TaxLineIn[], target: number): TaxLineIn[] {
+  const current = sum(tl.map(l => l.base))
+  if (!current) throw new OpError('su base es 0: hay que indicar el desglose por tipos de IVA')
+  const out = tl.map(l => ({ ...l, base: round2(l.base * target / current), vatAmount: null }))
+  const big = out.reduce((m, l, i) => (Math.abs(l.base) > Math.abs(out[m]!.base) ? i : m), 0)
+  out[big]!.base = round2(out[big]!.base + target - sum(out.map(l => l.base)))
+  return out
+}
+
+/**
+ * Desglose de IVA nuevo de un gasto, o null si sus importes no cambian. Otra base mantiene los tipos y
+ * recalcula las cuotas; otro total (lo pagado) mantiene los tipos y saca base y cuota al céntimo; base y
+ * total a la vez fijan la cuota; otro tipo de IVA a secas mantiene el total; otra retención, la base.
+ */
+function nextExpenseLines(row: { total: number, taxBase: number, vatTotal: number, irpfRate: number }, lines: TaxLineIn[], ch: Pick<ExpenseChangeSet, typeof EXPENSE_AMOUNT_KEYS[number]>): { taxLines: TaxLineIn[], irpfRate: number } | null {
+  if (!EXPENSE_AMOUNT_KEYS.some(k => ch[k] != null)) return null
+  const irpf = ch.irpfRate ?? row.irpfRate
+  let tl: TaxLineIn[] = (ch.taxLines ?? lines).map(l => ({ ...l }))
+  if (!tl.length) tl = [{ base: row.taxBase, vatRate: 0, vatAmount: row.vatTotal, surchargeRate: 0 }]
+  const one = tl.length === 1 ? tl[0]! : null
+  if ((ch.vatRate != null || ch.vatAmount != null) && !one) throw new OpError(SEVERAL_VAT)
+  let rateChanged = false
+  if (one && ch.vatRate != null && ch.vatRate !== one.vatRate) {
+    one.surchargeRate = one.surchargeRate > 0 ? SURCHARGE_BY_VAT[ch.vatRate] ?? 0 : 0
+    one.vatRate = ch.vatRate
+    one.vatAmount = null
+    rateChanged = true
+  }
+  // Otro tipo de IVA sin más importes: se mantiene lo que se pagó
+  const total = ch.total ?? (rateChanged && ch.taxBase == null && ch.vatAmount == null ? row.total : null)
+  if (one && ch.vatAmount != null) one.vatAmount = ch.vatAmount
+  if (ch.taxBase != null) {
+    if (one) {
+      one.base = ch.taxBase
+      if (ch.vatAmount == null) one.vatAmount = null
+    }
+    else tl = scaleBases(tl, ch.taxBase)
+  }
+  if (total != null) {
+    if (one) {
+      const s = one.surchargeRate
+      if (ch.taxBase != null) one.vatAmount = round2(total - one.base - pctOf(one.base, s) + pctOf(one.base, irpf))
+      else if (ch.vatAmount != null) one.base = round2((total - ch.vatAmount) / (1 + (s - irpf) / 100))
+      else {
+        one.base = round2(total / (1 + (one.vatRate + s - irpf) / 100))
+        // La cuota cuadra al céntimo con lo pagado
+        one.vatAmount = round2(total - one.base - pctOf(one.base, s) + pctOf(one.base, irpf))
+      }
+    }
+    else {
+      if (ch.taxBase != null) throw new OpError(SEVERAL_VAT)
+      const current = expenseTotals({ taxLines: tl, irpfRate: irpf }).total
+      if (!current) throw new OpError('su total es 0: hay que indicar el desglose por tipos de IVA')
+      tl = scaleBases(tl, round2(sum(tl.map(l => l.base)) * total / current))
+      // El céntimo de redondeo, en la cuota del tipo más alto
+      const diff = round2(total - expenseTotals({ taxLines: tl, irpfRate: irpf }).total)
+      const top = tl.reduce((m, l, i) => (l.vatRate > tl[m]!.vatRate ? i : m), 0)
+      if (diff && tl[top]!.vatRate > 0) tl[top]!.vatAmount = round2(pctOf(tl[top]!.base, tl[top]!.vatRate) + diff)
+    }
+  }
+  for (const l of tl) {
+    if (!Number.isFinite(l.base) || Math.abs(l.base) > MAX_AMOUNT || (l.vatAmount != null && !Number.isFinite(l.vatAmount))) throw new OpError('el importe no es válido')
+  }
+  return { taxLines: tl, irpfRate: irpf }
+}
+
+/** Aviso si una cuota no corresponde a su tipo (base y total que no cuadran con el IVA) */
+function oddVat(lines: Array<{ base: number, vatRate: number, vatAmount: number }>) {
+  for (const l of lines) {
+    const expected = pctOf(l.base, l.vatRate)
+    if (Math.abs(l.vatAmount - expected) > Math.max(0.05, Math.abs(l.base) * 0.005)) {
+      return `La cuota de IVA queda en ${eurText(l.vatAmount)}, que no es el ${pctText(l.vatRate)} de ${eurText(l.base)}: revisa que base y total sean los de la factura.`
+    }
+  }
+  return null
+}
+
+async function expenseLinesOf(ids: number[]) {
+  const tl = tables.expenseTaxLines
+  const rows = ids.length ? await useDb().select().from(tl).where(inArray(tl.expenseId, ids)).orderBy(tl.expenseId, tl.id) : []
+  const map = new Map<number, TaxLineIn[]>()
+  for (const r of rows) map.set(r.expenseId, [...(map.get(r.expenseId) ?? []), { base: r.base, vatRate: r.vatRate, vatAmount: r.vatAmount, surchargeRate: r.surchargeRate }])
+  return map
+}
+
+const sameTaxLines = (a: Array<{ base: number, vatRate: number, vatAmount: number | null, surchargeRate: number }>, b: TaxLineIn[]) =>
+  a.length === b.length && a.every((l, i) => l.base === b[i]!.base && l.vatRate === b[i]!.vatRate && l.vatAmount === b[i]!.vatAmount && l.surchargeRate === b[i]!.surchargeRate)
+
+/** Gastos (de estos) conciliados con un movimiento del banco, directamente o por su pago */
+async function bankLinked(companyId: number, ids: number[]) {
+  if (!ids.length) return new Set<number>()
+  const db = useDb()
+  const bt = tables.bankTransactions
+  const p = tables.payments
+  const [direct, viaPayment] = await Promise.all([
+    db.selectDistinct({ id: bt.expenseId }).from(bt).where(and(eq(bt.companyId, companyId), inArray(bt.expenseId, ids))),
+    db.selectDistinct({ id: p.expenseId }).from(bt).innerJoin(p, eq(p.id, bt.paymentId)).where(and(eq(bt.companyId, companyId), inArray(p.expenseId, ids))),
+  ])
+  return new Set([...direct, ...viaPayment].map(r => r.id).filter((x): x is number => x != null))
+}
+
 export async function planExpenses(ctx: OpCtx, accion: string, rawFilter: unknown, cambios: ExpenseChangesIn): Promise<OpPlan> {
   const f = cleanFilter(rawFilter)
   requireScope(f, 'gastos')
   const { rows: found, matched } = await expenseTargets(ctx.company, f)
-  if (!found.length) throw new OpError('No hay gastos que coincidan con ese filtro', { proveedores_coincidentes: matched })
+  if (!found.length) {
+    const other = f.numeros || f.nombres || f.texto ? (await salesTargets(ctx.company, f, 'invoice', 50).catch(() => null))?.rows.length : 0
+    throw new OpError('No hay gastos que coincidan con ese filtro', {
+      proveedores_coincidentes: matched,
+      ...(other ? { sugerencia: `Coinciden ${count(other, 'factura emitida', 'facturas emitidas')} a clientes: usa operar_facturas con el mismo filtro, sin preguntar` } : {}),
+    })
+  }
   tooMany(found.length, 'gastos')
   const scope = f.nombres && matched.length ? `Proveedores: ${names(matched, 5)}` : null
   const n = (k: number) => count(k, 'gasto', 'gastos')
+  const labels = (list: ExpenseTarget[]) => labelsOf(list.map(r => ({ id: r.id, label: expenseLabel(r) })))
 
   if (accion === 'eliminar') {
     const bt = tables.bankTransactions
@@ -609,7 +1199,7 @@ export async function planExpenses(ctx: OpCtx, accion: string, rawFilter: unknow
       kind: 'gastos.eliminar',
       title: `Eliminar ${n(found.length)}`,
       risk: 'high',
-      params: { ids: found.map(r => r.id), labels: labelsOf(found.map(r => ({ id: r.id, label: expenseLabel(r) }))) },
+      params: { ids: found.map(r => r.id), labels: labels(found) },
       preview: preview(found.map(r => expenseRow(r)), {
         scope,
         total: sum(found.map(r => r.total)),
@@ -632,13 +1222,60 @@ export async function planExpenses(ctx: OpCtx, accion: string, rawFilter: unknow
       kind: 'gastos.pagar',
       title: `Marcar como ${open.length === 1 ? 'pagado' : 'pagados'} ${n(open.length)}`,
       risk: 'normal',
-      params: { ids: open.map(r => r.id), labels: labelsOf(open.map(r => ({ id: r.id, label: expenseLabel(r) }))), date: day, method },
+      params: { ids: open.map(r => r.id), labels: labels(open), date: day, method },
       preview: preview(open.map(r => expenseRow(r, { amount: round2(r.total - r.paidTotal), before: 'Pendiente', after: 'Pagado' })), {
         scope,
         change: `Pago de lo pendiente el ${fd(day)} por ${PAY_TEXT[method]}`,
         total: sum(open.map(r => r.total - r.paidTotal)),
         undoable: true,
         warnings: found.length > open.length ? [`${count(found.length - open.length, 'ya estaba pagado y no se toca', 'ya estaban pagados y no se tocan')}.`] : [],
+      }),
+    }
+  }
+
+  if (accion === 'marcar_pendientes') {
+    const paid = found.filter(r => r.status !== 'pending')
+    if (!paid.length) throw new OpError('Ninguno de esos gastos tiene pagos registrados: ya están pendientes')
+    const linked = await bankLinked(ctx.company.id, paid.map(r => r.id))
+    return {
+      kind: 'gastos.pendiente',
+      title: `Quitar los pagos de ${n(paid.length)}`,
+      risk: 'normal',
+      params: { ids: paid.map(r => r.id), labels: labels(paid) },
+      preview: preview(paid.map(r => expenseRow(r, { before: r.status === 'paid' ? 'Pagado' : 'Pago parcial', after: 'Pendiente' })), {
+        scope,
+        total: sum(paid.map(r => r.total)),
+        undoable: true,
+        warnings: [
+          'Se borran sus pagos y quedan pendientes de pago.',
+          linked.size ? `${count(linked.size, 'está conciliado', 'están conciliados')} con el banco: ${linked.size === 1 ? 'su movimiento vuelve' : 'sus movimientos vuelven'} a por revisar.` : '',
+          found.length > paid.length ? `${count(found.length - paid.length, 'ya estaba pendiente y no se toca', 'ya estaban pendientes y no se tocan')}.` : '',
+        ].filter(Boolean),
+      }),
+    }
+  }
+
+  if (accion === 'aprobar' || accion === 'rechazar') {
+    if (ctx.actor.role !== 'owner' && ctx.actor.role !== 'admin') throw new OpError('Solo el titular o un administrador pueden aprobar o rechazar gastos')
+    const approve = accion === 'aprobar'
+    const open = found.filter(r => r.approval === 'pending' || (approve && r.approval === 'rejected'))
+    if (!open.length) throw new OpError('Ninguno de esos gastos está pendiente de aprobación')
+    const reason = cambios.motivo?.trim().slice(0, 300) || null
+    return {
+      kind: approve ? 'gastos.aprobar' : 'gastos.rechazar',
+      title: `${approve ? 'Aprobar' : 'Rechazar'} ${n(open.length)}`,
+      risk: 'normal',
+      params: { ids: open.map(r => r.id), labels: labels(open), reason },
+      preview: preview(open.map(r => expenseRow(r, { before: r.approval === 'rejected' ? 'Rechazado' : 'Por aprobar', after: approve ? 'Aprobado' : 'Rechazado' })), {
+        scope,
+        change: !approve && reason ? `Motivo: ${reason}` : null,
+        total: sum(open.map(r => r.total)),
+        undoable: true,
+        warnings: [
+          approve ? 'Pasan a contar en impuestos, informes y pagos pendientes.' : 'No cuentan en impuestos ni informes hasta que se corrijan y se aprueben.',
+          'Quien los registró recibe un aviso.',
+          found.length > open.length ? `${count(found.length - open.length, 'no estaba pendiente y no se toca', 'no estaban pendientes y no se tocan')}.` : '',
+        ].filter(Boolean),
       }),
     }
   }
@@ -679,89 +1316,204 @@ export async function planExpenses(ctx: OpCtx, accion: string, rawFilter: unknow
   ch.vatDeductiblePct = checkRange(cambios.iva_deducible, 0, 100, 'el porcentaje de IVA deducible') ?? ch.deductiblePct
   if (ch.deductiblePct != null) parts.push(`deducible ${pctText(ch.deductiblePct)}${ch.vatDeductiblePct !== ch.deductiblePct ? ` (IVA ${pctText(ch.vatDeductiblePct!)})` : ''}`)
   else if (ch.vatDeductiblePct != null) parts.push(`IVA deducible ${pctText(ch.vatDeductiblePct)}`)
+
+  // ─── Importes ───
+  if (cambios.desglose?.length) {
+    if (cambios.base != null || cambios.total != null || cambios.cuota_iva != null || cambios.iva != null) {
+      throw new OpError('Con el desglose no indiques también base, total, IVA o cuota: van dentro de cada línea del desglose')
+    }
+    if (cambios.desglose.length > 10) throw new OpError('Como mucho 10 tipos de IVA')
+    ch.taxLines = cambios.desglose.map((d) => {
+      if (!VALID_VAT.has(d.iva)) throw new OpError('Tipo de IVA no válido: 21, 10, 5, 4 o 0')
+      return { base: amount(d.base, 'la base'), vatRate: d.iva, vatAmount: d.cuota != null ? amount(d.cuota, 'la cuota de IVA') : null, surchargeRate: d.recargo ? SURCHARGE_BY_VAT[d.iva] ?? 0 : 0 }
+    })
+    parts.push(`desglose ${ch.taxLines.map(l => `${eurText(l.base)} al ${pctText(l.vatRate)}`).join(' + ')}`)
+  }
   if (cambios.iva != null) {
     if (!VALID_VAT.has(cambios.iva)) throw new OpError('Tipo de IVA no válido: 21, 10, 5, 4 o 0')
     ch.vatRate = cambios.iva
     parts.push(`IVA del ${pctText(cambios.iva)}`)
-    warnings.push('Se mantiene el total pagado y se recalculan la base y el IVA.')
+  }
+  if (cambios.base != null) {
+    ch.taxBase = amount(cambios.base, 'la base')
+    parts.push(`base ${eurText(ch.taxBase)}`)
+  }
+  if (cambios.total != null) {
+    ch.total = amount(cambios.total, 'el total')
+    parts.push(`total ${eurText(ch.total)}`)
+  }
+  if (cambios.cuota_iva != null) {
+    ch.vatAmount = amount(cambios.cuota_iva, 'la cuota de IVA')
+    parts.push(`cuota de IVA ${eurText(ch.vatAmount)}`)
   }
   ch.irpfRate = checkRange(cambios.irpf, 0, 50, 'el porcentaje de retención')
-  if (ch.irpfRate != null) {
-    parts.push(ch.irpfRate ? `retención del ${pctText(ch.irpfRate)}` : 'sin retención')
-    if (ch.vatRate == null) warnings.push('Se mantiene la base y cambia el total a pagar.')
+  if (ch.irpfRate != null) parts.push(ch.irpfRate ? `retención del ${pctText(ch.irpfRate)}` : 'sin retención')
+  if (!ch.taxLines) {
+    const fixed = ch.taxBase != null || ch.total != null || ch.vatAmount != null
+    if (ch.vatRate != null && !fixed) warnings.push('Se mantiene el total pagado y se recalculan la base y el IVA.')
+    else if (ch.total != null && ch.taxBase == null && ch.vatAmount == null) warnings.push('Se mantienen los tipos de IVA y retención: la base y las cuotas salen del total.')
+    else if (ch.taxBase != null && ch.total == null && ch.vatAmount == null) warnings.push('Se mantienen los tipos de IVA y retención: cambian las cuotas y el total.')
+    else if (ch.irpfRate != null && !fixed) warnings.push('Se mantiene la base y cambia el total a pagar.')
   }
+
+  // ─── Resto de datos ───
   ch.issueDate = date(cambios.fecha, 'fecha')
   if (ch.issueDate) parts.push(`fecha ${fd(ch.issueDate)}`)
+  ch.dueDate = date(cambios.vencimiento, 'fecha de vencimiento')
+  if (ch.dueDate) parts.push(`vence el ${fd(ch.dueDate)}`)
+  if (cambios.numero?.trim()) {
+    if (found.length > 1) throw new OpError('El número de factura se cambia de uno en uno: concreta el gasto')
+    ch.number = cambios.numero.trim().slice(0, 60)
+    parts.push(`número ${ch.number}`)
+  }
   if (cambios.descripcion?.trim()) {
     ch.description = cambios.descripcion.trim().slice(0, 255)
     parts.push('descripción nueva')
   }
+  if (cambios.notas?.trim()) {
+    ch.notes = cambios.notas.trim().slice(0, 5000)
+    parts.push('notas nuevas')
+  }
   ch.paymentMethod = payMethod(cambios.forma_pago)
   if (ch.paymentMethod) parts.push(`pago por ${PAY_TEXT[ch.paymentMethod]}`)
+  if (cambios.bien_inversion != null) {
+    ch.isInvestment = cambios.bien_inversion
+    parts.push(ch.isInvestment ? 'bien de inversión' : 'no es bien de inversión')
+  }
+  if (cambios.inversion_sujeto_pasivo != null) {
+    ch.reverseCharge = cambios.inversion_sujeto_pasivo
+    parts.push(ch.reverseCharge ? 'con inversión del sujeto pasivo' : 'sin inversión del sujeto pasivo')
+  }
+  if (cambios.revisado != null) {
+    ch.reviewed = cambios.revisado
+    parts.push(ch.reviewed ? 'revisado' : 'por revisar')
+  }
+  for (const v of cambios.vaciar ?? []) {
+    const k = EXPENSE_CLEAR[v]
+    if (!k) throw new OpError(`«${v}» no se puede dejar en blanco`)
+    if (ch[k] != null) throw new OpError(`«${v}»: indica un valor nuevo o vacíalo, no las dos cosas`)
+    ch[k] = null
+    parts.push(`sin ${v === 'forma_pago' ? 'forma de pago' : v === 'numero' ? 'número' : v === 'descripcion' ? 'descripción' : v}`)
+  }
   for (const k of Object.keys(ch) as Array<keyof ExpenseChangeSet>) if (ch[k] === undefined) delete ch[k]
   if (!Object.keys(ch).length) throw new OpError('Indica qué quieres cambiar')
 
-  // Gastos con varios tipos de IVA: el cambio de IVA se hace a mano
-  let multi = new Set<number>()
-  if (ch.vatRate != null) {
-    const tl = tables.expenseTaxLines
-    const counts = await useDb().select({ id: tl.expenseId, n: sql<number>`COUNT(*)`.mapWith(Number) }).from(tl)
-      .where(inArray(tl.expenseId, found.map(r => r.id))).groupBy(tl.expenseId)
-    multi = new Set(counts.filter(x => x.n > 1).map(x => x.id))
+  if (ch.number) {
+    const r = found[0]!
+    const e = tables.expenses
+    const supplierId = ch.supplierId !== undefined ? ch.supplierId : r.supplierId
+    const [dup] = supplierId
+      ? await useDb().select({ id: e.id }).from(e).where(and(eq(e.companyId, ctx.company.id), eq(e.supplierId, supplierId), eq(e.number, ch.number), ne(e.id, r.id))).limit(1)
+      : []
+    if (dup) throw new OpError(`Ya hay otro gasto de ${supplierName ?? r.supplier ?? 'ese proveedor'} con el número ${ch.number}: sería un duplicado`, { gasto: `/gastos?ver=${dup.id}` })
   }
+
+  const amounts = EXPENSE_AMOUNT_KEYS.some(k => ch[k] != null)
+  const taxLinesById = amounts ? await expenseLinesOf(found.map(r => r.id)) : new Map<number, TaxLineIn[]>()
   const rows: AiActionRow[] = []
   const targets: ExpenseTarget[] = []
+  const totalChanged: ExpenseTarget[] = []
+  const failed = new Map<string, number>()
   let unchanged = 0
+  let odd: string | null = null
   for (const r of found) {
-    if (multi.has(r.id)) continue
-    const same = (ch.supplierId === undefined || r.supplierId === ch.supplierId) && !ch.supplierName
+    let next: ReturnType<typeof expenseTotals> | null = null
+    let nextIrpf = r.irpfRate
+    if (amounts) {
+      try {
+        const nl = nextExpenseLines(r, taxLinesById.get(r.id) ?? [], ch)
+        if (nl) {
+          next = expenseTotals(nl)
+          nextIrpf = nl.irpfRate
+        }
+      }
+      catch (err) {
+        if (!(err instanceof OpError)) throw err
+        failed.set(err.message, (failed.get(err.message) ?? 0) + 1)
+        continue
+      }
+    }
+    if (ch.dueDate && ch.dueDate < (ch.issueDate ?? r.issueDate)) {
+      failed.set('el vencimiento quedaría antes de la fecha del gasto', (failed.get('el vencimiento quedaría antes de la fecha del gasto') ?? 0) + 1)
+      continue
+    }
+    const amountChanges = !!next && (next.total !== r.total || nextIrpf !== r.irpfRate || !sameTaxLines(next.lines, taxLinesById.get(r.id) ?? []))
+    const same = !amountChanges
+      && (ch.supplierId === undefined || r.supplierId === ch.supplierId) && !ch.supplierName
       && (ch.categoryId === undefined || r.categoryId === ch.categoryId)
       && (!ch.kind || r.kind === ch.kind)
       && (ch.deductiblePct == null || r.deductiblePct === ch.deductiblePct)
       && (ch.vatDeductiblePct == null || r.vatDeductiblePct === ch.vatDeductiblePct)
-      && (ch.irpfRate == null || r.irpfRate === ch.irpfRate)
       && (!ch.issueDate || r.issueDate === ch.issueDate)
-      && ch.vatRate == null && !ch.description && !ch.paymentMethod
+      && (ch.dueDate === undefined || r.dueDate === ch.dueDate)
+      && (ch.number === undefined || r.number === ch.number)
+      && (ch.description === undefined || r.description === ch.description)
+      && (ch.paymentMethod === undefined || r.paymentMethod === ch.paymentMethod)
+      && (ch.isInvestment == null || r.isInvestment === ch.isInvestment)
+      && (ch.reverseCharge == null || r.reverseCharge === ch.reverseCharge)
+      && (ch.reviewed == null || r.reviewed === ch.reviewed)
+      && ch.notes === undefined
     if (same) {
       unchanged++
       continue
     }
     targets.push(r)
-    const extra: Partial<AiActionRow> = ch.supplierId !== undefined || ch.supplierName ? { before: r.supplier ?? 'Sin proveedor', after: supplierName }
-      : ch.categoryId !== undefined ? { before: r.category ?? 'Sin categoría', after: categoryName }
-        : ch.deductiblePct != null ? { before: `${pctText(r.deductiblePct)} deducible`, after: `${pctText(ch.deductiblePct)} deducible` }
-          : ch.vatRate != null ? { before: `IVA ${eurText(r.vatTotal)}`, after: `IVA ${eurText(round2(r.total - r.total / (1 + (ch.vatRate - (ch.irpfRate ?? r.irpfRate)) / 100)))}` }
-            : ch.irpfRate != null ? { before: eurText(r.total), after: eurText(round2(r.taxBase + r.vatTotal - pctOf(r.taxBase, ch.irpfRate))) }
-              : {}
+    if (next && next.total !== r.total) totalChanged.push(r)
+    if (next) odd ??= oddVat(next.lines)
+    const payroll = r.kind === 'payroll' || ch.kind === 'payroll'
+    const extra: Partial<AiActionRow> = next && amountChanges
+      ? (ch.taxBase != null || ch.taxLines) && next.taxBase !== r.taxBase
+          ? { before: `${payroll ? 'Bruto' : 'Base'} ${eurText(r.taxBase)}`, after: `${payroll ? 'Bruto' : 'Base'} ${eurText(next.taxBase)}`, amount: next.total }
+          : ch.vatRate != null && ch.total == null && next.total === r.total
+            ? { before: `IVA ${eurText(r.vatTotal)}`, after: `IVA ${eurText(next.vatTotal)}`, amount: next.total }
+            : { before: eurText(r.total), after: eurText(next.total), amount: next.total }
+      : ch.supplierId !== undefined || ch.supplierName ? { before: r.supplier ?? 'Sin proveedor', after: supplierName }
+        : ch.categoryId !== undefined ? { before: r.category ?? 'Sin categoría', after: categoryName }
+          : ch.deductiblePct != null ? { before: `${pctText(r.deductiblePct)} deducible`, after: `${pctText(ch.deductiblePct)} deducible` }
+            : ch.number !== undefined ? { before: r.number ?? 'Sin número', after: ch.number ?? 'Sin número' }
+              : ch.dueDate !== undefined ? { before: r.dueDate ? fd(r.dueDate) : 'Sin vencimiento', after: ch.dueDate ? fd(ch.dueDate) : 'Sin vencimiento' }
+                : ch.issueDate ? { before: fd(r.issueDate), after: fd(ch.issueDate) }
+                  : {}
     rows.push(expenseRow(r, extra))
   }
-  if (multi.size) warnings.push(`${count(multi.size, 'tiene', 'tienen')} varios tipos de IVA y no se ${multi.size === 1 ? 'toca' : 'tocan'}: cámbialo a mano.`)
-  if (unchanged) warnings.push(`${count(unchanged, 'ya lo tenía y no se toca', 'ya lo tenían y no se tocan')}.`)
+  if (!targets.length && failed.size) throw new OpError(capital([...failed.keys()][0]!), { avisos: skippedText(failed, n) })
   if (!targets.length) throw new OpError('Esos gastos ya lo tienen: no hay nada que cambiar', { avisos: warnings })
 
+  if (totalChanged.length) {
+    const paid = totalChanged.filter(r => r.status === 'paid').length
+    const linked = await bankLinked(ctx.company.id, totalChanged.map(r => r.id))
+    if (paid) warnings.push(`${count(paid, 'estaba pagado', 'estaban pagados')}: ${paid === 1 ? 'sigue pagado' : 'siguen pagados'} por el nuevo total.`)
+    if (linked.size) warnings.push(`${count(linked.size, 'está conciliado', 'están conciliados')} con un cargo del banco: con el nuevo total el pago ya no cuadrará con el movimiento.`)
+  }
+  if (odd) warnings.push(odd)
+  warnings.push(...skippedText(failed, n))
+  if (unchanged) warnings.push(`${count(unchanged, 'ya lo tenía y no se toca', 'ya lo tenían y no se tocan')}.`)
+
   const only = Object.keys(ch).filter(k => k !== 'vatDeductiblePct' || ch.deductiblePct == null)
+  const onlyAmounts = only.every(k => (EXPENSE_AMOUNT_KEYS as readonly string[]).includes(k))
   const title = only.length === 1 && ch.categoryId !== undefined ? `Cambiar la categoría de ${n(targets.length)}`
     : only.length === 1 && (ch.supplierId !== undefined || ch.supplierName) ? `Cambiar el proveedor de ${n(targets.length)}`
       : only.length === 1 && ch.deductiblePct != null ? `Cambiar la deducibilidad de ${n(targets.length)}`
-        : `Modificar ${n(targets.length)}`
+        : onlyAmounts ? `Cambiar el importe de ${n(targets.length)}`
+          : `Modificar ${n(targets.length)}`
   return {
     kind: 'gastos.modificar',
     title,
     risk: 'normal',
-    params: { ids: targets.map(r => r.id), labels: labelsOf(targets.map(r => ({ id: r.id, label: expenseLabel(r) }))), changes: ch },
-    preview: preview(rows, { scope, change: capital(parts.join(' · ')), total: sum(targets.map(r => r.total)), undoable: true, warnings }),
+    params: { ids: targets.map(r => r.id), labels: labels(targets), changes: ch },
+    preview: preview(rows, { scope, change: capital(parts.join(' · ')), total: sum(rows.map((x, i) => x.amount ?? targets[i]!.total)), undoable: true, warnings }),
   }
 }
 
 // Columnas de un gasto que guardan las operaciones para poder deshacerlas
-const EXPENSE_FIELDS = Object.freeze(['supplierId', 'supplier', 'categoryId', 'kind', 'deductiblePct', 'vatDeductiblePct', 'issueDate', 'description', 'paymentMethod', 'taxBase', 'vatTotal', 'surchargeTotal', 'irpfRate', 'irpfTotal', 'total', 'paidTotal', 'status', 'paidAt', 'notes'] as const)
+const EXPENSE_FIELDS = Object.freeze(['supplierId', 'supplier', 'categoryId', 'kind', 'number', 'deductiblePct', 'vatDeductiblePct', 'issueDate', 'dueDate', 'description', 'paymentMethod', 'taxBase', 'vatTotal', 'surchargeTotal', 'irpfRate', 'irpfTotal', 'total', 'paidTotal', 'status', 'paidAt', 'notes', 'isInvestment', 'reverseCharge', 'reviewed', 'reviewNotes'] as const)
 
 type ExpenseRow = typeof tables.expenses.$inferSelect
 type ExpenseSnapshot = { id: number, row: Partial<ExpenseRow>, lines: Array<{ base: number, vatRate: number, vatAmount: number, surchargeRate: number, surchargeAmount: number }> }
 
 /**
- * Cambia campos de un gasto. Con un IVA nuevo se conserva el total (lo que se pagó) y se recalculan
- * base e IVA; con otra retención se conserva la base. Devuelve cómo estaba.
+ * Cambia campos de un gasto con las reglas de importes de nextExpenseLines. Si cambia el total, el
+ * estado de pago se recalcula (uno pagado sigue pagado por el nuevo total). Devuelve cómo estaba.
  */
 async function updateExpenseFields(companyId: number, id: number, ch: ExpenseChangeSet): Promise<ExpenseSnapshot> {
   const db = useDb()
@@ -769,7 +1521,7 @@ async function updateExpenseFields(companyId: number, id: number, ch: ExpenseCha
   const tl = tables.expenseTaxLines
   const [row] = await db.select().from(e).where(and(eq(e.id, id), eq(e.companyId, companyId)))
   if (!row) throw new OpError('Ya no existe')
-  const lines = await db.select().from(tl).where(eq(tl.expenseId, id))
+  const lines = await db.select().from(tl).where(eq(tl.expenseId, id)).orderBy(tl.id)
   const snapshot: ExpenseSnapshot = {
     id,
     row: Object.fromEntries(EXPENSE_FIELDS.map(k => [k, row[k]])) as Partial<ExpenseRow>,
@@ -792,34 +1544,29 @@ async function updateExpenseFields(companyId: number, id: number, ch: ExpenseCha
   if (ch.deductiblePct != null) set.deductiblePct = ch.deductiblePct
   if (ch.vatDeductiblePct != null) set.vatDeductiblePct = ch.vatDeductiblePct
   if (ch.issueDate) set.issueDate = ch.issueDate
-  if (ch.description) set.description = ch.description
-  if (ch.paymentMethod) set.paymentMethod = ch.paymentMethod
+  if (ch.dueDate !== undefined) {
+    if (ch.dueDate && ch.dueDate < (ch.issueDate ?? row.issueDate)) throw new OpError('El vencimiento quedaría antes de la fecha del gasto')
+    set.dueDate = ch.dueDate
+  }
+  if (ch.number !== undefined) set.number = ch.number
+  if (ch.description !== undefined) set.description = ch.description
+  if (ch.notes !== undefined) set.notes = ch.notes
+  if (ch.paymentMethod !== undefined) set.paymentMethod = ch.paymentMethod
+  if (ch.isInvestment != null) set.isInvestment = ch.isInvestment
+  if (ch.reverseCharge != null) set.reverseCharge = ch.reverseCharge
+  if (ch.reviewed != null) Object.assign(set, ch.reviewed ? { reviewed: true, reviewNotes: null } : { reviewed: false })
 
   let newLines: ReturnType<typeof expenseTotals>['lines'] | null = null
-  if (ch.vatRate != null || (ch.irpfRate != null && ch.irpfRate !== row.irpfRate)) {
-    const irpf = ch.irpfRate ?? row.irpfRate
-    let taxLines: Array<{ base: number, vatRate: number, vatAmount?: number | null, surchargeRate: number }>
-    if (ch.vatRate != null && !(lines.length === 1 && lines[0]!.vatRate === ch.vatRate)) {
-      if (lines.length > 1) throw new OpError('Tiene varios tipos de IVA: cámbialo a mano')
-      const s = lines[0]?.surchargeRate ?? 0
-      const base = round2(row.total / (1 + (ch.vatRate + s - irpf) / 100))
-      // La cuota cuadra al céntimo con lo pagado
-      const vatAmount = round2(row.total - base - pctOf(base, s) + pctOf(base, irpf))
-      taxLines = [{ base, vatRate: ch.vatRate, vatAmount, surchargeRate: s }]
-    }
+  const next = nextExpenseLines(row, lines.map(l => ({ base: l.base, vatRate: l.vatRate, vatAmount: l.vatAmount, surchargeRate: l.surchargeRate })), ch)
+  if (next) {
+    const totals = expenseTotals(next)
+    newLines = totals.lines
+    Object.assign(set, { taxBase: totals.taxBase, vatTotal: totals.vatTotal, surchargeTotal: totals.surchargeTotal, irpfRate: next.irpfRate, irpfTotal: totals.irpfTotal, total: totals.total })
+    if (row.status === 'paid') set.paidTotal = totals.total
     else {
-      taxLines = lines.map(l => ({ base: l.base, vatRate: l.vatRate, vatAmount: l.vatAmount, surchargeRate: l.surchargeRate }))
-    }
-    if (taxLines.length) {
-      const totals = expenseTotals({ taxLines, irpfRate: irpf })
-      newLines = totals.lines
-      Object.assign(set, { taxBase: totals.taxBase, vatTotal: totals.vatTotal, surchargeTotal: totals.surchargeTotal, irpfRate: irpf, irpfTotal: totals.irpfTotal, total: totals.total })
-      if (row.status === 'paid') set.paidTotal = totals.total
-      else {
-        const full = row.paidTotal > 0 && row.paidTotal >= totals.total - 0.005
-        set.status = full ? 'paid' : row.paidTotal > 0 ? 'partial' : 'pending'
-        if (full) set.paidAt = new Date()
-      }
+      const full = row.paidTotal > 0 && row.paidTotal >= totals.total - 0.005
+      set.status = full ? 'paid' : row.paidTotal > 0 ? 'partial' : 'pending'
+      if (full) set.paidAt = new Date()
     }
   }
   if (!Object.keys(set).length && !newLines) return snapshot
@@ -862,7 +1609,7 @@ async function expensesModify(ctx: OpCtx, p: { ids: number[], labels: Record<str
       t.done++
     }
     catch (err) {
-      t.skip(id, errText(err))
+      t.skip(id, capital(errText(err)))
     }
   }
   return { result: t.result(), undo: { items: undo } }
@@ -941,6 +1688,95 @@ async function expensesPayRevert(ctx: OpCtx, u: { items: PayUndo[] }) {
         await tx.delete(tables.payments).where(and(eq(tables.payments.id, item.paymentId), eq(tables.payments.companyId, ctx.company.id)))
         await tx.update(tables.expenses).set({ ...item.before, paidAt: item.before.paidAt ? new Date(item.before.paidAt) : null }).where(eq(tables.expenses.id, item.id))
       })
+      t.done++
+    }
+    catch (err) {
+      t.skip(item.id, errText(err))
+    }
+  }
+  return t.result()
+}
+
+type UnpayUndo = { id: number, before: PayUndo['before'], payments: Array<{ amount: number, date: string, method: Pay, notes: string | null, bankAccountId: number | null }>, banked: boolean }
+
+/** Vuelven a pendientes de pago: se borran sus pagos y sus movimientos del banco quedan por revisar */
+async function expensesUnpay(ctx: OpCtx, p: { ids: number[], labels: Record<string, string> }): Promise<OpOutcome> {
+  const t = new Tally(p.labels)
+  const db = useDb()
+  const e = tables.expenses
+  const rows = await db.select().from(e).where(and(eq(e.companyId, ctx.company.id), inArray(e.id, p.ids)))
+  const byId = new Map(rows.map(r => [r.id, r]))
+  const open: ExpenseRow[] = []
+  for (const id of p.ids) {
+    const r = byId.get(id)
+    if (!r) t.skip(id, 'Ya no existe')
+    else if (r.status === 'pending') t.skip(id, 'Ya estaba pendiente')
+    else open.push(r)
+  }
+  if (!open.length) return { result: t.result(), undo: { items: [] } }
+  const ids = open.map(r => r.id)
+  const [pays, linked] = await Promise.all([
+    db.select().from(tables.payments).where(and(eq(tables.payments.companyId, ctx.company.id), inArray(tables.payments.expenseId, ids))),
+    bankLinked(ctx.company.id, ids),
+  ])
+  await unpayExpenses(ctx.company.id, ids)
+  t.done = open.length
+  const undo: UnpayUndo[] = open.map(r => ({
+    id: r.id,
+    before: { status: r.status, paidTotal: r.paidTotal, paidAt: r.paidAt, paymentMethod: r.paymentMethod },
+    payments: pays.filter(x => x.expenseId === r.id).map(x => ({ amount: x.amount, date: x.date, method: x.method, notes: x.notes, bankAccountId: x.bankAccountId })),
+    banked: linked.has(r.id),
+  }))
+  return { result: t.result(), undo: { items: undo } }
+}
+
+async function expensesUnpayRevert(ctx: OpCtx, u: { items: UnpayUndo[] }) {
+  const t = new Tally()
+  const db = useDb()
+  const e = tables.expenses
+  for (const item of u.items) {
+    try {
+      const [row] = await db.select({ status: e.status }).from(e).where(and(eq(e.id, item.id), eq(e.companyId, ctx.company.id)))
+      if (!row) throw new OpError('Ya no existe')
+      if (row.status !== 'pending') throw new OpError('Ya se ha vuelto a pagar')
+      await db.transaction(async (tx) => {
+        if (item.payments.length) {
+          await tx.insert(tables.payments).values(item.payments.map(x => ({ ...x, companyId: ctx.company.id, direction: 'out' as const, expenseId: item.id })))
+        }
+        await tx.update(e).set({ ...item.before, paidAt: item.before.paidAt ? new Date(item.before.paidAt) : null }).where(eq(e.id, item.id))
+      })
+      t.done++
+    }
+    catch (err) {
+      t.skip(item.id, errText(err))
+    }
+  }
+  return t.result({ message: u.items.some(i => i.banked) ? 'Los pagos vuelven a estar, pero sin enlazar con el banco: concílialos de nuevo en Banco si hace falta.' : null })
+}
+
+type ApprovalUndo = { id: number, approval: ExpenseRow['approval'], approvedBy: number | null, approvedAt: string | Date | null, rejectReason: string | null }
+
+async function expensesDecide(ctx: OpCtx, p: { ids: number[], labels: Record<string, string>, reason: string | null }, decision: 'approve' | 'reject'): Promise<OpOutcome> {
+  if (ctx.actor.role !== 'owner' && ctx.actor.role !== 'admin') throw new OpError('Solo el titular o un administrador pueden aprobar o rechazar gastos')
+  const t = new Tally(p.labels)
+  const e = tables.expenses
+  const rows = await useDb().select({ id: e.id, approval: e.approval, approvedBy: e.approvedBy, approvedAt: e.approvedAt, rejectReason: e.rejectReason })
+    .from(e).where(and(eq(e.companyId, ctx.company.id), inArray(e.id, p.ids)))
+  const open = rows.filter(r => r.approval === 'pending' || (decision === 'approve' && r.approval === 'rejected'))
+  const ok = new Set(open.map(r => r.id))
+  for (const id of p.ids) if (!ok.has(id)) t.skip(id, rows.some(r => r.id === id) ? 'Ya no está pendiente de aprobación' : 'Ya no existe')
+  if (open.length) t.done = (await decideExpenses(ctx.company.id, ctx.actor.id, open.map(r => r.id), decision, p.reason)).done
+  return { result: t.result(), undo: { items: open satisfies ApprovalUndo[] } }
+}
+
+async function expensesDecideRevert(ctx: OpCtx, u: { items: ApprovalUndo[] }) {
+  const t = new Tally()
+  const e = tables.expenses
+  for (const item of u.items) {
+    try {
+      const res = await useDb().update(e).set({ approval: item.approval, approvedBy: item.approvedBy, approvedAt: item.approvedAt ? new Date(item.approvedAt) : null, rejectReason: item.rejectReason })
+        .where(and(eq(e.id, item.id), eq(e.companyId, ctx.company.id)))
+      if (!res[0].affectedRows) throw new OpError('Ya no existe')
       t.done++
     }
     catch (err) {
@@ -1406,21 +2242,32 @@ export interface ContactChangesIn {
   es_cliente: boolean | null
   es_proveedor: boolean | null
   categoria_gasto: string | null
+  persona_contacto: string | null
+  web: string | null
+  tipo_persona: string | null
   notas: string | null
+  vaciar: string[] | null
 }
 
-type ContactSet = Partial<Pick<Contact, 'name' | 'tradeName' | 'nif' | 'email' | 'phone' | 'address' | 'postalCode' | 'city' | 'province' | 'country' | 'iban' | 'paymentTermsDays' | 'irpfRate' | 'equivalenceSurcharge' | 'isClient' | 'isSupplier' | 'defaultCategoryId' | 'notes'>>
+type ContactSet = Partial<Pick<Contact, 'name' | 'tradeName' | 'contactPerson' | 'kind' | 'nif' | 'email' | 'phone' | 'website' | 'address' | 'postalCode' | 'city' | 'province' | 'country' | 'iban' | 'paymentTermsDays' | 'irpfRate' | 'equivalenceSurcharge' | 'isClient' | 'isSupplier' | 'defaultCategoryId' | 'notes'>>
 
 const CONTACT_FIELD_TEXT: Readonly<Record<string, string>> = Object.freeze({
-  name: 'nombre', tradeName: 'nombre comercial', nif: 'NIF', email: 'email', phone: 'teléfono', address: 'dirección', postalCode: 'código postal',
-  city: 'ciudad', province: 'provincia', country: 'país', iban: 'IBAN', paymentTermsDays: 'días de pago', irpfRate: 'retención',
+  name: 'nombre', tradeName: 'nombre comercial', contactPerson: 'persona de contacto', kind: 'tipo', nif: 'NIF', email: 'email', phone: 'teléfono', website: 'web',
+  address: 'dirección', postalCode: 'código postal', city: 'ciudad', province: 'provincia', country: 'país', iban: 'IBAN', paymentTermsDays: 'días de pago', irpfRate: 'retención',
   equivalenceSurcharge: 'recargo de equivalencia', isClient: 'cliente', isSupplier: 'proveedor', defaultCategoryId: 'categoría de gasto', notes: 'notas',
+})
+
+/** Datos que se pueden dejar en blanco */
+const CONTACT_CLEAR: Readonly<Record<string, keyof ContactSet>> = Object.freeze({
+  nombre_comercial: 'tradeName', persona_contacto: 'contactPerson', nif: 'nif', email: 'email', telefono: 'phone', web: 'website', direccion: 'address', cp: 'postalCode',
+  ciudad: 'city', provincia: 'province', iban: 'iban', dias_pago: 'paymentTermsDays', irpf: 'irpfRate', categoria_gasto: 'defaultCategoryId', notas: 'notes',
 })
 
 function contactValue(k: string, v: unknown, categories: Map<number, string>) {
   if (v == null || v === '') return '—'
   if (k === 'irpfRate') return pctText(Number(v))
   if (k === 'paymentTermsDays') return `${v} días`
+  if (k === 'kind') return v === 'person' ? 'Persona' : 'Empresa'
   if (typeof v === 'boolean') return v ? 'Sí' : 'No'
   if (k === 'defaultCategoryId') return categories.get(Number(v)) ?? '—'
   return short(String(v), 40)
@@ -1501,7 +2348,16 @@ export async function planContacts(ctx: OpCtx, accion: string, rawFilter: unknow
     set.defaultCategoryId = cat?.id ?? null
     if (cat) categories.set(cat.id, cat.name)
   }
+  set.contactPerson = text(cambios.persona_contacto, 120)
+  if (cambios.web?.trim()) set.website = cambios.web.trim().slice(0, 200)
+  if (cambios.tipo_persona === 'persona' || cambios.tipo_persona === 'empresa') set.kind = cambios.tipo_persona === 'persona' ? 'person' : 'company'
   set.notes = text(cambios.notas, 5000)
+  for (const v of cambios.vaciar ?? []) {
+    const k = CONTACT_CLEAR[v]
+    if (!k) throw new OpError(`«${v}» no se puede dejar en blanco`)
+    if (set[k] != null) throw new OpError(`«${v}»: indica un valor nuevo o vacíalo, no las dos cosas`)
+    ;(set as Record<string, unknown>)[k] = null
+  }
   for (const k of Object.keys(set) as Array<keyof ContactSet>) if (set[k] === undefined) delete set[k]
   const keys = Object.keys(set) as Array<keyof ContactSet>
   if (!keys.length) throw new OpError('Indica qué quieres cambiar')
@@ -1512,7 +2368,7 @@ export async function planContacts(ctx: OpCtx, accion: string, rawFilter: unknow
   const targets = found.filter(c => keys.some(k => c[k] !== set[k]))
   if (!targets.length) throw new OpError('Ya lo tienen así: no hay nada que cambiar')
   const k0 = keys[0]!
-  const change = keys.map(k => `${CONTACT_FIELD_TEXT[k]}: ${contactValue(k, set[k], categories)}`).join(' · ')
+  const change = keys.map(k => (set[k] == null ? `sin ${CONTACT_FIELD_TEXT[k]}` : `${CONTACT_FIELD_TEXT[k]}: ${contactValue(k, set[k], categories)}`)).join(' · ')
   return {
     kind: 'contactos.modificar',
     title: targets.length === 1 ? `Modificar «${targets[0]!.name}»` : `Modificar ${n(targets.length)}`,
@@ -1593,10 +2449,13 @@ export interface ItemChangesIn {
   tipo: string | null
   unidad: string | null
   descripcion: string | null
+  referencia: string | null
+  vaciar: string[] | null
 }
 
 type ItemRow = typeof tables.items.$inferSelect
-type ItemSet = Partial<Pick<ItemRow, 'name' | 'unitPrice' | 'vatRate' | 'categoryId' | 'kind' | 'unit' | 'description'>>
+type ItemSet = Partial<Pick<ItemRow, 'name' | 'unitPrice' | 'vatRate' | 'categoryId' | 'kind' | 'unit' | 'description' | 'sku'>>
+const ITEM_CLEAR: Readonly<Record<string, 'unit' | 'description' | 'sku' | 'categoryId'>> = Object.freeze({ unidad: 'unit', descripcion: 'description', referencia: 'sku', categoria: 'categoryId' })
 
 export async function planItems(ctx: OpCtx, accion: string, rawFilter: unknown, cambios: ItemChangesIn): Promise<OpPlan> {
   const f = cleanFilter(rawFilter)
@@ -1658,6 +2517,18 @@ export async function planItems(ctx: OpCtx, accion: string, rawFilter: unknown, 
   if (cambios.descripcion?.trim()) {
     set.description = cambios.descripcion.trim().slice(0, 2000)
     parts.push('descripción nueva')
+  }
+  if (cambios.referencia?.trim()) {
+    if (found.length > 1) throw new OpError('La referencia se cambia de uno en uno: concreta el producto')
+    set.sku = cambios.referencia.trim().slice(0, 60)
+    parts.push(`referencia ${set.sku}`)
+  }
+  for (const v of cambios.vaciar ?? []) {
+    const k = ITEM_CLEAR[v]
+    if (!k) throw new OpError(`«${v}» no se puede dejar en blanco`)
+    if (set[k] != null) throw new OpError(`«${v}»: indica un valor nuevo o vacíalo, no las dos cosas`)
+    set[k] = null
+    parts.push(`sin ${v === 'descripcion' ? 'descripción' : v === 'categoria' ? 'categoría' : v}`)
   }
   if (!parts.length) throw new OpError('Indica qué quieres cambiar')
   const priceOf = (i: ItemRow) => (factor ? round2(i.unitPrice * factor) : set.unitPrice ?? i.unitPrice)
@@ -1724,6 +2595,386 @@ async function itemsDelete(ctx: OpCtx, p: { ids: number[], labels: Record<string
   const gone = new Set(deleted.map(d => d.id))
   for (const id of p.ids) if (!gone.has(id)) t.skip(id, 'Ya no existía')
   return { result: t.result({ url: '/productos' }), undo: null }
+}
+
+// ═══ Facturas y gastos recurrentes ═══════════════════════════════════════════
+
+export interface RecurringChangesIn {
+  nombre: string | null
+  base: number | null
+  total: number | null
+  iva: number | null
+  irpf: number | null
+  proxima_fecha: string | null
+  fecha_fin: string | null
+  frecuencia: string | null
+  cada: number | null
+  concepto: string | null
+  categoria: string | null
+  contacto: string | null
+  forma_pago: string | null
+  deducible: number | null
+  pagado: boolean | null
+  automatico: boolean | null
+  enviar_sola: boolean | null
+  vaciar: string[] | null
+}
+
+type Frequency = 'weekly' | 'monthly' | 'quarterly' | 'yearly'
+const FREQ_BY_ES: Readonly<Record<string, Frequency>> = Object.freeze({ semanal: 'weekly', mensual: 'monthly', trimestral: 'quarterly', anual: 'yearly' })
+const FREQ_TEXT: Readonly<Record<string, string>> = Object.freeze({ weekly: 'semanal', monthly: 'mensual', quarterly: 'trimestral', yearly: 'anual' })
+
+type RecurringRow = typeof tables.recurrings.$inferSelect
+
+interface RecurringChangeSet {
+  name?: string
+  taxBase?: number
+  total?: number
+  vatRate?: number
+  irpfRate?: number
+  nextDate?: string
+  endDate?: string | null
+  frequency?: Frequency
+  interval?: number
+  description?: string | null
+  categoryId?: number | null
+  contactId?: number
+  paymentMethod?: Pay
+  deductiblePct?: number
+  paid?: boolean
+  autoIssue?: boolean
+  autoSend?: boolean
+}
+
+// Lo que se guarda de cada recurrente para deshacer
+const RECURRING_FIELDS = Object.freeze(['name', 'frequency', 'interval', 'startDate', 'nextDate', 'endDate', 'autoIssue', 'autoSend', 'template', 'active', 'lastError'] as const)
+type RecurringSnapshot = Partial<Pick<RecurringRow, typeof RECURRING_FIELDS[number]>>
+
+const recurringState = (r: RecurringRow) => {
+  const s = recurringStatus(r)
+  return s === 'active' ? `próxima ${fd(r.nextDate)}` : s === 'paused' ? 'en pausa' : 'terminado'
+}
+
+/** La plantilla de un recurrente con los cambios aplicados y validada como en su pantalla */
+function nextRecurringInput(rec: RecurringRow, ch: RecurringChangeSet): RecurringInput {
+  const input = recurringInputOf(rec)
+  const irpf = input.irpfRate ?? 0
+  if (ch.name) input.name = ch.name
+  if (ch.nextDate) input.nextDate = ch.nextDate
+  if (ch.endDate !== undefined) input.endDate = ch.endDate
+  if (ch.frequency) input.frequency = ch.frequency
+  if (ch.interval != null) input.interval = ch.interval
+  if (ch.description !== undefined) input.description = ch.description
+  if (ch.contactId) input.contactId = ch.contactId
+  if (ch.paymentMethod) input.paymentMethod = ch.paymentMethod
+  if (ch.autoIssue != null) input.autoIssue = ch.autoIssue
+  if (ch.autoSend != null) {
+    input.autoSend = ch.autoSend
+    if (ch.autoSend) input.autoIssue = true
+  }
+  if (input.autoIssue === false) input.autoSend = false
+  if (rec.kind === 'expense') {
+    if (ch.categoryId !== undefined) input.categoryId = ch.categoryId
+    if (ch.deductiblePct != null) {
+      input.deductiblePct = ch.deductiblePct
+      input.vatDeductiblePct = ch.deductiblePct
+    }
+    if (ch.paid != null) input.paid = ch.paid
+    const lines = (input.taxLines ?? []).map(l => ({ base: l.base, vatRate: l.vatRate, vatAmount: l.vatAmount ?? null, surchargeRate: l.surchargeRate ?? 0 }))
+    const now = expenseTotals({ taxLines: lines, irpfRate: irpf })
+    const next = nextExpenseLines({ total: now.total, taxBase: now.taxBase, vatTotal: now.vatTotal, irpfRate: irpf }, lines, ch)
+    if (next) {
+      input.taxLines = next.taxLines
+      input.irpfRate = next.irpfRate
+    }
+  }
+  else {
+    if (ch.irpfRate != null) input.irpfRate = ch.irpfRate
+    if (ch.vatRate != null || ch.taxBase != null || ch.total != null) {
+      const lines = (input.lines ?? []).map(l => ({ ...l, itemId: l.itemId ?? null, discountPct: l.discountPct ?? 0, surchargeRate: l.surchargeRate ?? 0, irpfApplies: l.irpfApplies ?? true }))
+      input.lines = nextSalesLines(lines, input.irpfRate ?? 0, { vatRate: ch.vatRate, taxBase: ch.taxBase, total: ch.total }, null)
+    }
+  }
+  const parsed = recurringInputSchema.safeParse(input)
+  if (!parsed.success) throw new OpError(parsed.error.issues[0]?.message ?? 'Datos no válidos')
+  return parsed.data
+}
+
+export async function planRecurrings(ctx: OpCtx, accion: string, de: string | null, rawFilter: unknown, cambios: RecurringChangesIn): Promise<OpPlan> {
+  const f = cleanFilter(rawFilter)
+  requireScope(f, 'recurrentes')
+  const family = de === 'facturas' ? 'invoice' : de === 'gastos' ? 'expense' : null
+  const found = await recurringTargets(ctx.company, f, family)
+  if (!found.length) {
+    const other = f.estado ? (await recurringTargets(ctx.company, { ...f, estado: null }, family)).length : 0
+    throw new OpError('No hay facturas ni gastos recurrentes que coincidan con ese filtro', other ? { con_otro_estado: other, sugerencia: 'Sin el filtro de estado sí hay: repite sin él (p. ej. están en pausa)' } : {})
+  }
+  tooMany(found.length, 'recurrentes')
+  const n = (k: number) => count(k, 'recurrente', 'recurrentes')
+  const labels = (list: RecurringTarget[]) => labelsOf(list.map(r => ({ id: r.id, label: r.name })))
+  const row = (r: RecurringTarget, extra: Partial<AiActionRow> = {}): AiActionRow => ({
+    id: r.id,
+    label: r.name,
+    sub: [r.kind === 'invoice' ? 'Factura' : capital(EXPENSE_KIND_TEXT[r.template.expenseKind ?? 'invoice'] ?? 'gasto'), r.contact, FREQ_TEXT[r.frequency], recurringState(r)].filter(Boolean).join(' · '),
+    amount: r.template.total ?? null,
+    url: '/recurrentes',
+    ...extra,
+  })
+
+  if (accion === 'eliminar') {
+    return {
+      kind: 'recurrentes.eliminar',
+      title: found.length === 1 ? `Eliminar «${found[0]!.name}»` : `Eliminar ${n(found.length)}`,
+      risk: 'high',
+      params: { ids: found.map(r => r.id), labels: labels(found) },
+      preview: preview(found.map(r => row(r)), { undoable: true, warnings: ['Dejan de generarse. Lo ya generado (facturas y gastos) se queda como está.'] }),
+    }
+  }
+
+  if (accion === 'pausar' || accion === 'reanudar') {
+    const active = accion === 'reanudar'
+    const ok = found.filter(r => (active ? recurringStatus(r) === 'paused' : r.active))
+    const finished = active ? found.filter(r => recurringStatus(r) === 'finished').length : 0
+    if (!ok.length) throw new OpError(active ? (finished ? 'Ya terminaron: cambia su fecha final para que sigan' : 'No hay ninguno en pausa') : 'Ya están en pausa')
+    return {
+      kind: 'recurrentes.activar',
+      title: `${active ? 'Reanudar' : 'Pausar'} ${n(ok.length)}`,
+      risk: 'normal',
+      params: { ids: ok.map(r => r.id), labels: labels(ok), active },
+      preview: preview(ok.map(r => row(r, { before: active ? 'En pausa' : 'Activo', after: active ? 'Activo' : 'En pausa' })), {
+        undoable: true,
+        warnings: [
+          active ? 'Lo atrasado no se genera: siguen desde hoy.' : 'No se genera nada hasta que se reanuden.',
+          finished ? `${count(finished, 'ya terminó', 'ya terminaron')}: cambia su fecha final para que siga.` : '',
+        ].filter(Boolean),
+      }),
+    }
+  }
+
+  if (accion !== 'modificar') throw new OpError(`Acción desconocida: ${accion}`)
+
+  const ch: RecurringChangeSet = {}
+  const parts: string[] = []
+  const kinds = new Set(found.map(r => r.kind))
+  if (cambios.nombre?.trim()) {
+    if (found.length > 1) throw new OpError('El nombre se cambia de uno en uno: concreta el recurrente')
+    ch.name = cambios.nombre.trim().slice(0, 160)
+    parts.push(`nombre «${ch.name}»`)
+  }
+  if (cambios.base != null && cambios.total != null && kinds.has('invoice')) throw new OpError('Indica la base o el total, no los dos: el otro sale de los impuestos')
+  if (cambios.base != null) {
+    ch.taxBase = amount(cambios.base, 'la base')
+    parts.push(`base ${eurText(ch.taxBase)}`)
+  }
+  if (cambios.total != null) {
+    ch.total = amount(cambios.total, 'el total')
+    parts.push(`total ${eurText(ch.total)}`)
+  }
+  if (cambios.iva != null) {
+    if (!VALID_VAT.has(cambios.iva)) throw new OpError('Tipo de IVA no válido: 21, 10, 5, 4 o 0')
+    ch.vatRate = cambios.iva
+    parts.push(`IVA del ${pctText(cambios.iva)}`)
+  }
+  ch.irpfRate = checkRange(cambios.irpf, 0, 50, 'el porcentaje de retención')
+  if (ch.irpfRate != null) parts.push(ch.irpfRate ? `retención del ${pctText(ch.irpfRate)}` : 'sin retención')
+  ch.nextDate = date(cambios.proxima_fecha, 'próxima fecha')
+  if (ch.nextDate) parts.push(`próxima ${fd(ch.nextDate)}`)
+  ch.endDate = date(cambios.fecha_fin, 'fecha final')
+  if (ch.endDate) parts.push(`hasta el ${fd(ch.endDate)}`)
+  if (cambios.frecuencia) {
+    const fq = FREQ_BY_ES[cambios.frecuencia]
+    if (!fq) throw new OpError('Frecuencia no válida: semanal, mensual, trimestral o anual')
+    ch.frequency = fq
+    parts.push(FREQ_TEXT[fq]!)
+  }
+  if (cambios.cada != null) {
+    ch.interval = Math.round(checkRange(cambios.cada, 1, 24, 'el intervalo')!)
+    parts.push(`cada ${ch.interval}`)
+  }
+  if (cambios.concepto?.trim()) {
+    ch.description = cambios.concepto.trim().slice(0, 255)
+    parts.push('concepto nuevo')
+  }
+  if (cambios.categoria?.trim()) {
+    if (kinds.has('invoice')) throw new OpError('La categoría de gasto solo se cambia en gastos recurrentes')
+    const cat = await resolveExpenseCategory(ctx.company.id, cambios.categoria)
+    ch.categoryId = cat?.id ?? null
+    parts.push(cat ? `categoría ${cat.name}` : 'sin categoría')
+  }
+  if (cambios.contacto?.trim()) {
+    if (kinds.size > 1) throw new OpError('Concreta si son facturas o gastos recurrentes para cambiar el cliente o proveedor')
+    const c = await resolveContact(ctx.company.id, cambios.contacto, kinds.has('invoice') ? 'client' : 'supplier')
+    ch.contactId = c.id
+    parts.push(`${kinds.has('invoice') ? 'cliente' : 'proveedor'} ${c.name}`)
+  }
+  ch.paymentMethod = payMethod(cambios.forma_pago)
+  if (ch.paymentMethod) parts.push(`pago por ${PAY_TEXT[ch.paymentMethod]}`)
+  ch.deductiblePct = checkRange(cambios.deducible, 0, 100, 'el porcentaje deducible')
+  if (ch.deductiblePct != null) parts.push(`deducible ${pctText(ch.deductiblePct)}`)
+  if (cambios.pagado != null) {
+    ch.paid = cambios.pagado
+    parts.push(ch.paid ? 'se da por pagado' : 'queda pendiente de pago')
+  }
+  if (cambios.automatico != null) {
+    ch.autoIssue = cambios.automatico
+    parts.push(ch.autoIssue ? (kinds.has('invoice') ? 'se emite sola' : 'sin revisión') : (kinds.has('invoice') ? 'queda en borrador para revisar' : 'para revisar'))
+  }
+  if (cambios.enviar_sola != null) {
+    if (kinds.has('expense')) throw new OpError('Solo las facturas recurrentes se envían')
+    ch.autoSend = cambios.enviar_sola
+    parts.push(ch.autoSend ? 'se envía sola' : 'no se envía sola')
+  }
+  for (const v of cambios.vaciar ?? []) {
+    if (v === 'fecha_fin') ch.endDate = null
+    else if (v === 'concepto') ch.description = null
+    else if (v === 'categoria') ch.categoryId = null
+    else throw new OpError(`«${v}» no se puede dejar en blanco`)
+    parts.push(v === 'fecha_fin' ? 'sin fecha final' : `sin ${v === 'categoria' ? 'categoría' : v}`)
+  }
+  for (const k of Object.keys(ch) as Array<keyof RecurringChangeSet>) if (ch[k] === undefined) delete ch[k]
+  if (!Object.keys(ch).length) throw new OpError('Indica qué quieres cambiar')
+
+  const rows: AiActionRow[] = []
+  const targets: RecurringTarget[] = []
+  const failed = new Map<string, number>()
+  let unchanged = 0
+  for (const r of found) {
+    let next: RecurringInput
+    try {
+      next = nextRecurringInput(r, ch)
+    }
+    catch (err) {
+      if (!(err instanceof OpError)) throw err
+      const why = err.message.charAt(0).toLowerCase() + err.message.slice(1)
+      failed.set(why, (failed.get(why) ?? 0) + 1)
+      continue
+    }
+    const tpl = buildTemplate(next)
+    let current: string | null = null
+    try {
+      current = JSON.stringify(buildTemplate(nextRecurringInput(r, {})))
+    }
+    catch {
+      // La plantilla guardada no pasa la validación: cualquier cambio la arregla
+    }
+    const same = next.name === r.name && next.frequency === r.frequency && next.interval === r.interval && next.nextDate === r.nextDate
+      && next.endDate === r.endDate && next.autoIssue === r.autoIssue && next.autoSend === r.autoSend && JSON.stringify(tpl) === current
+    if (same) {
+      unchanged++
+      continue
+    }
+    targets.push(r)
+    const before = r.template.total ?? 0
+    rows.push(row(r, Math.abs((tpl.total ?? 0) - before) > 0.004
+      ? { before: eurText(before), after: eurText(tpl.total ?? 0), amount: tpl.total ?? null }
+      : ch.nextDate ? { before: fd(r.nextDate), after: fd(ch.nextDate) } : {}))
+  }
+  if (!targets.length && failed.size) throw new OpError(capital([...failed.keys()][0]!))
+  if (!targets.length) throw new OpError('Ya lo tienen así: no hay nada que cambiar')
+  return {
+    kind: 'recurrentes.modificar',
+    title: targets.length === 1 ? `Modificar «${targets[0]!.name}»` : `Modificar ${n(targets.length)}`,
+    risk: 'normal',
+    params: { ids: targets.map(r => r.id), labels: labels(targets), changes: ch },
+    preview: preview(rows, {
+      change: capital(parts.join(' · ')),
+      total: sum(rows.map(x => x.amount ?? 0)),
+      undoable: true,
+      warnings: [
+        'Se aplica a lo que se genere a partir de ahora: las facturas y gastos ya generados no cambian.',
+        ch.nextDate && ch.nextDate < today() ? 'La próxima fecha ya ha pasado: se generará en la próxima pasada del programador.' : '',
+        ...skippedText(failed, n),
+        unchanged ? `${count(unchanged, 'ya lo tenía y no se toca', 'ya lo tenían y no se tocan')}.` : '',
+      ].filter(Boolean),
+    }),
+  }
+}
+
+const recurringSnapshot = (rec: RecurringRow) => Object.fromEntries(RECURRING_FIELDS.map(k => [k, rec[k]])) as RecurringSnapshot
+
+async function recurringsModify(ctx: OpCtx, p: { ids: number[], labels: Record<string, string>, changes: RecurringChangeSet }): Promise<OpOutcome> {
+  const t = new Tally(p.labels)
+  const undo: Array<{ id: number, before: RecurringSnapshot }> = []
+  for (const id of p.ids) {
+    try {
+      const rec = await getRecurring(ctx.company.id, id)
+      await updateRecurring(ctx.company.id, rec, nextRecurringInput(rec, p.changes))
+      undo.push({ id, before: recurringSnapshot(rec) })
+      t.done++
+    }
+    catch (err) {
+      t.skip(id, errText(err))
+    }
+  }
+  return { result: t.result({ url: '/recurrentes' }), undo: { items: undo } }
+}
+
+async function recurringsActive(ctx: OpCtx, p: { ids: number[], labels: Record<string, string>, active: boolean }): Promise<OpOutcome> {
+  const t = new Tally(p.labels)
+  const undo: Array<{ id: number, before: RecurringSnapshot }> = []
+  for (const id of p.ids) {
+    try {
+      const rec = await getRecurring(ctx.company.id, id)
+      if (p.active ? recurringStatus(rec) !== 'paused' : !rec.active) {
+        t.skip(id, p.active ? 'No estaba en pausa' : 'Ya estaba en pausa')
+        continue
+      }
+      await setRecurringActive(rec, p.active)
+      undo.push({ id, before: { active: rec.active, nextDate: rec.nextDate, lastError: rec.lastError } })
+      t.done++
+    }
+    catch (err) {
+      t.skip(id, errText(err))
+    }
+  }
+  return { result: t.result({ url: '/recurrentes' }), undo: { items: undo } }
+}
+
+async function recurringsRevert(ctx: OpCtx, u: { items: Array<{ id: number, before: RecurringSnapshot }> }) {
+  const t = new Tally()
+  const r = tables.recurrings
+  for (const item of u.items) {
+    try {
+      const res = await useDb().update(r).set(item.before).where(and(eq(r.id, item.id), eq(r.companyId, ctx.company.id)))
+      if (!res[0].affectedRows) throw new OpError('Ya no existe')
+      t.done++
+    }
+    catch (err) {
+      t.skip(item.id, errText(err))
+    }
+  }
+  return t.result()
+}
+
+async function recurringsDelete(ctx: OpCtx, p: { ids: number[], labels: Record<string, string> }): Promise<OpOutcome> {
+  const t = new Tally(p.labels)
+  const r = tables.recurrings
+  const rows = await useDb().select().from(r).where(and(eq(r.companyId, ctx.company.id), inArray(r.id, p.ids)))
+  if (rows.length) await useDb().delete(r).where(and(eq(r.companyId, ctx.company.id), inArray(r.id, rows.map(x => x.id))))
+  t.done = rows.length
+  const gone = new Set(rows.map(x => x.id))
+  for (const id of p.ids) if (!gone.has(id)) t.skip(id, 'Ya no existía')
+  return { result: t.result({ url: '/recurrentes' }), undo: { rows } }
+}
+
+async function recurringsDeleteRevert(ctx: OpCtx, u: { rows: RecurringRow[] }) {
+  const t = new Tally()
+  for (const x of u.rows) {
+    try {
+      if (x.companyId !== ctx.company.id) throw new OpError('No es de esta empresa')
+      await useDb().insert(tables.recurrings).values({
+        ...x,
+        lastRunAt: x.lastRunAt ? new Date(x.lastRunAt) : null,
+        createdAt: new Date(x.createdAt),
+        updatedAt: new Date(x.updatedAt),
+      })
+      t.done++
+    }
+    catch (err) {
+      t.skip(x.id, errText(err))
+    }
+  }
+  return t.result()
 }
 
 // ═══ Altas (se ejecutan al momento y se pueden deshacer) ═════════════════════
@@ -2101,11 +3352,20 @@ export async function executeOp(ctx: OpCtx, kind: string, params: any): Promise<
     case 'ventas.emitir': return salesIssue(ctx, params)
     case 'ventas.cobrar': return salesCollect(ctx, params)
     case 'ventas.pendiente': return salesUncollect(ctx, params)
+    case 'ventas.estado': return salesSetStatus(ctx, params)
+    case 'ventas.borrador': return salesBackToDraft(ctx, params)
+    case 'ventas.convertir': return salesConvert(ctx, params)
     case 'ventas.enviar': return salesSend(ctx, params)
     case 'gastos.modificar': return expensesModify(ctx, params)
     case 'gastos.eliminar': return expensesDelete(ctx, params)
     case 'gastos.pagar': return expensesPay(ctx, params)
+    case 'gastos.pendiente': return expensesUnpay(ctx, params)
+    case 'gastos.aprobar': return expensesDecide(ctx, params, 'approve')
+    case 'gastos.rechazar': return expensesDecide(ctx, params, 'reject')
     case 'gastos.crear': return expenseCreate(ctx, params)
+    case 'recurrentes.modificar': return recurringsModify(ctx, params)
+    case 'recurrentes.activar': return recurringsActive(ctx, params)
+    case 'recurrentes.eliminar': return recurringsDelete(ctx, params)
     case 'banco.gasto': return bankExpense(ctx, params)
     case 'banco.ignorar': return bankIgnore(ctx, params)
     case 'banco.deshacer': return bankReset(ctx, params)
@@ -2125,9 +3385,17 @@ export async function revertOp(ctx: OpCtx, kind: string, undo: any): Promise<AiA
     case 'ventas.modificar': return salesModifyRevert(ctx, undo)
     case 'ventas.cobrar': return salesCollectRevert(ctx, undo)
     case 'ventas.pendiente': return salesUncollectRevert(ctx, undo)
+    case 'ventas.estado': return salesSetStatusRevert(ctx, undo)
+    case 'ventas.convertir': return salesConvertRevert(ctx, undo)
     case 'gastos.modificar': return expensesModifyRevert(ctx, undo)
     case 'gastos.pagar': return expensesPayRevert(ctx, undo)
+    case 'gastos.pendiente': return expensesUnpayRevert(ctx, undo)
+    case 'gastos.aprobar':
+    case 'gastos.rechazar': return expensesDecideRevert(ctx, undo)
     case 'gastos.crear': return expenseCreateRevert(ctx, undo)
+    case 'recurrentes.modificar':
+    case 'recurrentes.activar': return recurringsRevert(ctx, undo)
+    case 'recurrentes.eliminar': return recurringsDeleteRevert(ctx, undo)
     case 'banco.gasto':
     case 'banco.ignorar':
     case 'banco.deshacer': return bankRevert(ctx, undo)

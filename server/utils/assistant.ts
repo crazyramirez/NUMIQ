@@ -17,14 +17,17 @@ const bool = (description?: string) => ({ type: ['boolean', 'null'], ...(descrip
 const obj = (properties: Record<string, unknown>) => ({ type: 'object', additionalProperties: false, required: Object.keys(properties), properties })
 const PAY_ENUM = { type: ['string', 'null'], enum: ['transferencia', 'tarjeta', 'efectivo', 'domiciliacion', 'bizum', 'otro', null] }
 const EXPENSE_KIND_ENUM = { type: ['string', 'null'], enum: ['factura', 'ticket', 'nomina', 'seguridad_social', 'impuesto', 'otro', null] }
+const clear = (fields: string[]) => ({ type: ['array', 'null'], items: { type: 'string', enum: fields }, description: 'Datos que hay que dejar en blanco (borrar su valor)' })
+/** Tipo de gasto con las palabras del filtro (filtro.tipo) */
+const EXPENSE_KIND_ES: Readonly<Record<string, string>> = Object.freeze({ invoice: 'factura', ticket: 'ticket', payroll: 'nomina', social_security: 'seguridad_social', tax: 'impuesto', other: 'otro' })
 
 /** Qué registros: el mismo filtro para todas las entidades (cada una usa los campos que le aplican) */
 const FILTER = obj({
   ids: { type: ['array', 'null'], items: { type: 'integer' }, description: 'Ids exactos (los que devuelve listar)' },
   todos: { type: 'boolean', description: 'true SOLO si el usuario pide expresamente todos los registros, sin más filtro' },
-  nombres: { type: ['array', 'null'], items: { type: 'string' }, description: 'Facturas/presupuestos: clientes. Gastos: proveedores o comercios. Movimientos: textos del concepto u ordenante. Contactos: nombres o NIF. Productos: nombres. Varios = cualquiera de ellos ("Paloma y Andrés" → ["Paloma", "Andrés"])' },
+  nombres: { type: ['array', 'null'], items: { type: 'string' }, description: 'Facturas/presupuestos: clientes. Gastos: proveedores, perceptores o comercios. Movimientos: textos del concepto u ordenante. Contactos: nombres o NIF. Productos: nombres. Recurrentes: su nombre o el cliente/proveedor. Varios = cualquiera de ellos ("Paloma y Andrés" → ["Paloma", "Andrés"])' },
   texto: str('Texto dentro del concepto, la descripción o las notas'),
-  estado: { type: ['string', 'null'], enum: ['borrador', 'emitida', 'pendiente', 'enviado', 'cobrada', 'vencida', 'anulada', 'aceptado', 'rechazado', 'facturado', 'pagada', 'conciliado', 'ignorado', null], description: 'Facturas: borrador, emitida, pendiente (de cobro), cobrada, vencida, anulada. Presupuestos: pendiente, enviado, aceptado, rechazado, facturado. Gastos: pendiente o pagada. Movimientos: pendiente (por revisar), conciliado o ignorado' },
+  estado: { type: ['string', 'null'], enum: ['borrador', 'emitida', 'pendiente', 'enviado', 'cobrada', 'vencida', 'anulada', 'aceptado', 'rechazado', 'facturado', 'pagada', 'por_aprobar', 'por_revisar', 'conciliado', 'ignorado', 'activo', 'pausado', null], description: 'Facturas: borrador, emitida, pendiente (de cobro), cobrada, vencida, anulada. Presupuestos: pendiente, enviado, aceptado, rechazado, facturado. Gastos: pendiente o pagada (de pago), por_aprobar o rechazado (aprobación del equipo), por_revisar. Movimientos: pendiente (por revisar), conciliado o ignorado. Recurrentes: activo o pausado' },
   tipo: { type: ['string', 'null'], enum: ['rectificativa', 'factura', 'ticket', 'nomina', 'seguridad_social', 'impuesto', 'otro', 'cargo', 'abono', 'cliente', 'proveedor', 'servicio', 'producto', null], description: 'Facturas: rectificativa. Gastos: factura, ticket, nomina, seguridad_social, impuesto, otro. Movimientos: cargo o abono. Contactos: cliente o proveedor. Productos: servicio o producto' },
   categoria: str('Categoría de gasto (gastos) o de catálogo (productos); "ninguna" = sin categoría'),
   desde: str('Fecha inicial AAAA-MM-DD (emisión o movimiento)'),
@@ -81,24 +84,43 @@ export function assistantToolDefs() {
       fecha: { type: ['string', 'null'], description: 'AAAA-MM-DD; null = hoy' },
       notas: { type: ['string', 'null'] },
     }),
-    fn('listar', 'Lista registros con un filtro preciso y devuelve cuántos hay, el importe total y sus ids. Úsalo para responder "¿cuántas facturas tiene X?" o para comprobar el alcance antes de proponer un cambio.', {
-      entidad: { type: 'string', enum: ['facturas', 'presupuestos', 'gastos', 'movimientos', 'contactos', 'productos', 'categorias'] },
+    fn('listar', 'Lista registros con un filtro preciso y devuelve cuántos hay, el importe total y sus ids (con base, IVA, retención y total de cada uno). Úsalo para responder "¿cuántas facturas tiene X?" o para comprobar el alcance antes de proponer un cambio.', {
+      entidad: { type: 'string', enum: ['facturas', 'presupuestos', 'gastos', 'movimientos', 'contactos', 'productos', 'recurrentes', 'categorias'] },
       filtro: FILTER,
     }),
-    fn('operar_facturas', 'Prepara un cambio sobre facturas o presupuestos para que el usuario lo confirme: modificar (cliente, retención IRPF, IVA de todas las líneas, fechas, forma de pago, notas…), eliminar, emitir borradores, marcar facturas como cobradas o quitarles los cobros. NO ejecuta nada: crea una propuesta con los registros exactos.', {
+    fn('operar_facturas', 'Prepara un cambio sobre facturas o presupuestos para que el usuario lo confirme. modificar: cualquier dato (cliente, importe total o base, líneas y conceptos, precios, cantidades, descuento, IVA, retención, fechas, vencimiento, forma de pago, notas, condiciones, referencia, descripción). También eliminar, emitir borradores, marcar cobradas o quitar cobros (marcar_pendientes; en presupuestos, volver a pendiente), marcar enviadas, aceptar o rechazar presupuestos, convertir presupuestos en factura y devolver facturas a borrador. NO ejecuta nada: crea una propuesta con los registros exactos.', {
       documentos: { type: 'string', enum: ['facturas', 'presupuestos'] },
-      accion: { type: 'string', enum: ['modificar', 'eliminar', 'emitir', 'marcar_cobradas', 'marcar_pendientes'] },
+      accion: { type: 'string', enum: ['modificar', 'eliminar', 'emitir', 'marcar_cobradas', 'marcar_pendientes', 'marcar_enviadas', 'marcar_aceptados', 'marcar_rechazados', 'convertir_en_factura', 'pasar_a_borrador'] },
       filtro: FILTER,
       cambios: obj({
         cliente: str('Nuevo cliente (nombre o NIF) para reasignar los documentos'),
+        base: num('Nueva base imponible del documento: los precios de las líneas se ajustan en proporción'),
+        total: num('Nuevo total con impuestos del documento: los precios se ajustan para llegar a él'),
+        lineas: {
+          type: ['array', 'null'],
+          description: 'Cambios en las líneas (conceptos), aplicados en orden',
+          items: obj({
+            accion: { type: 'string', enum: ['anadir', 'modificar', 'quitar'] },
+            buscar: str('modificar o quitar: texto del concepto de la línea; null en modificar = todas las líneas'),
+            concepto: str('Concepto nuevo (obligatorio al añadir)'),
+            cantidad: num(),
+            precio: num('Precio unitario sin IVA (al añadir, null = el del catálogo)'),
+            iva: num('21, 10, 5, 4 o 0 (al añadir, null = el habitual)'),
+            descuento: num('% de descuento de la línea'),
+          }),
+        },
+        descuento: num('% de descuento para todas las líneas; 0 para quitarlo'),
         irpf: num('Retención de IRPF en %, p. ej. 15; 0 para quitarla'),
         iva: num('Tipo de IVA para todas las líneas: 21, 10, 5, 4 o 0'),
         fecha: str('Nueva fecha de emisión AAAA-MM-DD (o fecha del cobro al marcar cobradas)'),
         vencimiento: str('Nueva fecha de vencimiento AAAA-MM-DD'),
+        fecha_operacion: str('Fecha de la operación AAAA-MM-DD si es distinta de la de emisión'),
         forma_pago: PAY_ENUM,
         notas: str(),
         condiciones: str(),
         referencia: str('Referencia o nº de pedido del cliente'),
+        descripcion: str('Descripción del trabajo que va antes de las líneas'),
+        vaciar: clear(['notas', 'condiciones', 'referencia', 'vencimiento', 'fecha_operacion', 'descripcion']),
       }),
     }),
     fn('enviar_email', 'Prepara el envío por email de facturas o presupuestos con su PDF (o un recordatorio de pago) para que el usuario lo confirme. NO envía nada hasta que confirme. Los borradores solo pueden enviarse a la empresa o al propio usuario, para revisarlos (van con la marca BORRADOR); al cliente solo van documentos emitidos.', {
@@ -111,20 +133,41 @@ export function assistantToolDefs() {
       mensaje: str('Texto del correo solo si el usuario lo dicta o pide algo concreto; null = el habitual de la empresa'),
       adjuntos: bool('true para adjuntar también los archivos del documento (pedido, albarán…)'),
     }),
-    fn('operar_gastos', 'Prepara un cambio sobre gastos (facturas recibidas, tickets, cuotas) para que el usuario lo confirme: modificar (proveedor, categoría, tipo, % deducible, IVA, retención, fecha, descripción, forma de pago), eliminar o marcar como pagados. NO ejecuta nada.', {
-      accion: { type: 'string', enum: ['modificar', 'eliminar', 'marcar_pagados'] },
+    fn('operar_gastos', 'Prepara un cambio sobre gastos (facturas recibidas, tickets, nóminas, Seguridad Social, impuestos, cuotas) para que el usuario lo confirme. modificar: cualquier dato (importes: base imponible, total, cuota de IVA o desglose por tipos; IVA, retención, proveedor, categoría, tipo, % deducible, fecha, vencimiento, número, descripción, notas, forma de pago, bien de inversión, inversión del sujeto pasivo, revisado). También eliminar, marcar como pagados, quitar los pagos (marcar_pendientes) y aprobar o rechazar gastos del equipo. NO ejecuta nada.', {
+      accion: { type: 'string', enum: ['modificar', 'eliminar', 'marcar_pagados', 'marcar_pendientes', 'aprobar', 'rechazar'] },
       filtro: FILTER,
       cambios: obj({
-        proveedor: str('Nuevo proveedor (nombre o NIF); si no existe se crea'),
+        proveedor: str('Nuevo proveedor o perceptor (nombre o NIF); si no existe se crea'),
         categoria: str('Categoría de gasto (nombre o cuenta, p. ej. "Suministros" o "628"); "ninguna" para quitarla'),
         tipo: EXPENSE_KIND_ENUM,
+        base: num('Nueva base imponible (en nóminas, el bruto). Se mantienen los tipos de IVA y retención y se recalculan cuotas y total'),
+        total: num('Nuevo total con impuestos, lo pagado (en nóminas, el neto). Se mantienen los tipos y se recalculan base y cuotas. Con base también, la cuota de IVA sale de la diferencia'),
+        cuota_iva: num('Cuota de IVA exacta que figura en la factura'),
+        desglose: {
+          type: ['array', 'null'],
+          description: 'Desglose completo por tipos de IVA (sustituye al actual); para gastos con varios tipos',
+          items: obj({
+            base: { type: 'number' },
+            iva: { type: 'number', description: '21, 10, 5, 4 o 0' },
+            cuota: num('Cuota exacta si figura en la factura; null = se calcula'),
+            recargo: bool('Lleva recargo de equivalencia'),
+          }),
+        },
+        iva: num('Tipo de IVA (21, 10, 5, 4 o 0). Sin base ni total, se mantiene el total pagado'),
+        irpf: num('Retención que practica el proveedor en % (en nóminas, la del IRPF)'),
         deducible: num('% deducible del gasto (0 = no deducible, p. ej. gasto personal)'),
         iva_deducible: num('% del IVA deducible; null = igual que el deducible'),
-        iva: num('Tipo de IVA (21, 10, 5, 4 o 0): se mantiene el total pagado'),
-        irpf: num('Retención que practica el proveedor en %'),
         fecha: str('Nueva fecha AAAA-MM-DD (o fecha del pago al marcar pagados)'),
+        vencimiento: str('Fecha de vencimiento AAAA-MM-DD'),
+        numero: str('Número de la factura del proveedor (de uno en uno)'),
         descripcion: str(),
+        notas: str(),
         forma_pago: PAY_ENUM,
+        bien_inversion: bool('Es un bien de inversión (ordenador, vehículo, maquinaria…)'),
+        inversion_sujeto_pasivo: bool('Adquisición intracomunitaria o inversión del sujeto pasivo'),
+        revisado: bool('true = darlo por revisado; false = marcarlo para revisar'),
+        motivo: str('rechazar: motivo para quien lo registró'),
+        vaciar: clear(['descripcion', 'notas', 'numero', 'vencimiento', 'forma_pago']),
       }),
     }),
     fn('operar_banco', 'Prepara un cambio sobre movimientos de los extractos bancarios para que el usuario lo confirme: crear_gasto (asignar cargos a una categoría de gasto; si ya tenían gasto lo reclasifica), ignorar (revisado sin documento con un motivo: "Gasto personal", "Traspaso entre cuentas", "Pago de impuestos"…), deshacer (volver a dejarlos por revisar) o eliminar. NO ejecuta nada.', {
@@ -140,25 +183,55 @@ export function assistantToolDefs() {
         motivo: str('ignorar: motivo, p. ej. "Gasto personal"'),
       }),
     }),
-    fn('operar_contactos', 'Prepara un cambio sobre clientes o proveedores para que el usuario lo confirme: modificar sus datos (retención, días de pago, categoría de gasto por defecto, dirección, email…) o eliminarlos. NO ejecuta nada.', {
+    fn('operar_contactos', 'Prepara un cambio sobre clientes o proveedores para que el usuario lo confirme: modificar cualquier dato de su ficha (nombre, NIF, email, teléfono, web, dirección, IBAN, persona de contacto, retención, días de pago, recargo, categoría de gasto por defecto, notas…) o eliminarlos. NO ejecuta nada.', {
       accion: { type: 'string', enum: ['modificar', 'eliminar'] },
       filtro: FILTER,
       cambios: obj({
-        nombre: str(), nombre_comercial: str(), nif: str(), email: str(), telefono: str(), direccion: str(), cp: str(), ciudad: str(), provincia: str(),
+        nombre: str(), nombre_comercial: str(), nif: str(), email: str(), telefono: str(), web: str(), direccion: str(), cp: str(), ciudad: str(), provincia: str(),
         pais: str('Código de dos letras'), iban: str(),
+        persona_contacto: str('Persona con la que se trata'),
+        tipo_persona: { type: ['string', 'null'], enum: ['persona', 'empresa', null], description: 'Persona física o empresa' },
         dias_pago: num('Días de vencimiento de sus facturas'),
         irpf: num('Retención de IRPF en % que se aplica a este cliente en facturas nuevas'),
         recargo_equivalencia: bool(), es_cliente: bool(), es_proveedor: bool(),
         categoria_gasto: str('Categoría de gasto por defecto (proveedores)'),
         notas: str(),
+        vaciar: clear(['nombre_comercial', 'persona_contacto', 'nif', 'email', 'telefono', 'web', 'direccion', 'cp', 'ciudad', 'provincia', 'iban', 'dias_pago', 'irpf', 'categoria_gasto', 'notas']),
       }),
     }),
-    fn('operar_productos', 'Prepara un cambio sobre el catálogo de productos y servicios para que el usuario lo confirme: modificar (precio, subida en %, IVA, categoría, nombre…) o eliminar. NO ejecuta nada.', {
+    fn('operar_productos', 'Prepara un cambio sobre el catálogo de productos y servicios para que el usuario lo confirme: modificar (precio, subida en %, IVA, categoría, nombre, referencia, unidad, descripción…) o eliminar. NO ejecuta nada.', {
       accion: { type: 'string', enum: ['modificar', 'eliminar'] },
       filtro: FILTER,
       cambios: obj({
         nombre: str(), precio: num('Precio unitario sin IVA'), subir_pct: num('Subida (o bajada, en negativo) del precio en %'),
         iva: num(), categoria: str(), tipo: { type: ['string', 'null'], enum: ['servicio', 'producto', null] }, unidad: str(), descripcion: str(),
+        referencia: str('Referencia o código (SKU)'),
+        vaciar: clear(['unidad', 'descripcion', 'referencia', 'categoria']),
+      }),
+    }),
+    fn('operar_recurrentes', 'Prepara un cambio sobre facturas o gastos recurrentes (igualas, cuotas, alquileres, nóminas, suscripciones que NUMIQ genera solo cada periodo) para que el usuario lo confirme: modificar (importe base o total, IVA, retención, próxima fecha, fecha final, frecuencia, concepto, categoría, cliente o proveedor, forma de pago, si se emite o se envía sola…), pausar, reanudar o eliminar. Solo cambia lo que se genere a partir de ahora. NO ejecuta nada.', {
+      de: { type: ['string', 'null'], enum: ['facturas', 'gastos', null], description: 'Facturas o gastos recurrentes; null = ambos' },
+      accion: { type: 'string', enum: ['modificar', 'pausar', 'reanudar', 'eliminar'] },
+      filtro: FILTER,
+      cambios: obj({
+        nombre: str(),
+        base: num('Base imponible de cada documento (en nóminas, el bruto)'),
+        total: num('Total con impuestos de cada documento (en nóminas, el neto)'),
+        iva: num('21, 10, 5, 4 o 0'),
+        irpf: num('Retención en %'),
+        proxima_fecha: str('Próxima fecha AAAA-MM-DD (fija el día del mes de la serie)'),
+        fecha_fin: str('Último día AAAA-MM-DD'),
+        frecuencia: { type: ['string', 'null'], enum: ['semanal', 'mensual', 'trimestral', 'anual', null] },
+        cada: num('Cada cuántos periodos (1 = todos)'),
+        concepto: str(),
+        categoria: str('Categoría de gasto (gastos)'),
+        contacto: str('Nuevo cliente (facturas) o proveedor (gastos)'),
+        forma_pago: PAY_ENUM,
+        deducible: num('% deducible (gastos)'),
+        pagado: bool('Gastos: se dan por pagados al generarse'),
+        automatico: bool('Facturas: se emiten solas (false = borrador para revisar). Gastos: se anotan sin pedir revisión'),
+        enviar_sola: bool('Facturas: se envían solas al cliente al emitirse'),
+        vaciar: clear(['fecha_fin', 'concepto', 'categoria']),
       }),
     }),
     fn('crear_contacto', 'Da de alta un cliente o proveedor nuevo. Se crea al momento (el usuario puede deshacerlo). Úsalo solo cuando lo pidan.', {
@@ -210,12 +283,13 @@ export const TOOL_LABELS: Record<string, string> = {
   operar_banco: 'Preparando el cambio',
   operar_contactos: 'Preparando el cambio',
   operar_productos: 'Preparando el cambio',
+  operar_recurrentes: 'Preparando el cambio',
   crear_contacto: 'Creando el contacto',
   crear_producto: 'Creando el producto',
   crear_gasto: 'Anotando el gasto',
 }
 
-const WRITE_TOOLS = new Set(['crear_borrador', 'operar_facturas', 'enviar_email','operar_gastos', 'operar_banco', 'operar_contactos', 'operar_productos', 'crear_contacto', 'crear_producto', 'crear_gasto'])
+const WRITE_TOOLS = new Set(['crear_borrador', 'operar_facturas', 'enviar_email', 'operar_gastos', 'operar_banco', 'operar_contactos', 'operar_productos', 'operar_recurrentes', 'crear_contacto', 'crear_producto', 'crear_gasto'])
 
 /** Saldos y últimos movimientos del banco */
 async function bancoResumen(company: Company) {
@@ -367,7 +441,16 @@ async function detalleFactura(company: Company, numero: string) {
   }
   const [exp] = await db.select().from(tables.expenses).where(and(eq(tables.expenses.companyId, company.id), eq(tables.expenses.number, n))).limit(1)
   if (exp) {
-    return { tipo: 'gasto', numero: exp.number, proveedor: exp.supplier?.name ?? null, fecha: exp.issueDate, concepto: exp.description, base: exp.taxBase, iva: exp.vatTotal, irpf: exp.irpfTotal, total: exp.total, pagado: exp.paidTotal, estado: exp.status, url: `/gastos?ver=${exp.id}` }
+    const [lines, [cat]] = await Promise.all([
+      db.select().from(tables.expenseTaxLines).where(eq(tables.expenseTaxLines.expenseId, exp.id)),
+      exp.categoryId ? db.select({ name: tables.categories.name }).from(tables.categories).where(eq(tables.categories.id, exp.categoryId)) : Promise.resolve([]),
+    ])
+    return {
+      tipo: 'gasto', clase: EXPENSE_KIND_ES[exp.kind] ?? exp.kind, id: exp.id, numero: exp.number, proveedor: exp.supplier?.name ?? null, fecha: exp.issueDate, vence: exp.dueDate,
+      concepto: exp.description, categoria: cat?.name ?? null, base: exp.taxBase, iva: exp.vatTotal, recargo: exp.surchargeTotal, retencion_pct: exp.irpfRate, irpf: exp.irpfTotal, total: exp.total,
+      desglose: lines.map(l => ({ base: l.base, iva: l.vatRate, cuota: l.vatAmount, recargo: l.surchargeAmount || undefined })),
+      deducible: exp.deductiblePct, iva_deducible: exp.vatDeductiblePct, pagado: exp.paidTotal, estado: exp.status, notas: exp.notes, url: `/gastos?ver=${exp.id}`,
+    }
   }
   return { error: `No hay ninguna factura con el número ${n}` }
 }
@@ -464,16 +547,20 @@ const LIST_LIMIT = 40
 async function listar(company: Company, entidad: string, rawFilter: unknown) {
   const f = cleanFilter(rawFilter)
   const more = (n: number) => Math.max(0, n - LIST_LIMIT)
+  // Nada con ese estado: cuántos hay con otro, para no dar por perdido lo que solo está en pausa, pagado…
+  const otherState = async (found: number, run: (g: typeof f) => Promise<number>) => (!found && f.estado ? { con_otro_estado: await run({ ...f, estado: null }) } : {})
   if (entidad === 'facturas' || entidad === 'presupuestos') {
-    const { rows, matched } = await salesTargets(company, f, entidad === 'presupuestos' ? 'quote' : 'invoice', 2001)
+    const family = entidad === 'presupuestos' ? 'quote' : 'invoice'
+    const { rows, matched } = await salesTargets(company, f, family, 2001)
     const all = rows.slice(0, 2000)
     return {
       encontrados: rows.length > 2000 ? 'más de 2000' : rows.length,
+      ...await otherState(rows.length, async g => (await salesTargets(company, g, family, 500)).rows.length),
       importe_total: round2(all.reduce((s, r) => s + r.total, 0)),
       ...(entidad === 'facturas' ? { pendiente_de_cobro: round2(all.filter(r => isOpenStatus(r.status)).reduce((s, r) => s + r.total - r.paidTotal, 0)) } : {}),
       ...(f.nombres ? { clientes_coincidentes: matched } : {}),
       documentos: rows.slice(0, LIST_LIMIT).map(r => ({
-        id: r.id, numero: r.number ?? 'borrador', cliente: r.client, fecha: r.issueDate, vence: r.dueDate, total: r.total, cobrado: r.paidTotal,
+        id: r.id, numero: r.number ?? 'borrador', cliente: r.client, fecha: r.issueDate, vence: r.dueDate, base: r.taxBase, total: r.total, cobrado: r.paidTotal,
         retencion: r.irpfRate, estado: r.status, url: r.kind === 'quote' || r.kind === 'proforma' ? `/presupuestos/${r.id}` : `/facturas/${r.id}`,
       })),
       mas: more(all.length),
@@ -484,13 +571,30 @@ async function listar(company: Company, entidad: string, rawFilter: unknown) {
     const all = rows.slice(0, 2000)
     return {
       encontrados: rows.length > 2000 ? 'más de 2000' : rows.length,
+      ...await otherState(rows.length, async g => (await expenseTargets(company, g, 500)).rows.length),
       importe_total: round2(all.reduce((s, r) => s + r.total, 0)),
       ...(f.nombres ? { proveedores_coincidentes: matched } : {}),
       gastos: rows.slice(0, LIST_LIMIT).map(r => ({
-        id: r.id, fecha: r.issueDate, proveedor: r.supplier, concepto: r.description, numero: r.number, categoria: r.category,
-        base: r.taxBase, iva: r.vatTotal, total: r.total, deducible: r.deductiblePct, estado: r.status, url: `/gastos?ver=${r.id}`,
+        id: r.id, fecha: r.issueDate, tipo: EXPENSE_KIND_ES[r.kind] ?? r.kind, proveedor: r.supplier, concepto: r.description, numero: r.number, categoria: r.category,
+        base: r.taxBase, iva: r.vatTotal, retencion_pct: r.irpfRate || undefined, retencion: r.irpfTotal || undefined, total: r.total, deducible: r.deductiblePct,
+        estado: r.status, vence: r.dueDate ?? undefined, aprobacion: r.approval !== 'approved' ? r.approval : undefined, por_revisar: r.reviewed ? undefined : true,
+        url: `/gastos?ver=${r.id}`,
       })),
       mas: more(all.length),
+    }
+  }
+  if (entidad === 'recurrentes') {
+    const rows = await recurringTargets(company, f, null)
+    return {
+      encontrados: rows.length,
+      ...await otherState(rows.length, async g => (await recurringTargets(company, g, null)).length),
+      recurrentes: rows.slice(0, LIST_LIMIT).map(r => ({
+        id: r.id, nombre: r.name, tipo: r.kind === 'invoice' ? 'factura' : EXPENSE_KIND_ES[r.template.expenseKind ?? 'invoice'], contacto: r.contact,
+        frecuencia: r.frequency, cada: r.interval, proxima: r.nextDate, fin: r.endDate, estado: recurringStatus(r),
+        base: r.template.base ?? null, total: r.template.total ?? null, automatico: r.autoIssue,
+      })),
+      mas: more(rows.length),
+      url: '/recurrentes',
     }
   }
   if (entidad === 'movimientos') {
@@ -593,6 +697,7 @@ async function runTool(company: Company, actor: Actor, name: string, args: Recor
       case 'operar_banco': return await propose(planBank(op, String(args.accion), args.filtro, args.opciones as BankOptionsIn))
       case 'operar_contactos': return await propose(planContacts(op, String(args.accion), args.filtro, args.cambios as ContactChangesIn))
       case 'operar_productos': return await propose(planItems(op, String(args.accion), args.filtro, args.cambios as ItemChangesIn))
+      case 'operar_recurrentes': return await propose(planRecurrings(op, String(args.accion), (args.de as string | null) ?? null, args.filtro, args.cambios as RecurringChangesIn))
       case 'crear_contacto': return await create(planNewContact(op, args as unknown as NewContactIn))
       case 'crear_producto': return await create(planNewItem(op, args as unknown as NewItemIn))
       case 'crear_gasto': return await create(planNewExpense(op, args as unknown as NewExpenseIn))
@@ -638,7 +743,11 @@ Cómo respondes:
 - Puedes enviar facturas y presupuestos por email con su PDF (enviar_email): al cliente, al email de la empresa, al propio usuario («envíamela», «mándamela para verla»), al gestor o a cualquier dirección que te den, y recordatorios de pago. Si piden ver un borrador en PDF, envíaselo a «yo» sin emitirlo. Al cliente solo van documentos emitidos: si es un borrador, ofrece emitirlo antes. No escribas tú el texto del correo salvo que lo pidan: se usa el habitual de la empresa. Como cualquier cambio, queda pendiente de que el usuario confirme; nunca digas que se ha enviado hasta que el historial lo marque como ejecutado.
 
 Cambios en los datos (tienes control completo, siempre con la confirmación del usuario):
-- Con operar_facturas, operar_gastos, operar_banco, operar_contactos y operar_productos puedes modificar, reasignar, emitir, marcar cobros y pagos, clasificar y eliminar cualquier registro de la empresa, uno o cientos a la vez.
+- Con operar_facturas, operar_gastos, operar_banco, operar_contactos, operar_productos y operar_recurrentes puedes cambiar CUALQUIER dato de la empresa, en uno o en cientos de registros a la vez: importes (base, total, cuota de IVA, desglose por tipos, líneas, precios, cantidades, descuentos), IVA, retención, fechas, vencimientos, números, conceptos, descripciones, notas, cliente o proveedor, categoría, deducibilidad, forma de pago, estados (cobrada, pagada, enviada, aceptada, borrador…), aprobaciones, recurrentes… y también eliminar. Antes de decir que algo no se puede, repasa los parámetros de esas herramientas: casi todo se puede. Si de verdad no hay forma, dilo y explica dónde se cambia en la app; nunca respondas solo con lo que no puedes hacer.
+- Importes: «base», «base imponible» o «bruto» → cambios.base; «total», «con IVA», «lo que pagué», «neto» o «líquido» → cambios.total. En nóminas la base es el bruto y el total el neto (bruto − retención). Si dicen solo «importe» y en esos registros base y total son distintos (llevan IVA o retención) y no se deduce del contexto, pregunta cuál en una frase; si coinciden, da igual. Gastos con varios tipos de IVA: cambios.desglose. Facturas: cambios.base o cambios.total ajustan los precios; cambios.lineas añade, cambia o quita conceptos.
+- «Todas las nóminas» → filtro.tipo "nomina" (y fechas si las dan). Si cambias gastos que genera un recurrente (nóminas, cuotas, alquileres…), ofrece cambiar también el recurrente para los próximos periodos (operar_recurrentes), y al revés: cambiar un recurrente no toca lo ya generado.
+- Para borrar un dato (el email, la fecha final, las notas…) usa cambios.vaciar.
+- «Factura» puede ser emitida a un cliente (operar_facturas) o recibida de un proveedor (operar_gastos): si el número o el nombre son de un proveedor, es un gasto. Si una herramienta devuelve una sugerencia de usar otra, hazlo directamente sin preguntar.
 - Esas herramientas NO ejecutan nada: preparan una propuesta con los registros exactos, que el usuario ve en una tarjeta y confirma con un botón o respondiendo «sí». Después de proponer, explica en una o dos frases qué va a pasar (cuántos registros, avisos importantes) y pide confirmación. Nunca digas que algo está hecho si el historial no lo marca como ejecutado.
 - Filtra con precisión. Clientes, proveedores o comercios van en filtro.nombres (varios a la vez: «las de Paloma y Andrés» → ["Paloma", "Andrés"]); usa también fechas, estado, tipo, números o ids. todos: true solo si el usuario quiere de verdad todos los registros.
 - Si una herramienta dice que no encuentra algo o que hay varios candidatos, pregunta al usuario en vez de adivinar. Si no está claro qué registros o qué valor quiere, pregunta antes de proponer. Si dudas del alcance, usa listar primero.

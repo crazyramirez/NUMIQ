@@ -222,7 +222,7 @@ export async function salesTargets(company: Company, f: OpFilter, family: SalesF
   }
   const rows = await useDb().select({
     id: s.id, kind: s.kind, status: s.status, number: s.number, issueDate: s.issueDate, dueDate: s.dueDate,
-    total: s.total, paidTotal: s.paidTotal, irpfRate: s.irpfRate, contactId: s.contactId,
+    total: s.total, taxBase: s.taxBase, paidTotal: s.paidTotal, irpfRate: s.irpfRate, contactId: s.contactId,
     client: sql<string | null>`COALESCE(${c.name}, JSON_UNQUOTE(JSON_EXTRACT(${s.customer}, '$.name')))`,
   }).from(s).leftJoin(c, eq(c.id, s.contactId))
     .where(and(...conds))
@@ -252,6 +252,9 @@ export async function expenseTargets(company: Company, f: OpFilter, limit = MAX_
   if (f.importe_max != null) conds.push(lte(e.total, f.importe_max))
   if (f.estado === 'pendiente') conds.push(inArray(e.status, ['pending', 'partial']))
   else if (f.estado === 'pagada' || f.estado === 'cobrada') conds.push(eq(e.status, 'paid'))
+  else if (f.estado === 'por_aprobar') conds.push(eq(e.approval, 'pending'))
+  else if (f.estado === 'rechazado') conds.push(eq(e.approval, 'rejected'))
+  else if (f.estado === 'por_revisar') conds.push(eq(e.reviewed, false))
   const kind = f.tipo ? EXPENSE_KIND_BY_ES[f.tipo] : undefined
   if (kind) conds.push(eq(e.kind, kind))
   if (f.categoria) {
@@ -276,9 +279,10 @@ export async function expenseTargets(company: Company, f: OpFilter, limit = MAX_
     conds.push(or(like(e.description, term), like(e.notes, term), like(e.number, term)))
   }
   const rows = await useDb().select({
-    id: e.id, kind: e.kind, status: e.status, number: e.number, issueDate: e.issueDate, description: e.description,
-    total: e.total, paidTotal: e.paidTotal, taxBase: e.taxBase, vatTotal: e.vatTotal, irpfRate: e.irpfRate,
-    deductiblePct: e.deductiblePct, vatDeductiblePct: e.vatDeductiblePct, fileId: e.fileId,
+    id: e.id, kind: e.kind, status: e.status, number: e.number, issueDate: e.issueDate, dueDate: e.dueDate, description: e.description,
+    total: e.total, paidTotal: e.paidTotal, taxBase: e.taxBase, vatTotal: e.vatTotal, surchargeTotal: e.surchargeTotal, irpfRate: e.irpfRate, irpfTotal: e.irpfTotal,
+    deductiblePct: e.deductiblePct, vatDeductiblePct: e.vatDeductiblePct, fileId: e.fileId, paymentMethod: e.paymentMethod,
+    isInvestment: e.isInvestment, reverseCharge: e.reverseCharge, reviewed: e.reviewed, approval: e.approval,
     supplierId: e.supplierId, categoryId: e.categoryId, category: k.name,
     supplier: sql<string | null>`COALESCE(${c.name}, JSON_UNQUOTE(JSON_EXTRACT(${e.supplier}, '$.name')))`,
   }).from(e).leftJoin(c, eq(c.id, e.supplierId)).leftJoin(k, eq(k.id, e.categoryId))
@@ -362,3 +366,40 @@ export async function itemTargets(company: Company, f: OpFilter) {
   if (f.importe_max != null) rows = rows.filter(x => x.unitPrice <= f.importe_max!)
   return rows.sort((a, b) => a.name.localeCompare(b.name, 'es'))
 }
+
+// ─── Recurrentes ─────────────────────────────────────────────────────────────
+
+/** Facturas y gastos recurrentes: por su nombre, su cliente o proveedor, tipo de gasto, estado o importe */
+export async function recurringTargets(company: Company, f: OpFilter, family: 'invoice' | 'expense' | null) {
+  const r = tables.recurrings
+  const all = await useDb().select().from(r).where(eq(r.companyId, company.id))
+  const contacts = await companyContacts(company.id)
+  const contactName = new Map(contacts.map(c => [c.id, c.name]))
+  let rows = all.map(x => ({ ...x, template: templateOf(x) }))
+  if (family) rows = rows.filter(x => x.kind === family)
+  if (f.ids) rows = rows.filter(x => f.ids!.includes(x.id))
+  if (f.nombres) {
+    const byName = f.nombres.map(n => ({ q: comparableName(n), ids: new Set(contactMatches(contacts, n).map(c => c.id)) }))
+    rows = rows.filter(x => byName.some(n => (n.q && comparableName(x.name).includes(n.q)) || (x.template.contactId != null && n.ids.has(x.template.contactId))))
+  }
+  if (f.texto) {
+    const q = comparableName(f.texto)
+    rows = rows.filter(x => comparableName(`${x.name} ${x.template.description ?? ''} ${(x.template.lines ?? []).map(l => l.description).join(' ')}`).includes(q))
+  }
+  // «La factura recurrente»: las de venta y los gastos que son facturas de proveedor
+  const kind = f.tipo ? EXPENSE_KIND_BY_ES[f.tipo] : undefined
+  if (kind) rows = rows.filter(x => (kind === 'invoice' && x.kind === 'invoice') || (x.kind === 'expense' && (x.template.expenseKind ?? 'invoice') === kind))
+  if (f.categoria) {
+    const cat = await resolveExpenseCategory(company.id, f.categoria)
+    rows = rows.filter(x => (cat ? x.template.categoryId === cat.id : x.template.categoryId == null))
+  }
+  if (f.estado === 'activo') rows = rows.filter(x => recurringStatus(x) === 'active')
+  else if (f.estado === 'pausado') rows = rows.filter(x => recurringStatus(x) !== 'active')
+  if (f.importe_min != null) rows = rows.filter(x => (x.template.total ?? 0) >= f.importe_min!)
+  if (f.importe_max != null) rows = rows.filter(x => (x.template.total ?? 0) <= f.importe_max!)
+  return rows
+    .map(x => ({ ...x, contact: x.template.contactId ? contactName.get(x.template.contactId) ?? null : null }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+}
+
+export type RecurringTarget = Awaited<ReturnType<typeof recurringTargets>>[number]

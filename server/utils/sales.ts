@@ -290,6 +290,38 @@ export async function loadQuoteInvoices(companyId: number, quoteIds: number[]) {
   return result
 }
 
+/** Presupuesto o proforma → borrador de factura con las mismas líneas; el presupuesto queda aceptado */
+export async function quoteToInvoice(company: typeof tables.companies.$inferSelect, userId: number, id: number) {
+  const src = await loadSalesDocument(company.id, id)
+  if (src.kind !== 'quote' && src.kind !== 'proforma') throw createError({ statusCode: 400, statusMessage: 'Solo se convierten presupuestos y proformas' })
+  const today = toISODate(new Date())
+  const due = new Date()
+  due.setDate(due.getDate() + (src.contact?.paymentTermsDays ?? company.paymentTermsDays))
+  const newId = await saveSalesDraft(company.id, userId, {
+    kind: 'invoice',
+    contactId: src.contactId,
+    customerReference: src.customerReference,
+    issueDate: today,
+    dueDate: toISODate(due),
+    irpfRate: src.irpfRate,
+    paymentMethod: src.paymentMethod ?? 'transfer',
+    description: src.description,
+    notes: src.notes,
+    terms: src.terms,
+    lines: src.lines.map(l => ({
+      itemId: l.itemId, description: l.description, quantity: l.quantity, unitPrice: l.unitPrice,
+      discountPct: l.discountPct, vatRate: l.vatRate, surchargeRate: l.surchargeRate, irpfApplies: l.irpfApplies,
+    })),
+  })
+  const db = useDb()
+  await db.update(tables.salesDocuments).set({ sourceId: id })
+    .where(and(eq(tables.salesDocuments.id, newId), eq(tables.salesDocuments.companyId, company.id)))
+  if (src.status !== 'invoiced') {
+    await db.update(tables.salesDocuments).set({ status: 'accepted' }).where(eq(tables.salesDocuments.id, id))
+  }
+  return newId
+}
+
 /**
  * Documento original (importado o escaneado) que se puede enviar al cliente con la factura: solo si
  * es suyo y de nadie más. Un Excel/CSV o un PDF con varias facturas llevaría datos de otros clientes.
