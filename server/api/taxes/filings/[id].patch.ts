@@ -5,7 +5,7 @@ const schema = z.object({ status: z.enum(['filed', 'paid']) })
 
 /** Marca un modelo presentado como pagado (o lo devuelve a «presentado») */
 export default defineEventHandler(async (event) => {
-  const { company, user } = await requireCompany(event)
+  const { company, user } = await requireCompanyOrAdvisor(event, 'taxes')
   const id = idParam(event)
   const { status } = await readInput(event, schema)
   const f = tables.taxFilings

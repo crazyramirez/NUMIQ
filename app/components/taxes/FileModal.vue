@@ -40,8 +40,9 @@ interface Receipt {
 }
 
 const toast = useToast()
-// El gestor consulta las casillas y puede ir a la Sede, pero no registra la presentación en la empresa
-const { readOnly } = useMe()
+// El gestor sin permiso para los impuestos consulta las casillas y puede ir a la Sede, pero no registra la presentación
+const { canUpload } = useMe()
+const readOnly = computed(() => !canUpload('taxes'))
 const draft = ref<Draft | null>(null)
 const loading = ref(false)
 const receipt = ref<Receipt | null>(null)

@@ -16,7 +16,7 @@ const schema = z.object({
 
 /** Registra que el modelo se ha presentado (con su justificante y CSV) */
 export default defineEventHandler(async (event) => {
-  const { company, user } = await requireCompany(event)
+  const { company, user } = await requireCompanyOrAdvisor(event, 'taxes')
   const input = await readInput(event, schema)
   const db = useDb()
   if (input.receiptFileId) {

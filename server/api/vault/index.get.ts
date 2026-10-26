@@ -8,13 +8,14 @@ const query = z.object({
 
 /** Documentos del archivo de un año o trimestre, con recuentos por carpeta y por trimestre */
 export default defineEventHandler(async (event) => {
-  const { company } = await requireCompany(event, 'advisor')
+  const { company, user } = await requireCompany(event, 'advisor')
   const { year, quarter } = readQueryInput(event, query)
   const f = tables.files
   const db = useDb()
   const base = and(eq(f.companyId, company.id), eq(f.kind, 'vault'), eq(f.year, year))
   const [files, byQuarter] = await Promise.all([
-    db.select({ id: f.id, name: f.originalName, mime: f.mime, size: f.size, folder: f.folder, year: f.year, quarter: f.quarter, notes: f.notes, createdAt: f.createdAt })
+    // mine: lo subió quien pregunta (el gestor solo cambia o borra lo suyo)
+    db.select({ id: f.id, name: f.originalName, mime: f.mime, size: f.size, folder: f.folder, year: f.year, quarter: f.quarter, notes: f.notes, createdAt: f.createdAt, mine: sql<boolean>`${f.uploadedBy} <=> ${user.id}`.mapWith(v => Number(v) === 1) })
       .from(f).where(quarter ? and(base, eq(f.quarter, quarter)) : base).orderBy(desc(f.createdAt)),
     db.select({ quarter: f.quarter, n: sql<number>`count(*)`, bytes: sql<number>`coalesce(sum(${f.size}), 0)` }).from(f).where(base).groupBy(f.quarter),
   ])

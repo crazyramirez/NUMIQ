@@ -14,6 +14,8 @@ export interface ImportResult {
   from: string
   to: string
   suggested: number
+  /** Copia del extracto en Documentos → Archivo → Banco (already: ese archivo ya estaba guardado) */
+  archived: { id: number | null, year: number, quarter: number, already: boolean } | null
 }
 
 const file = ref<File | null>(null)

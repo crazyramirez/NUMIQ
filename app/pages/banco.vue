@@ -52,7 +52,9 @@ interface BankData {
 
 const toast = useToast()
 const { confirm } = useConfirm()
-const { readOnly } = useMe()
+const { readOnly, canUpload } = useMe()
+// Importar extractos: el gestor, si la empresa se lo permite (Ajustes → Equipo); conciliar, nunca
+const canImport = computed(() => canUpload('bank'))
 
 // Filtros, búsqueda y página en la URL: al volver atrás desde un documento conciliado, todo sigue igual
 const status = useQueryState<'pending' | 'matched' | 'ignored' | 'all'>('estado', 'all', { allowed: ['pending', 'matched', 'ignored', 'all'] })
@@ -92,8 +94,10 @@ const statusOptions = computed(() => [
 const importOpen = ref(false)
 function onImported(r: ImportResult) {
   const range = r.from === r.to ? fdate(r.from) : `${fdateShort(r.from)} – ${fdateShort(r.to)}`
-  if (!r.imported) toast.info('Nada nuevo en este extracto', `Los ${r.duplicates} movimientos ya estaban importados.`)
-  else toast.success(`${r.imported} ${r.imported === 1 ? 'movimiento importado' : 'movimientos importados'}`, `${r.accountName} · ${range}${r.suggested ? ` · ${r.suggested} con propuesta` : ''}${r.duplicates ? ` · ${r.duplicates} repetidos omitidos` : ''}`)
+  const saved = r.archived && !r.archived.already ? ` Guardado en Documentos → Archivo → Banco (${r.archived.quarter}T ${r.archived.year}).` : ''
+  const action = r.archived ? { label: 'Ver en el archivo', run: () => navigateTo(`/documentos/archivo?anio=${r.archived!.year}&t=${r.archived!.quarter}&carpeta=banco`) } : undefined
+  if (!r.imported) toast.push({ tone: 'info', title: 'Nada nuevo en este extracto', body: `Los ${r.duplicates} movimientos ya estaban importados.${saved}`, action }, 6500)
+  else toast.push({ tone: 'success', title: `${r.imported} ${r.imported === 1 ? 'movimiento importado' : 'movimientos importados'}`, body: `${r.accountName} · ${range}${r.suggested ? ` · ${r.suggested} con propuesta` : ''}${r.duplicates ? ` · ${r.duplicates} repetidos omitidos` : ''}.${saved}`, action }, 6500)
   status.value = 'pending'
   account.value = null
   refresh()
@@ -460,7 +464,7 @@ function accountCtx(a: Account): CtxSpec {
     items: [
       ...(only ? [account.value === a.id ? { label: 'Ver todas las cuentas', icon: 'ph:stack', onClick: () => (account.value = null) } : { label: 'Ver solo esta cuenta', icon: 'ph:funnel', onClick: () => (account.value = a.id) }] : []),
       ...(a.pending ? [{ label: 'Movimientos por revisar', sub: plural(a.pending), icon: 'ph:list-checks', onClick: () => { account.value = only ? a.id : null; status.value = 'pending' } }] : []),
-      ...(readOnly.value ? [] : [{ label: 'Importar extracto…', icon: 'ph:upload-simple', onClick: () => (importOpen.value = true) }]),
+      ...(canImport.value ? [{ label: 'Importar extracto…', icon: 'ph:upload-simple', onClick: () => (importOpen.value = true) }] : []),
       { divider: true },
       ...(a.iban ? [{ label: 'Copiar IBAN', sub: a.iban.replace(/(.{4})/g, '$1 ').trim(), icon: 'ph:copy', onClick: () => copyText(a.iban!.replace(/\s+/g, ''), 'IBAN') }] : []),
       { label: 'Copiar saldo', sub: eur(a.balance), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(a.balance), 'Saldo') },
@@ -496,8 +500,8 @@ const pages = computed(() => pageCount(data.value?.total ?? 0, data.value?.pageS
         <h1>Banco</h1>
         <p class="sub">Importa tus extractos y NUMIQ casa cada cobro con su factura y cada cargo con su gasto.</p>
       </div>
-      <div v-if="!readOnly" class="page-actions">
-        <UiButton v-if="accounts.length" icon="ph:arrows-clockwise" :loading="busy === 'suggest'" class="hide-sm" @click="reanalyze">Volver a analizar</UiButton>
+      <div v-if="canImport" class="page-actions">
+        <UiButton v-if="accounts.length && !readOnly" icon="ph:arrows-clockwise" :loading="busy === 'suggest'" class="hide-sm" @click="reanalyze">Volver a analizar</UiButton>
         <UiButton variant="primary" icon="ph:upload-simple" @click="importOpen = true">Importar extracto</UiButton>
       </div>
     </header>
@@ -520,7 +524,7 @@ const pages = computed(() => pageCount(data.value?.total ?? 0, data.value?.pageS
           <li><span class="num">2</span> Formato <strong>Norma 43</strong>, Excel o CSV</li>
           <li><span class="num">3</span> Súbelo aquí y revisa las propuestas</li>
         </ul>
-        <UiButton v-if="!readOnly" variant="primary" size="lg" icon="ph:upload-simple" @click="importOpen = true">Importar mi primer extracto</UiButton>
+        <UiButton v-if="canImport" variant="primary" size="lg" icon="ph:upload-simple" @click="importOpen = true">Importar mi primer extracto</UiButton>
       </div>
     </UiCard>
 
@@ -575,7 +579,7 @@ const pages = computed(() => pageCount(data.value?.total ?? 0, data.value?.pageS
         </div>
 
         <UiEmpty v-if="data && !data.items.length && status === 'pending' && !qDebounced" compact icon="ph:check-circle" title="Todo conciliado" text="No tienes movimientos por revisar. Importa el siguiente extracto cuando quieras.">
-          <UiButton v-if="!readOnly" icon="ph:upload-simple" @click="importOpen = true">Importar extracto</UiButton>
+          <UiButton v-if="canImport" icon="ph:upload-simple" @click="importOpen = true">Importar extracto</UiButton>
         </UiEmpty>
         <UiEmpty v-else-if="data && !data.items.length" compact icon="ph:funnel" title="Ningún movimiento" text="Prueba con otro filtro o búsqueda." />
 

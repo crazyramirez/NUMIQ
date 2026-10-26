@@ -3,7 +3,8 @@ import { and, eq, isNull } from 'drizzle-orm'
 
 /**
  * Equipo de la empresa: socios, empleados y el gestor (rol "advisor": consulta datos, informes e
- * impuestos sin poder emitir ni borrar). Las invitaciones son enlaces de un solo uso, 14 días.
+ * impuestos sin poder emitir ni borrar, y sube lo que la empresa le permita; ver advisor-access.ts).
+ * Las invitaciones son enlaces de un solo uso, 14 días.
  */
 
 type Company = typeof tables.companies.$inferSelect
@@ -13,7 +14,7 @@ export const INVITE_TTL = 14 * 86_400_000
 export async function sendInviteEmail(event: H3Event, company: Company, inviter: { name: string }, invite: { email: string, role: string }, token: string) {
   const brand = company.tradeName || company.legalName
   const roleText = invite.role === 'advisor'
-    ? 'como gestor: podrás consultar sus facturas, gastos, informes e impuestos y descargar la documentación de cada trimestre'
+    ? 'como gestor: podrás consultar sus facturas, gastos, informes e impuestos, descargar la documentación de cada trimestre y subir lo que te permita, como nóminas o impuestos presentados'
     : invite.role === 'admin' ? 'como administrador' : 'a su equipo'
   await sendAccountEmail(invite.email, {
     subject: `${inviter.name} te invita a ${brand} en NUMIQ`,

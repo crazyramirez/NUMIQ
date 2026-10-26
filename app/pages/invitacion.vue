@@ -50,7 +50,7 @@ async function switchAccount() {
 }
 
 const ROLE_HINT: Record<string, string> = {
-  advisor: 'Podrás consultar facturas, gastos, informes e impuestos y descargar la documentación.',
+  advisor: 'Podrás consultar facturas, gastos, informes e impuestos, descargar la documentación y subir lo que te permitan, como nóminas o impuestos presentados.',
   admin: 'Podrás gestionarlo todo, también el equipo y los ajustes.',
   member: 'Podrás crear facturas, presupuestos y gastos.',
 }

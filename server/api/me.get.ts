@@ -14,12 +14,15 @@ export default defineEventHandler(async (event) => {
       brandColor: tables.companies.brandColor,
       verifactuEnabled: tables.companies.verifactuEnabled,
       role: tables.companyMembers.role,
+      settings: tables.companies.settings,
     })
     .from(tables.companyMembers)
     .innerJoin(tables.companies, eq(tables.companies.id, tables.companyMembers.companyId))
     .where(eq(tables.companyMembers.userId, user.id))
     .orderBy(tables.companies.legalName)
 
-  const current = companies.find(c => c.id === user.currentCompanyId) ?? null
-  return { user, companies, company: current }
+  // Los ajustes no salen; solo lo que el gestor puede subir a cada empresa
+  const list = companies.map(({ settings, ...c }) => ({ ...c, advisorAccess: c.role === 'advisor' ? advisorAccess({ settings }) : null }))
+  const current = list.find(c => c.id === user.currentCompanyId) ?? null
+  return { user, companies: list, company: current }
 })

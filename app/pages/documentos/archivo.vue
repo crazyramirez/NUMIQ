@@ -14,6 +14,8 @@ interface VaultFile {
   quarter: number
   notes: string | null
   createdAt: string
+  /** Lo subió quien lo ve */
+  mine: boolean
 }
 
 interface VaultData {
@@ -24,8 +26,9 @@ interface VaultData {
 
 const toast = useToast()
 const { confirm } = useConfirm()
-// Gestor: consulta y descarga; no sube, mueve, renombra, firma ni borra
-const { readOnly } = useMe()
+// Gestor: consulta y descarga; sube solo a las carpetas que la empresa le permite (Ajustes → Equipo) y
+// mueve, renombra o borra solo lo que subió él
+const { readOnly, canUploadTo } = useMe()
 
 const now = new Date()
 // Periodo, carpeta y página en la URL: enlaces directos y, al volver atrás, el archivo sigue igual
@@ -59,10 +62,12 @@ const periodLabel = computed(() => (quarter.value === 'all' ? `${year.value}` : 
 
 // ─── Subida ───
 
-const uploadFolder = ref('banco')
+const uploadOptions = computed(() => folders.value.filter(f => canUploadTo(f.key)).map(f => ({ value: f.key, label: f.label })))
+const uploadFolder = ref(canUploadTo('banco') ? 'banco' : uploadOptions.value[0]?.value ?? 'banco')
 watch(folder, (f) => {
-  if (f !== 'all') uploadFolder.value = f
-})
+  if (f !== 'all' && canUploadTo(f)) uploadFolder.value = f
+}, { immediate: true })
+const editable = (f: VaultFile) => !readOnly.value || (f.mine && canUploadTo(f.folder ?? 'otros'))
 const uploadQuarter = computed(() => (quarter.value === 'all' ? quarterOf(now.getFullYear() === year.value ? now : new Date(year.value, 11, 1)) : Number(quarter.value)))
 const uploading = ref(false)
 const pct = ref(0)
@@ -162,7 +167,7 @@ function ctxFor(f: VaultFile): CtxSpec {
     subtitle: `${vaultFolder(f.folder).label} · ${f.quarter}T ${f.year} · ${fileSize(f.size)}`,
     icon: fileIcon(f.name, f.mime),
   }
-  if (readOnly.value) {
+  if (!editable(f)) {
     return {
       ...head,
       items: [
@@ -177,13 +182,13 @@ function ctxFor(f: VaultFile): CtxSpec {
     ...head,
     items: [
       { label: 'Ver', icon: 'ph:eye', keys: ['↵'], onClick: () => show(f) },
-      ...(signableMime(f.mime) ? [{ label: 'Firmar…', icon: 'ph:signature', onClick: () => show(f, true) }] : []),
+      ...(signableMime(f.mime) && !readOnly.value ? [{ label: 'Firmar…', icon: 'ph:signature', onClick: () => show(f, true) }] : []),
       { label: 'Descargar', icon: 'ph:download-simple', onClick: () => { window.location.href = `/api/files/${f.id}?download=1` } },
       { divider: true },
       {
         label: 'Mover a',
         icon: 'ph:folder-simple',
-        children: folders.value.map(fd => ({ label: fd.label, icon: fd.icon, active: fd.key === current, onClick: () => fd.key !== current && moveTo(f, { folder: fd.key }, `Movido a ${fd.label}`) })),
+        children: folders.value.filter(fd => canUploadTo(fd.key)).map(fd => ({ label: fd.label, icon: fd.icon, active: fd.key === current, onClick: () => fd.key !== current && moveTo(f, { folder: fd.key }, `Movido a ${fd.label}`) })),
       },
       {
         label: 'Trimestre',
@@ -198,7 +203,6 @@ function ctxFor(f: VaultFile): CtxSpec {
   }
 }
 
-const folderOptions = computed(() => folders.value.map(f => ({ value: f.key, label: f.label })))
 const quarterSelect = [1, 2, 3, 4].map(q => ({ value: q, label: `${q}.º trimestre` }))
 const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { quarter.value = v } })
 </script>
@@ -240,7 +244,7 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
     </div>
 
     <DocsDropzone
-      v-if="!readOnly"
+      v-if="uploadOptions.length"
       compact
       :title="uploading ? `Subiendo… ${pct} %` : `Arrastra documentos para ${vaultFolder(uploadFolder).label} · ${uploadQuarter}T ${year}`"
       hint="PDF, imágenes, Word, Excel, CSV, XML o ZIP · hasta 25 MB cada uno"
@@ -249,7 +253,7 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
     >
       <div class="dest">
         <span class="label">Guardar en</span>
-        <UiSelect v-model="uploadFolder" :options="folderOptions" aria-label="Carpeta de destino" />
+        <UiSelect v-model="uploadFolder" :options="uploadOptions" aria-label="Carpeta de destino" />
       </div>
     </DocsDropzone>
 
@@ -258,7 +262,7 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
         <p class="section-title">{{ folder === 'all' ? 'Todos los documentos' : vaultFolder(folder).label }} · {{ periodLabel }}</p>
         <span class="muted small num">{{ files.length }} documento{{ files.length === 1 ? '' : 's' }} · {{ fileSize(totalBytes) }}</span>
       </header>
-      <UiEmpty v-if="!files.length" compact icon="ph:archive" title="No hay documentos aquí" :text="readOnly ? 'Nada guardado en esta carpeta y periodo.' : 'Sube extractos del banco, contratos o justificantes: tu gestoría los tendrá ordenados por trimestre.'" />
+      <UiEmpty v-if="!files.length" compact icon="ph:archive" title="No hay documentos aquí" :text="!uploadOptions.length ? 'Nada guardado en esta carpeta y periodo.' : 'Sube extractos del banco, contratos o justificantes: tu gestoría los tendrá ordenados por trimestre.'" />
       <ul v-else class="files">
         <li v-for="f in shown" :key="f.id" v-ctx="() => ctxFor(f)" class="file">
           <button type="button" class="f-main" @click="show(f)">
@@ -277,10 +281,10 @@ const quarterModel = computed({ get: () => quarter.value, set: (v: string) => { 
       <UiPager v-model="page" v-model:size="pageSize" :pages="pages" :total="pageTotal" />
     </section>
 
-    <UiModal v-if="!readOnly" v-model="editOpen" size="sm" title="Mover o renombrar">
+    <UiModal v-if="uploadOptions.length" v-model="editOpen" size="sm" title="Mover o renombrar">
       <form id="vault-edit" class="form-grid" @submit.prevent="saveEdit">
         <UiInput v-model="edit.name" class="c-12" label="Nombre" required />
-        <UiSelect v-model="edit.folder" class="c-12" label="Carpeta" :options="folderOptions" />
+        <UiSelect v-model="edit.folder" class="c-12" label="Carpeta" :options="uploadOptions" />
         <UiInput v-model="edit.year" class="c-6" label="Año" type="number" />
         <UiSelect v-model="edit.quarter" class="c-6" label="Trimestre" :options="quarterSelect" />
         <UiInput v-model="edit.notes" class="c-12" label="Nota" placeholder="Ej. Extracto de septiembre" />

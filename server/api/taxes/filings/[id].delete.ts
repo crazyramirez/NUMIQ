@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm'
 
 /** Deshace el registro de una presentación (por si se marcó por error). El justificante sigue en el archivo. */
 export default defineEventHandler(async (event) => {
-  const { company, user } = await requireCompany(event)
+  const { company, user } = await requireCompanyOrAdvisor(event, 'taxes')
   const id = idParam(event)
   const db = useDb()
   const r = await db.delete(tables.taxFilings).where(and(eq(tables.taxFilings.id, id), eq(tables.taxFilings.companyId, company.id)))

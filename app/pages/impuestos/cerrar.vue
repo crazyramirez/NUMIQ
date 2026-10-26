@@ -23,7 +23,9 @@ const route = useRoute()
 const router = useRouter()
 const { href: taxesHref, back, label: backText } = useBackTo('/impuestos')
 const toast = useToast()
-const { readOnly } = useMe()
+const { readOnly, canUpload } = useMe()
+// Presentar y marcar pagado: el gestor, si la empresa le deja llevar los impuestos
+const canFile = computed(() => canUpload('taxes'))
 
 const sel = ref<{ year?: number, quarter?: number }>({
   year: Number(route.query.anio) || undefined,
@@ -176,8 +178,8 @@ const outcome = (m: Model) => (m.result > 0 ? 'a ingresar' : m.result < 0 ? (m.m
                 <span v-if="m.filing?.csv" class="st-csv mono">CSV {{ m.filing.csv }}</span>
               </p>
             </div>
-            <!-- El gestor ve las casillas, pero no registra presentaciones ni pagos -->
-            <div v-if="readOnly && !m.nothing" class="st-acts">
+            <!-- El gestor sin permiso para los impuestos ve las casillas, pero no registra presentaciones ni pagos -->
+            <div v-if="!canFile && !m.nothing" class="st-acts">
               <UiButton size="sm" variant="ghost" icon="ph:list-numbers" @click="present(m)">Ver casillas</UiButton>
             </div>
             <div v-else-if="!m.nothing" class="st-acts">
@@ -187,7 +189,7 @@ const outcome = (m: Model) => (m.result > 0 ? 'a ingresar' : m.result < 0 ? (m.m
             </div>
           </li>
         </ul>
-        <p v-if="!readOnly" class="hint">«Presentar» te da las casillas ya calculadas y te lleva al formulario oficial de la AEAT. Al terminar, sube el justificante y queda guardado.</p>
+        <p v-if="canFile" class="hint">«Presentar» te da las casillas ya calculadas y te lleva al formulario oficial de la AEAT. Al terminar, sube el justificante y queda guardado.</p>
       </section>
 
       <!-- 3 · Gestoría -->

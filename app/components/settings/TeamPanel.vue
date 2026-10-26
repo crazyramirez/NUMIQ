@@ -15,7 +15,7 @@ const ROLES: Record<Role, { label: string, hint: string, tone: Tone, icon: strin
   owner: { label: 'Propietario', hint: 'Control total de la empresa', tone: 'brand', icon: 'ph:crown-simple' },
   admin: { label: 'Administrador', hint: 'Todo, también equipo y ajustes', tone: 'info', icon: 'ph:shield-check' },
   member: { label: 'Equipo', hint: 'Facturas, presupuestos y gastos', tone: 'neutral', icon: 'ph:user' },
-  advisor: { label: 'Gestor', hint: 'Consulta datos, informes e impuestos; no emite ni borra', tone: 'ai', icon: 'ph:briefcase' },
+  advisor: { label: 'Gestor', hint: 'Consulta todo y sube lo que le permitas (nóminas, impuestos…); no emite ni borra', tone: 'ai', icon: 'ph:briefcase' },
 }
 const roleOptions = (owner: boolean) => (['admin', 'member', 'advisor', ...(owner ? ['owner'] : [])] as Role[]).map(r => ({ value: r, label: ROLES[r].label }))
 
@@ -169,6 +169,7 @@ async function remove(m: Member) {
       </div>
     </UiCard>
 
+    <SettingsAdvisorAccessCard :can-edit="data.canManage" />
     <SettingsApprovalsCard :can-edit="data.canManage" />
 
     <div v-if="data.canManage" class="roles">
