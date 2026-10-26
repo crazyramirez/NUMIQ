@@ -426,7 +426,7 @@ export async function linkCandidates(companyId: number, id: number, opts: LinkCa
   let aiError: string | null = null
   const ai = new Map<number, { confidence: number, reason: string }>()
   const toReview = ranked.filter(c => !c.linked).slice(0, 6)
-  if (opts.ai && !search && toReview.length && aiEnabled()) {
+  if (opts.ai && !search && toReview.length && await aiEnabled()) {
     try {
       const result = await aiReview(
         { doc, party, lines: lines.get(doc.id)! },

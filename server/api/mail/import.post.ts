@@ -6,7 +6,7 @@ const schema = z.object({ ids: z.array(z.number().int().positive()).min(1, 'Elig
 /** Importa con IA los adjuntos de los correos elegidos */
 export default defineEventHandler(async (event) => {
   const { company, user, role } = await requireCompany(event)
-  if (!aiEnabled()) throw createError({ statusCode: 503, statusMessage: 'La IA no está configurada: añade NUXT_OPENAI_API_KEY en el .env' })
+  await requireAi()
   const { ids } = await readInput(event, schema)
   // Solo correos que este usuario puede ver
   const m = tables.mailMessages

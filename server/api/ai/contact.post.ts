@@ -36,7 +36,7 @@ Devuelve solo lo que aparezca; si no aparece, null. No inventes.
 /** Alta rápida de contactos: lee sus datos de un texto pegado, una foto o un PDF */
 export default defineEventHandler(async (event) => {
   await requireCompany(event)
-  if (!aiEnabled()) throw createError({ statusCode: 503, statusMessage: 'La IA no está configurada: añade NUXT_OPENAI_API_KEY en el .env' })
+  await requireAi()
   const parts: AiPart[] = []
   const ct = getRequestHeader(event, 'content-type') ?? ''
   if (ct.includes('multipart/form-data')) {

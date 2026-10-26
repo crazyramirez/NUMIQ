@@ -65,6 +65,11 @@ export const users = mysqlTable('users', {
   avatarUrl: varchar('avatar_url', { length: 500 }),
   /** Empresa con la que trabaja ahora (un usuario puede llevar varias: gestor, varios negocios) */
   currentCompanyId: int('current_company_id'),
+  /** Clave de OpenAI propia, cifrada con AES-256-GCM (base64): nunca se guarda ni se devuelve en claro */
+  openaiKey: text('openai_key'),
+  /** Principio y final de la clave («sk-…a1b2»), para reconocerla en Ajustes */
+  openaiKeyHint: varchar('openai_key_hint', { length: 20 }),
+  openaiKeyAt: datetime('openai_key_at'),
   emailVerifiedAt: datetime('email_verified_at'),
   lastLoginAt: datetime('last_login_at'),
   createdAt: createdAt(),

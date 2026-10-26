@@ -66,7 +66,7 @@ export async function readStatement(file: { name: string, data: Buffer }): Promi
     throw createError({ statusCode: 422, statusMessage: BAD_FILE })
   }
   let parsed = parseBankSheets(sheets)
-  if (!parsed && aiEnabled()) parsed = await columnsWithAi(sheets).catch(() => null)
+  if (!parsed && await aiEnabled()) parsed = await columnsWithAi(sheets).catch(() => null)
   if (!parsed?.rows.length) throw createError({ statusCode: 422, statusMessage: BAD_FILE })
   return parsed
 }

@@ -104,8 +104,7 @@ export default defineNuxtConfig({
     databaseUrl: 'mysql://root:@127.0.0.1:3308/numiq',
     autoMigrate: true,
     uploadsDir: './storage/uploads',
-    // IA (OpenAI): lectura de facturas, tickets y fotos, importación y recomendaciones
-    openaiApiKey: '',
+    // IA (OpenAI): cada usuario pega su clave en Ajustes → Inteligencia artificial (se guarda cifrada)
     // Lectura de documentos (rápido y preciso) y segunda lectura si los importes no cuadran
     openaiModel: 'gpt-5.4-mini',
     openaiProModel: 'gpt-5.5',
@@ -115,7 +114,7 @@ export default defineNuxtConfig({
     openaiChatModel: 'gpt-5.5',
     // Tarifas propias en USD por millón de tokens si OpenAI cambia un precio: {"gpt-5.5":[5,0.5,30]}
     openaiPrices: '',
-    // Clave para custodiar cifrados los certificados digitales (si falta, se deriva de la de sesión)
+    // Clave para custodiar cifrados los certificados digitales y las claves de OpenAI (si falta, se deriva de la de sesión)
     certSecret: '',
     // VeriFactu: datos del productor del software (por defecto, la propia empresa usuaria)
     verifactuProducerName: '',

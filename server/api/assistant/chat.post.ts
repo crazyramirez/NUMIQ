@@ -24,7 +24,7 @@ function chatRateLimit(userId: number) {
  */
 export default defineEventHandler(async (event) => {
   const { company, user, role } = await requireCompany(event, 'advisor')
-  if (!aiEnabled()) throw createError({ statusCode: 503, statusMessage: 'La IA no está configurada: añade NUXT_OPENAI_API_KEY en el .env' })
+  await requireAi()
   const input = await readInput(event, schema)
   chatRateLimit(user.id)
   const db = useDb()

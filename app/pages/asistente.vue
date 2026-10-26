@@ -404,7 +404,7 @@ function messageCtx(m: Message, e: MouseEvent): CtxSpec | null {
               <span>{{ s.text }}</span>
             </button>
           </div>
-          <p v-else class="no-ai"><Icon name="ph:warning-fill" aria-hidden="true" /> Configura la clave de OpenAI (NUXT_OPENAI_API_KEY) para activar el asistente.</p>
+          <p v-else class="no-ai"><Icon name="ph:warning-fill" aria-hidden="true" /> <span>Para activar el asistente, añade tu clave de OpenAI en <NuxtLink to="/ajustes?s=ia" class="link">Ajustes → Inteligencia artificial</NuxtLink>.</span></p>
         </div>
 
         <template v-else>
@@ -686,10 +686,19 @@ function messageCtx(m: Message, e: MouseEvent): CtxSpec | null {
 
 .no-ai {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
+  max-width: 460px;
   margin-top: var(--s-5);
+  text-align: left;
   color: var(--warning);
+}
+
+.no-ai .iconify {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
 }
 
 .msg {

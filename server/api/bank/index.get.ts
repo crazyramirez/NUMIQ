@@ -85,6 +85,6 @@ export default defineEventHandler(async (event) => {
             : null,
       }
     }),
-    ai: aiEnabled(),
+    ai: await aiEnabled(),
   }
 })

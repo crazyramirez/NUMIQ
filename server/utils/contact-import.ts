@@ -71,7 +71,7 @@ interface Working {
 }
 
 async function runContactImport(input: ContactImportInput, progress: (phase: ContactImportPhase, done: number, total: number) => void): Promise<ContactImportResult> {
-  const ai = aiEnabled()
+  const ai = await aiEnabled()
   const { company } = input
   const files: ContactImportFile[] = []
   const read: ReadContact[] = []

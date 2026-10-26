@@ -42,7 +42,7 @@ onMounted(() => revealSection(false))
 
 const { data: company, status, error, refresh } = await useFetch('/api/companies/current', { lazy: true })
 const { data: series, refresh: refreshSeries } = await useFetch<any[]>('/api/series', { lazy: true })
-const { data: ai } = await useFetch('/api/ai/status', { lazy: true })
+const { data: ai, refresh: refreshAi } = await useFetch('/api/ai/status', { lazy: true })
 
 // ─── Edición de Series de Numeración ───
 const seriesModalOpen = ref(false)
@@ -541,14 +541,7 @@ function onDesignSaved(accent: string) {
                 </div>
                 <UiBadge v-if="ai" :tone="ai.configured ? 'success' : 'warning'" dot>{{ ai.configured ? 'Conectada' : 'Sin configurar' }}</UiBadge>
               </div>
-              <div v-if="ai && !ai.configured" class="ai-setup">
-                <p class="ai-setup-t">Cómo activarla</p>
-                <ol>
-                  <li>Crea una clave en <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener" class="link">platform.openai.com</a>.</li>
-                  <li>Añádela al archivo <span class="mono">.env</span> del servidor: <span class="mono">NUXT_OPENAI_API_KEY=sk-…</span></li>
-                  <li>Reinicia NUMIQ. La clave nunca sale del servidor.</li>
-                </ol>
-              </div>
+              <SettingsAiKeyPanel v-if="ai" :status="ai" @changed="refreshAi" />
             </UiCard>
             <SettingsAiCostPanel v-if="section === 'ia' && canEdit" class="rise" style="--i: 3" />
             <div class="features rise" style="--i: 4">
@@ -980,27 +973,6 @@ fieldset {
   font-size: var(--text-sm);
   color: var(--text-3);
   line-height: 1.55;
-}
-
-.ai-setup {
-  margin-top: var(--s-5);
-  padding: var(--s-4) var(--s-5);
-  background: var(--surface);
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--r-lg);
-}
-
-.ai-setup-t {
-  font-weight: 600;
-  margin-bottom: 6px;
-}
-
-.ai-setup ol {
-  display: grid;
-  gap: 4px;
-  padding-left: 1.2em;
-  font-size: var(--text-sm);
-  color: var(--text-2);
 }
 
 /* ─── Diseño ─── */

@@ -1,6 +1,6 @@
 /**
- * IA con OpenAI (Responses API). La clave nunca sale del servidor ni se registra.
- * Salida en JSON con esquema estricto: el modelo no puede devolver campos inventados ni texto suelto.
+ * IA con OpenAI (Responses API), con la clave de cada usuario (ai-key.ts). La clave nunca sale del servidor
+ * ni se registra. Salida en JSON con esquema estricto: el modelo no puede devolver campos inventados ni texto suelto.
  */
 
 const ENDPOINT = 'https://api.openai.com/v1/responses'
@@ -8,14 +8,19 @@ const ENDPOINT = 'https://api.openai.com/v1/responses'
 export function aiSettings() {
   const c = useRuntimeConfig()
   return {
-    apiKey: String(c.openaiApiKey || ''),
     model: String(c.openaiModel || 'gpt-5.4-mini'),
     proModel: String(c.openaiProModel || 'gpt-5.5'),
     concurrency: Math.min(Math.max(Number(c.openaiConcurrency) || 4, 1), 12),
   }
 }
 
-export const aiEnabled = () => !!aiSettings().apiKey
+/** ¿Tiene clave de OpenAI quien hace la petición (suya o del titular de la empresa)? */
+export const aiEnabled = async () => !!(await currentAiKey())
+
+/** Corta la petición si quien la hace no tiene clave de OpenAI */
+export async function requireAi(message = MISSING_AI_KEY) {
+  if (!(await aiEnabled())) throw createError({ statusCode: 503, statusMessage: message })
+}
 
 export type AiPart =
   | { type: 'input_text', text: string }
@@ -60,7 +65,7 @@ function reasoningFor(model: string, effort?: AiEffort) {
 
 function friendlyError(status: number, body: { error?: { message?: string, code?: string, type?: string } } | null) {
   const code = body?.error?.code ?? body?.error?.type
-  if (status === 401) return new AiError('La clave de OpenAI no es válida o ha caducado', 503)
+  if (status === 401) return new AiError('La clave de OpenAI no es válida o ha caducado: revísala en Ajustes → Inteligencia artificial', 503)
   if (code === 'insufficient_quota') return new AiError('La cuenta de OpenAI no tiene saldo disponible', 503)
   if (status === 429) return new AiError('La IA está saturada en este momento: inténtalo en unos segundos', 429)
   if (status === 404 || code === 'model_not_found') return new AiError('El modelo de IA configurado no está disponible para esta clave', 503)
@@ -73,7 +78,8 @@ const wait = (ms: number) => new Promise(r => setTimeout(r, ms))
 /** Llama a la IA y devuelve el JSON validado por el esquema. Reintenta saturación y errores temporales. */
 export async function aiJson<T>(req: AiJsonRequest): Promise<AiJsonResult<T>> {
   const s = aiSettings()
-  if (!s.apiKey) throw new AiError('La IA no está configurada: añade NUXT_OPENAI_API_KEY en el .env', 503)
+  const apiKey = (await currentAiKey())?.key
+  if (!apiKey) throw new AiError(MISSING_AI_KEY, 503)
   const model = req.model ?? s.model
   const body = JSON.stringify({
     model,
@@ -97,7 +103,7 @@ export async function aiJson<T>(req: AiJsonRequest): Promise<AiJsonResult<T>> {
     try {
       res = await fetch(ENDPOINT, {
         method: 'POST',
-        headers: { 'authorization': `Bearer ${s.apiKey}`, 'content-type': 'application/json' },
+        headers: { 'authorization': `Bearer ${apiKey}`, 'content-type': 'application/json' },
         body,
         signal: AbortSignal.timeout(req.timeoutMs ?? 180_000),
       })

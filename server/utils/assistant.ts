@@ -783,13 +783,14 @@ function chatModel() {
 }
 
 async function streamOnce(input: unknown[], tools: unknown[], onDelta: (t: string) => void, signal: AbortSignal, cacheKey: string): Promise<StreamResult> {
-  const s = aiSettings()
+  const apiKey = (await currentAiKey())?.key
+  if (!apiKey) throw new AiError(MISSING_AI_KEY, 503)
   const model = chatModel()
   const t0 = Date.now()
   const reasoning = /^(gpt-5|gpt-6|o\d)/.test(model)
   const res = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
-    headers: { 'authorization': `Bearer ${s.apiKey}`, 'content-type': 'application/json' },
+    headers: { 'authorization': `Bearer ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
       model,
       input,
@@ -805,7 +806,7 @@ async function streamOnce(input: unknown[], tools: unknown[], onDelta: (t: strin
   })
   if (!res.ok || !res.body) {
     const body = await res.json().catch(() => null) as { error?: { message?: string, code?: string } } | null
-    if (res.status === 401) throw new AiError('La clave de OpenAI no es válida', 503)
+    if (res.status === 401) throw new AiError('La clave de OpenAI no es válida o ha caducado: revísala en Ajustes → Inteligencia artificial', 503)
     if (res.status === 429) throw new AiError(body?.error?.code === 'insufficient_quota' ? 'La cuenta de OpenAI no tiene saldo' : 'La IA está saturada: inténtalo en unos segundos', 429)
     throw new AiError(body?.error?.message ?? 'El servicio de IA no responde', 502)
   }

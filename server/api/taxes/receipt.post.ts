@@ -39,7 +39,7 @@ Devuelve solo lo que figure en el documento, o null:
 /** Lee con IA el justificante de presentación (PDF o foto) y lo guarda en el archivo del trimestre */
 export default defineEventHandler(async (event) => {
   const { company, user } = await requireCompany(event)
-  if (!aiEnabled()) throw createError({ statusCode: 503, statusMessage: 'La IA no está configurada: introduce los datos del justificante a mano' })
+  await requireAi('Sin clave de OpenAI no se puede leer el justificante: introduce sus datos a mano o añade tu clave en Ajustes → Inteligencia artificial')
   const parts = (await readMultipartFormData(event)) ?? []
   const file = parts.find(p => p.name === 'file' && p.data?.length)
   if (!file) throw createError({ statusCode: 400, statusMessage: 'Elige el justificante (PDF o foto)' })

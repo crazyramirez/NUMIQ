@@ -134,7 +134,7 @@ Cuenta de demostración con datos ficticios. Las imágenes siguen el tema claro 
 - **Zod 4** para validar las entradas de la API y **nuxt-auth-utils** para sesiones en cookie cifrada.
 - **pdfmake** para los PDF, **SheetJS** para los Excel y **fflate** para los ZIP.
 - **nodemailer** (SMTP) para el correo y **web-push** para las notificaciones.
-- **OpenAI** para leer documentos y para el asistente.
+- **OpenAI** para leer documentos y para el asistente, con la clave de cada usuario guardada cifrada.
 - **Passkeys** con **@simplewebauthn**, a través de nuxt-auth-utils.
 - **pdf.js**, **pdf-lib** y **docx-preview** para las vistas previas de documentos, y **exifr** para sus fechas.
 - **MapLibre GL** con mapas de OpenFreeMap y direcciones de CartoCiudad (IGN).
@@ -179,7 +179,7 @@ Plantilla completa y comentada en [`.env.example`](.env.example). Las claves rea
 | `DB_HOST` `DB_PORT` `DB_USER` `DB_PASSWORD` `DB_NAME` `DB_SOCKET` | Alternativa por partes (útil en Plesk). Tienen prioridad sobre la URL y la contraseña no necesita codificarse. |
 | `NUXT_UPLOADS_DIR` | Carpeta de archivos subidos (por defecto `./storage/uploads`). |
 | `NUXT_SITE_URL` | URL pública para los enlaces de los correos y la imagen al compartir un enlace (`og:image`, se fija al compilar), sin barra final. |
-| `NUXT_OPENAI_API_KEY` | IA: lectura de documentos, importación, relleno de contactos y asistente. |
+| `NUXT_CERT_SECRET` | Recomendada: 32 o más caracteres para cifrar en la base de datos los certificados y las claves de OpenAI de los usuarios. Si falta se usa la de sesión, y cambiar esta obligaría a volver a pegarlas. |
 | `NUXT_OPENAI_MODEL` · `NUXT_OPENAI_PRO_MODEL` · `NUXT_OPENAI_CHAT_MODEL` · `NUXT_OPENAI_CONCURRENCY` | Opcionales: modelo de lectura rápida, modelo de segunda lectura cuando los importes no cuadran, modelo del asistente y documentos leídos en paralelo. |
 | `NUXT_OPENAI_PRICES` | Opcional: tarifas en USD por millón de tokens (`{"gpt-5.5":[5,0.5,30]}`: entrada, caché, salida) si OpenAI cambia un precio. El coste de la IA (Ajustes → Inteligencia artificial) se calcula con ellas. |
 | `GOOGLE_APP_EMAIL` · `GOOGLE_APP_PASSWORD` | Correo con Gmail o Workspace (contraseña de aplicación) para enviar por SMTP. |
@@ -188,7 +188,7 @@ Plantilla completa y comentada en [`.env.example`](.env.example). Las claves rea
 | `NUXT_VAPID_PUBLIC_KEY` · `NUXT_VAPID_PRIVATE_KEY` | Opcionales: claves de las notificaciones push. Si faltan, se generan una vez y se guardan junto a la carpeta de subidas. |
 | `NUXT_RECURRING_DISABLED` · `NUXT_REMINDERS_DISABLED` · `NUXT_PUSH_DEADLINES_DISABLED` · `NUXT_CALENDAR_REMINDERS_DISABLED` | `true` apaga la tarea programada correspondiente. |
 
-Sin `NUXT_OPENAI_API_KEY` la app funciona, pero sin las funciones de IA. Sin el correo configurado no sale ningún email: la verificación de cuenta se omite y los envíos quedan registrados como no enviados («Sin configurar»).
+La IA no se configura en el servidor: cada usuario pega su clave de OpenAI en Ajustes → Inteligencia artificial, se comprueba con OpenAI y se guarda cifrada (AES-256-GCM); nunca vuelve al navegador. Los miembros del equipo sin clave propia usan la del titular de la empresa. Sin ninguna clave la app funciona, pero sin las funciones de IA. Sin el correo configurado no sale ningún email: la verificación de cuenta se omite y los envíos quedan registrados como no enviados («Sin configurar»).
 
 ---
 

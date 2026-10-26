@@ -214,7 +214,7 @@ useHead({ title: () => `Importar ${noun.value} · NUMIQ` })
 
         <p v-if="!ai?.configured" class="ci-noai">
           <Icon name="ph:warning-fill" aria-hidden="true" />
-          Sin IA configurada solo se leen Excel y CSV con cabecera, y sin revisión inteligente.
+          <span>Sin clave de OpenAI solo se leen Excel y CSV con cabecera, y sin revisión inteligente. Añádela en <NuxtLink to="/ajustes?s=ia" class="link">Ajustes → Inteligencia artificial</NuxtLink>.</span>
         </p>
         <p v-if="startError" class="ci-err" role="alert"><Icon name="ph:warning-circle-fill" aria-hidden="true" /> {{ startError }}</p>
 
@@ -406,8 +406,15 @@ useHead({ title: () => `Importar ${noun.value} · NUMIQ` })
 }
 
 .ci-noai {
+  align-items: flex-start;
   color: var(--warning);
   background: var(--warning-soft);
+}
+
+.ci-noai .iconify {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
 }
 
 .ci-err {

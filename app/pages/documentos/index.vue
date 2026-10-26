@@ -189,7 +189,7 @@ const TYPES = ['PDF', 'Fotos', 'Word', 'Excel', 'CSV', 'ZIP', 'Carpetas']
 
         <p v-if="!ai.configured" class="no-ai">
           <Icon name="ph:warning-fill" aria-hidden="true" />
-          La IA no está configurada: añade <code>NUXT_OPENAI_API_KEY</code> en el archivo .env del servidor.
+          <span>Para importar con IA, añade tu clave de OpenAI en <NuxtLink to="/ajustes?s=ia" class="link">Ajustes → Inteligencia artificial</NuxtLink>.</span>
         </p>
 
         <div class="opts">
@@ -360,7 +360,7 @@ const TYPES = ['PDF', 'Fotos', 'Word', 'Excel', 'CSV', 'ZIP', 'Carpetas']
 
 .no-ai {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   margin-top: var(--s-3);
   padding: 10px 12px;
@@ -368,6 +368,13 @@ const TYPES = ['PDF', 'Fotos', 'Word', 'Excel', 'CSV', 'ZIP', 'Carpetas']
   color: var(--warning);
   background: var(--warning-soft);
   border-radius: var(--r-lg);
+}
+
+.no-ai .iconify {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
 }
 
 .opts {

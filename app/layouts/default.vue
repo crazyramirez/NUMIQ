@@ -53,6 +53,39 @@ function pageMenu(e: MouseEvent): CtxSpec | null {
     ],
   }
 }
+
+// Aviso de la actualización: la clave de OpenAI pasa del .env a cada usuario. Una vez por usuario y dispositivo,
+// solo a quien aún no ha pegado la suya
+const toast = useToast()
+onMounted(() => {
+  let checked = false
+  watch(() => me.value?.company?.id, async (companyId) => {
+    // En Ajustes → IA ya se ve el formulario: el aviso sobra
+    if (!companyId || checked || (route.path === '/ajustes' && route.query.s === 'ia')) return
+    checked = true
+    const seenKey = `numiq-ai-key-notice-${me.value!.user.id}`
+    try {
+      if (localStorage.getItem(seenKey)) return
+    }
+    catch {
+      return
+    }
+    const ai = await $fetch('/api/ai/status').catch(() => null)
+    if (!ai || ai.own) return
+    try {
+      localStorage.setItem(seenKey, '1')
+    }
+    catch {}
+    toast.push({
+      tone: 'info',
+      title: 'La IA ahora usa tu propia clave de OpenAI',
+      body: ai.source === 'owner'
+        ? `Ya no va en el .env del servidor: cada usuario puede usar la suya. Ahora usas la de ${ai.ownerName}; si prefieres la tuya, añádela en Ajustes → Inteligencia artificial. Se guarda cifrada.`
+        : 'Para usar la IA, añade tu clave en Ajustes → Inteligencia artificial: ya no va en el .env del servidor y cada usuario usa la suya. Se guarda cifrada.',
+      action: { label: 'Añadir clave', run: () => navigateTo('/ajustes?s=ia') },
+    }, 0)
+  }, { immediate: true })
+})
 </script>
 
 <template>

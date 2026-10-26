@@ -269,7 +269,7 @@ export async function suggestMatches(company: Company, ids?: number[]) {
     results.set(tx.id, best)
   }
 
-  if (aiEnabled()) {
+  if (await aiEnabled()) {
     // IA: la factura (o facturas) que paga cada abono sin propuesta clara, entre las que nadie más se lleva
     const unsure = txs.filter((tx) => {
       const s = results.get(tx.id)

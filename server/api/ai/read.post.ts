@@ -1,7 +1,7 @@
 /** Escaneo rápido: lee una factura o ticket (foto, PDF o Word) y devuelve los datos para revisarlos */
 export default defineEventHandler(async (event) => {
   const { company, user } = await requireCompany(event)
-  if (!aiEnabled()) throw createError({ statusCode: 503, statusMessage: 'La IA no está configurada: añade NUXT_OPENAI_API_KEY en el .env' })
+  await requireAi()
   const parts = (await readMultipartFormData(event)) ?? []
   const file = parts.find(p => p.name === 'file' && p.data?.length)
   if (!file) throw createError({ statusCode: 400, statusMessage: 'Elige una foto o un documento' })

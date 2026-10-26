@@ -57,7 +57,7 @@ export async function readContactSource(name: string, data: Buffer, ctx: Contact
     return done(await extractContacts(textChunks(text!).map((t, i, all) => ({ label: all.length > 1 ? `parte ${i + 1}` : null, parts: [{ type: 'input_text', text: t }] })), name, ctx))
   }
 
-  if (!ctx.ai) throw new AiError('Para leer PDF, fotos o Word hace falta la IA (NUXT_OPENAI_API_KEY). Las hojas de Excel y CSV se leen sin ella.', 503)
+  if (!ctx.ai) throw new AiError('Para leer PDF, fotos o Word hace falta la IA: añade tu clave de OpenAI en Ajustes → Inteligencia artificial. Las hojas de Excel y CSV se leen sin ella.', 503)
   if (kind.family === 'pdf') return done(await extractContacts(await pdfChunks(data, name), name, ctx))
   if (kind.family === 'word') {
     const content = kind.ext === 'doc' ? readLegacyDoc(data) : readWordZip(data, kind.ext)
@@ -487,7 +487,7 @@ Devuelve uno por contacto, en el orden en que aparecen, sin saltarte ninguno. No
 No incluyas a la empresa usuaria (la que importa) ni filas de cabecera o totales.`
 
 async function extractContacts(chunks: Array<{ label: string | null, parts: AiPart[] }>, fileName: string, ctx: ContactReadContext): Promise<ReadContact[]> {
-  if (!ctx.ai) throw new AiError('Para leer este archivo hace falta la IA (NUXT_OPENAI_API_KEY)', 503)
+  if (!ctx.ai) throw new AiError('Para leer este archivo hace falta la IA: añade tu clave de OpenAI en Ajustes → Inteligencia artificial', 503)
   let done = 0
   ctx.progress('extract', 0, chunks.length)
   const company = `Empresa usuaria (no la incluyas): ${ctx.company.legalName}${ctx.company.nif ? `, NIF ${ctx.company.nif}` : ''}.`
