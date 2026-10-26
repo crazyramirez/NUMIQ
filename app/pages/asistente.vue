@@ -236,14 +236,26 @@ function onKey(e: KeyboardEvent) {
 }
 
 // ─── Móvil: el chat ocupa justo lo que se ve ───
-// Con el teclado abierto, encima de él; al cerrarlo, la pantalla vuelve a su sitio
+// Con el teclado abierto, encima de él; al cerrarlo, la pantalla vuelve a su sitio.
+// Al enfocar, el navegador desplaza la página para enseñar el campo antes de que el chat se encoja,
+// y ese desplazamiento lo dejaba demasiado arriba: con teclado el chat se fija a la zona visible
 const viewH = ref<number | null>(null)
+const viewTop = ref(0)
 const keyboard = ref(false)
 function fitViewport() {
   const vv = window.visualViewport
   if (!vv) return
+  const was = keyboard.value
+  const h = Math.round(vv.height)
   keyboard.value = window.innerHeight - vv.height > 120
-  viewH.value = Math.round(vv.height)
+  viewTop.value = Math.round(vv.offsetTop)
+  // Teclado cerrado sin perder el foco (botón atrás de Android): la página vuelve arriba
+  if (was && !keyboard.value) window.scrollTo({ top: 0 })
+  if (h !== viewH.value) {
+    viewH.value = h
+    // Si estabas al final, la última respuesta sigue a la vista sobre el teclado
+    nextTick(() => scrollDown())
+  }
 }
 function onBlur() {
   // Tras cerrar el teclado, iOS deja la página desplazada: se devuelve arriba
@@ -254,9 +266,13 @@ function onBlur() {
 }
 onMounted(() => {
   window.visualViewport?.addEventListener('resize', fitViewport)
+  window.visualViewport?.addEventListener('scroll', fitViewport)
   fitViewport()
 })
-onBeforeUnmount(() => window.visualViewport?.removeEventListener('resize', fitViewport))
+onBeforeUnmount(() => {
+  window.visualViewport?.removeEventListener('resize', fitViewport)
+  window.visualViewport?.removeEventListener('scroll', fitViewport)
+})
 
 // Enlaces internos de las respuestas: navegación sin recargar
 function onContentClick(e: MouseEvent) {
@@ -327,7 +343,7 @@ function messageCtx(m: Message, e: MouseEvent): CtxSpec | null {
 </script>
 
 <template>
-  <div class="ai-page" :class="{ kb: keyboard }" :style="viewH ? { '--view-h': `${viewH}px` } : undefined">
+  <div class="ai-page" :class="{ kb: keyboard }" :style="viewH ? { '--view-h': `${viewH}px`, '--view-top': `${viewTop}px` } : undefined">
     <!-- Historial (escritorio) -->
     <aside class="side">
       <UiButton variant="secondary" icon="ph:plus" block @click="open(null)">Nueva conversación</UiButton>
@@ -577,6 +593,7 @@ function messageCtx(m: Message, e: MouseEvent): CtxSpec | null {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: var(--s-6) var(--s-6) var(--s-4);
   scroll-behavior: smooth;
 }
@@ -955,14 +972,21 @@ textarea {
 }
 
 /* Con barra inferior (móvil y tablet estrecha): lo visible menos la barra de arriba y la de abajo;
-   con el teclado abierto, la de abajo queda bajo él */
+   con el teclado abierto, fijado a la zona visible (la barra de abajo queda bajo el teclado y la de arriba,
+   desplazada por el navegador, se tapa) */
 @media (max-width: 767px) {
   .ai-page {
     height: calc(var(--view-h, 100dvh) - var(--topbar-h) - var(--bnav) - var(--safe-b));
   }
 
   .ai-page.kb {
-    height: calc(var(--view-h, 100dvh) - var(--topbar-h));
+    position: fixed;
+    top: var(--view-top, 0px);
+    left: 0;
+    right: 0;
+    z-index: calc(var(--z-sticky) + 1);
+    height: var(--view-h, 100dvh);
+    background: var(--bg);
   }
 }
 

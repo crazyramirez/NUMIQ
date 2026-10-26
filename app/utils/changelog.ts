@@ -20,6 +20,7 @@ export interface ChangeEntry {
 
 export const CHANGELOG: readonly ChangeEntry[] = Object.freeze([
   // ─── 26 de octubre de 2026 ───
+  { at: '2026-10-26T14:42', kind: 'fixed', area: 'Asistente IA', icon: 'ph:keyboard', title: 'El chat del asistente, bien colocado con el teclado del móvil', body: 'Al escribir, el campo queda justo encima del teclado y la conversación ocupa todo lo que se ve, sin que la pantalla se desplace hacia arriba. Al cerrar el teclado, todo vuelve a su sitio.', to: '/asistente' },
   { at: '2026-10-26T12:50', kind: 'improved', area: 'Asistente IA', icon: 'ph:magic-wand', title: 'El asistente cambia cualquier dato, también los importes', body: 'Pídele «pon todas las nóminas a 1.500 € brutos», «la factura de Endesa fueron 145,20 € con IVA», «añade una línea de 15 € y quita la del hosting», «deja la factura en 1.000 € de base», «quítale el pago», «acepta el presupuesto y conviértelo en factura» o «sube la iguala recurrente a 300 € desde diciembre». Prepara el cambio con los importes recalculados al céntimo, te avisa de lo importante y lo aplicas con un toque (y se puede deshacer).', to: '/asistente' },
   { at: '2026-10-26T00:10', kind: 'improved', area: 'Facturas', icon: 'ph:eye', title: 'Ver el PDF, a un toque en cada factura', body: 'Arriba de cada factura y presupuesto, una barra de iconos: editar, ver el PDF, descargarlo, enviarlo y más acciones. Al pasar el ratón ves el nombre de cada uno. Los borradores también se ven y se descargan en PDF, con la marca BORRADOR.', to: '/facturas' },
   // ─── 25 de octubre de 2026 ───
