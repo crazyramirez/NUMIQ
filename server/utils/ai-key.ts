@@ -11,6 +11,9 @@ export interface AiKey {
   source: 'own' | 'owner'
   /** Titular de la empresa que presta su clave */
   ownerName: string | null
+  /** Quien paga en OpenAI: el propio usuario o el titular */
+  userId: number
+  hint: string | null
 }
 
 export const MISSING_AI_KEY = 'Añade tu clave de OpenAI en Ajustes → Inteligencia artificial para usar la IA'
@@ -37,17 +40,17 @@ export function aiKeyHint(key: string) {
 
 export async function findAiKey(userId: number, companyId: number | null): Promise<AiKey | null> {
   const db = useDb()
-  const [own] = await db.select({ key: tables.users.openaiKey }).from(tables.users).where(eq(tables.users.id, userId))
+  const [own] = await db.select({ key: tables.users.openaiKey, hint: tables.users.openaiKeyHint }).from(tables.users).where(eq(tables.users.id, userId))
   const key = openAiKey(own?.key)
-  if (key) return { key, source: 'own', ownerName: null }
+  if (key) return { key, source: 'own', ownerName: null, userId, hint: own!.hint }
   if (!companyId) return null
-  const [owner] = await db.select({ name: tables.users.name, key: tables.users.openaiKey })
+  const [owner] = await db.select({ id: tables.users.id, name: tables.users.name, key: tables.users.openaiKey, hint: tables.users.openaiKeyHint })
     .from(tables.companyMembers)
     .innerJoin(tables.users, eq(tables.users.id, tables.companyMembers.userId))
     .where(and(eq(tables.companyMembers.companyId, companyId), eq(tables.companyMembers.role, 'owner'), isNotNull(tables.users.openaiKey)))
     .limit(1)
   const ownerKey = openAiKey(owner?.key)
-  return ownerKey ? { key: ownerKey, source: 'owner', ownerName: owner!.name } : null
+  return ownerKey ? { key: ownerKey, source: 'owner', ownerName: owner!.name, userId: owner!.id, hint: owner!.hint } : null
 }
 
 /**

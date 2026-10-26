@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, lte, sql } from 'drizzle-orm'
+import { and, count, desc, eq, gte, inArray, isNotNull, lte, sql } from 'drizzle-orm'
 import type { SQL } from 'drizzle-orm'
 import { z } from 'zod'
 import type { AiMoney, AiUsageReport, AiUsageTotals } from '../../../shared/utils/ai-usage'
@@ -7,8 +7,8 @@ const query = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   group: z.enum(['day', 'week', 'month']).default('day'),
-  /** app: todas las empresas (solo el titular de la app) */
-  scope: z.enum(['company', 'app']).default('company'),
+  /** key: lo pagado con la clave de OpenAI de quien mira, en todas sus empresas; app: todas las empresas (solo el titular de la app) */
+  scope: z.enum(['company', 'key', 'app']).default('company'),
 })
 
 const iso = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
@@ -17,7 +17,7 @@ const addDays = (day: string, n: number) => iso(new Date(utc(day).getTime() + n 
 const monday = (day: string) => addDays(day, -((utc(day).getUTCDay() + 6) % 7))
 const lastOfMonth = (ym: string) => iso(new Date(Date.UTC(Number(ym.slice(0, 4)), Number(ym.slice(5, 7)), 0)))
 
-const emptyTotals = (): AiUsageTotals => ({ usd: 0, eur: 0, calls: 0, input: 0, cached: 0, output: 0, reasoning: 0, estimatedUsd: 0, estimatedEur: 0, errors: 0 })
+const emptyTotals = (): AiUsageTotals => ({ usd: 0, eur: 0, calls: 0, input: 0, cached: 0, output: 0, reasoning: 0, estimatedUsd: 0, estimatedEur: 0, cutUsd: 0, cutEur: 0, errors: 0 })
 function add(t: AiUsageTotals, r: AiUsageTotals) {
   for (const k of Object.keys(t) as Array<keyof AiUsageTotals>) t[k] += r[k]
   return t
@@ -30,9 +30,14 @@ export default defineEventHandler(async (event): Promise<AiUsageReport> => {
   const p = readQueryInput(event, query)
   const canSeeApp = canSeeAppAiCost(user, role)
   const app = p.scope === 'app' && canSeeApp
+  const key = p.scope === 'key'
   const db = useDb()
   const u = tables.aiUsage
   await fillMissingRates().catch(() => {})
+  const [me] = await db.select({ hint: tables.users.openaiKeyHint }).from(tables.users).where(eq(tables.users.id, user.id))
+  const [keyed] = key ? await db.select({ at: sql<Date | null>`MIN(${u.createdAt})`.mapWith(u.createdAt) }).from(u).where(isNotNull(u.keyUserId)) : []
+  // El registro exacto empezó a la vez para toda la instalación
+  const [exact] = await db.select({ at: sql<Date | null>`MIN(${u.createdAt})`.mapWith(u.createdAt) }).from(u).where(eq(u.estimated, false))
 
   const today = madridDay()
   const rate = await usdPerEur(today)
@@ -48,11 +53,14 @@ export default defineEventHandler(async (event): Promise<AiUsageReport> => {
     reasoning: sql<string>`COALESCE(SUM(${u.reasoningTokens}), 0)`,
     estimatedUsd: sql<string>`COALESCE(SUM(CASE WHEN ${u.estimated} THEN ${u.costUsd} ELSE 0 END), 0)`,
     estimatedEur: sql<string>`COALESCE(SUM(CASE WHEN ${u.estimated} THEN ${eurOf} ELSE 0 END), 0)`,
+    // Estimadas sin resultado: respuestas cortadas a medias (las reconstruidas de antes del registro sí lo tuvieron)
+    cutUsd: sql<string>`COALESCE(SUM(CASE WHEN ${u.estimated} AND NOT ${u.ok} THEN ${u.costUsd} ELSE 0 END), 0)`,
+    cutEur: sql<string>`COALESCE(SUM(CASE WHEN ${u.estimated} AND NOT ${u.ok} THEN ${eurOf} ELSE 0 END), 0)`,
     errors: sql<string>`COALESCE(SUM(CASE WHEN ${u.ok} THEN 0 ELSE 1 END), 0)`,
   }
   const totalsOf = (r: Record<keyof AiUsageTotals, string | number>): AiUsageTotals => Object.fromEntries(Object.keys(sums).map(k => [k, Number(r[k as keyof AiUsageTotals]) || 0])) as unknown as AiUsageTotals
 
-  const scope: SQL[] = app ? [] : [eq(u.companyId, company.id)]
+  const scope: SQL[] = app ? [] : key ? [eq(u.keyUserId, user.id)] : [eq(u.companyId, company.id)]
   const inPeriod = [...scope, ...(p.from ? [gte(u.day, p.from)] : []), ...(p.to ? [lte(u.day, p.to)] : [])]
 
   // Una fila por día, categoría, tarea, modelo, usuario y empresa: de ahí salen todos los desgloses
@@ -113,11 +121,13 @@ export default defineEventHandler(async (event): Promise<AiUsageReport> => {
     monthEur: sumIf(sql`${u.day} >= ${monthStart}`, eurOf),
     allUsd: sql<string>`COALESCE(SUM(${u.costUsd}), 0)`,
     allEur: sql<string>`COALESCE(SUM(${eurOf}), 0)`,
-    exactSince: sql<Date | null>`MIN(CASE WHEN ${u.estimated} THEN NULL ELSE ${u.createdAt} END)`.mapWith(u.createdAt),
+    firstDay: sql<string | null>`DATE_FORMAT(MIN(${u.day}), '%Y-%m-%d')`,
   }).from(u).where(and(...scope))
   const n = (v: unknown) => Number(v) || 0
-  const dayOfMonth = Number(today.slice(8, 10))
-  const daysInMonth = Number(lastOfMonth(today.slice(0, 7)).slice(8, 10))
+  // Previsión con el ritmo de los días con IA: si se empezó a usar este mes, desde ese día y no desde el 1
+  const startDay = k?.firstDay && k.firstDay > monthStart ? Number(k.firstDay.slice(8, 10)) : 1
+  const dayOfMonth = Number(today.slice(8, 10)) - startDay + 1
+  const daysInMonth = Number(lastOfMonth(today.slice(0, 7)).slice(8, 10)) - startDay + 1
 
   // Coste por documento (sin contar la segunda lectura como otro documento) y por respuesta del asistente
   const pro = aiSettings().proModel
@@ -126,15 +136,22 @@ export default defineEventHandler(async (event): Promise<AiUsageReport> => {
   const docCost = docRows.reduce((s, r) => add(s, r.t), emptyTotals())
   const m = tables.aiMessages
   const c = tables.aiConversations
+  const userIds = [...new Set(rows.map(r => r.userId).filter((x): x is number => x != null))]
+  const companyIds = [...new Set(rows.map(r => r.companyId).filter((x): x is number => x != null))]
+  // Con la clave propia, las respuestas de las empresas donde se usó, desde que se guarda la clave de cada llamada
+  const chatScope = app
+    ? []
+    : key
+      ? [companyIds.length ? inArray(c.companyId, companyIds) : sql`FALSE`, ...(keyed?.at ? [gte(m.createdAt, new Date(keyed.at))] : [])]
+      : [eq(c.companyId, company.id)]
   const [answers] = await db.select({ n: count() }).from(m).innerJoin(c, eq(c.id, m.conversationId))
-    .where(and(eq(m.role, 'assistant'), ...(app ? [] : [eq(c.companyId, company.id)]), ...(p.from ? [sql`DATE(${m.createdAt}) >= ${p.from}`] : []), ...(p.to ? [sql`DATE(${m.createdAt}) <= ${p.to}`] : [])))
+    .where(and(eq(m.role, 'assistant'), ...chatScope, ...(p.from ? [sql`DATE(${m.createdAt}) >= ${p.from}`] : []), ...(p.to ? [sql`DATE(${m.createdAt}) <= ${p.to}`] : [])))
   const chat = rows.filter(r => r.task === 'asistente').reduce((s, r) => add(s, r.t), emptyTotals())
 
   // Nombres de usuarios y empresas
-  const userIds = [...new Set(rows.map(r => r.userId).filter((x): x is number => x != null))]
-  const companyIds = [...new Set(rows.map(r => r.companyId).filter((x): x is number => x != null))]
-  const names = new Map((userIds.length ? await db.select({ id: tables.users.id, name: tables.users.name }).from(tables.users).where(sql`${tables.users.id} IN (${sql.join(userIds, sql`, `)})`) : []).map(x => [x.id, x.name]))
-  const companyNames = new Map((app && companyIds.length ? await db.select({ id: tables.companies.id, name: sql<string>`COALESCE(${tables.companies.tradeName}, ${tables.companies.legalName})` }).from(tables.companies).where(sql`${tables.companies.id} IN (${sql.join(companyIds, sql`, `)})`) : []).map(x => [x.id, x.name]))
+  const byCompany = app || key
+  const names = new Map((userIds.length ? await db.select({ id: tables.users.id, name: tables.users.name }).from(tables.users).where(inArray(tables.users.id, userIds)) : []).map(x => [x.id, x.name]))
+  const companyNames = new Map((byCompany && companyIds.length ? await db.select({ id: tables.companies.id, name: sql<string>`COALESCE(${tables.companies.tradeName}, ${tables.companies.legalName})` }).from(tables.companies).where(inArray(tables.companies.id, companyIds)) : []).map(x => [x.id, x.name]))
 
   const recent = await db.select({
     id: u.id, at: u.createdAt, category: u.category, task: u.task, model: u.model, input: u.inputTokens, cached: u.cachedTokens, output: u.outputTokens, reasoning: u.reasoningTokens,
@@ -143,8 +160,10 @@ export default defineEventHandler(async (event): Promise<AiUsageReport> => {
     .where(and(...inPeriod)).orderBy(desc(u.createdAt), desc(u.id)).limit(60)
 
   return {
-    scope: app ? 'app' : 'company',
+    scope: app ? 'app' : key ? 'key' : 'company',
     canSeeApp,
+    keyHint: me?.hint ?? null,
+    keySince: keyed?.at ? new Date(keyed.at).toISOString() : null,
     from,
     to,
     group: p.group,
@@ -156,7 +175,7 @@ export default defineEventHandler(async (event): Promise<AiUsageReport> => {
     tasks: by(r => `${r.category}|${r.task}` as string).map(x => ({ ...x, category: x.key.split('|')[0]!, task: x.key.split('|')[1]! })),
     models: by(r => r.model),
     users: by(r => String(r.userId ?? '')).map(x => ({ ...x, name: x.key ? names.get(Number(x.key)) ?? 'Usuario eliminado' : 'Procesos automáticos' })),
-    companies: app ? by(r => String(r.companyId ?? '')).map(x => ({ ...x, name: x.key ? companyNames.get(Number(x.key)) ?? 'Empresa eliminada' : 'Sin empresa' })) : [],
+    companies: byCompany ? by(r => String(r.companyId ?? '')).map(x => ({ ...x, name: x.key ? companyNames.get(Number(x.key)) ?? 'Empresa eliminada' : 'Sin empresa' })) : [],
     recent: recent.map(r => ({ ...r, at: new Date(r.at).toISOString(), usd: n(r.usd), eur: n(r.eur), user: r.user ?? null })),
     kpis: {
       today: money(n(k?.todayUsd), n(k?.todayEur)),
@@ -168,7 +187,7 @@ export default defineEventHandler(async (event): Promise<AiUsageReport> => {
       perAnswer: answers?.n ? money(chat.usd / answers.n, chat.eur / answers.n) : null,
       cacheRate: totals.input ? totals.cached / totals.input : null,
     },
-    exactSince: k?.exactSince ? new Date(k.exactSince).toISOString() : null,
+    exactSince: exact?.at ? new Date(exact.at).toISOString() : null,
     // Tarifas de los modelos configurados y de los que aparecen en el periodo
     prices: [...new Set([aiSettings().model, aiSettings().proModel, String(useRuntimeConfig().openaiChatModel || 'gpt-5.5'), ...rows.map(r => r.model)])]
       .map(model => ({ model, ...priceFor(model) }))

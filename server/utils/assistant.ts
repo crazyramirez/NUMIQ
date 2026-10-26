@@ -782,12 +782,31 @@ function chatModel() {
   return String(useRuntimeConfig().openaiChatModel || 'gpt-5.5')
 }
 
+/** Última petición completa de cada caché (empresa): caracteres por token reales y lo que ya está en la caché de OpenAI */
+const lastExact = new Map<string, { at: number, chars: number, input: number }>()
+
 async function streamOnce(input: unknown[], tools: unknown[], onDelta: (t: string) => void, signal: AbortSignal, cacheKey: string): Promise<StreamResult> {
   const apiKey = (await currentAiKey())?.key
   if (!apiKey) throw new AiError(MISSING_AI_KEY, 503)
   const model = chatModel()
   const t0 = Date.now()
   const reasoning = /^(gpt-5|gpt-6|o\d)/.test(model)
+  // Sin el razonamiento cifrado que se devuelve: es largo y no se parece a sus tokens
+  const sentChars = JSON.stringify(input.filter(i => (i as { type?: string }).type !== 'reasoning')).length + JSON.stringify(tools).length
+  // Cortada a medias (cerró el chat, cambió de app): OpenAI cobra lo ya procesado y no manda el uso
+  let recorded = false
+  let received = 0
+  const cut = (err: unknown) => {
+    if ((err as Error).name === 'AbortError' && !recorded) {
+      recorded = true
+      const last = lastExact.get(cacheKey)
+      const tokens = Math.round(sentChars / (last ? last.chars / last.input : 4.8))
+      // Lo enviado hace poco con la misma clave de caché se lee de la caché (en bloques de 128 tokens)
+      const cached = last && Date.now() - last.at < 10 * 60_000 ? Math.floor(Math.min(last.input, tokens) / 128) * 128 : 0
+      recordCutAiUsage({ task: 'asistente', model, input: tokens, cached, output: Math.round(received / 3.6), ms: Date.now() - t0 })
+    }
+    return err
+  }
   const res = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: { 'authorization': `Bearer ${apiKey}`, 'content-type': 'application/json' },
@@ -803,6 +822,8 @@ async function streamOnce(input: unknown[], tools: unknown[], onDelta: (t: strin
       ...(reasoning ? { reasoning: { effort: 'low' }, include: ['reasoning.encrypted_content'] } : {}),
     }),
     signal,
+  }).catch((err) => {
+    throw cut(err)
   })
   if (!res.ok || !res.body) {
     const body = await res.json().catch(() => null) as { error?: { message?: string, code?: string } } | null
@@ -816,7 +837,9 @@ async function streamOnce(input: unknown[], tools: unknown[], onDelta: (t: strin
   let text = ''
   let output: Array<Record<string, unknown>> = []
   for (;;) {
-    const { done, value } = await reader.read()
+    const { done, value } = await reader.read().catch((err) => {
+      throw cut(err)
+    })
     if (done) break
     buffer += decoder.decode(value, { stream: true })
     let idx: number
@@ -832,15 +855,20 @@ async function streamOnce(input: unknown[], tools: unknown[], onDelta: (t: strin
       catch {
         continue
       }
+      // Texto, argumentos de herramientas y resumen del razonamiento: lo que ya se ha generado
+      if (ev.delta) received += ev.delta.length
       if (ev.type === 'response.output_text.delta' && ev.delta) {
         text += ev.delta
         onDelta(ev.delta)
       }
       else if (ev.type === 'response.completed' || ev.type === 'response.incomplete') {
         output = ev.response?.output ?? []
+        recorded = true
+        if (ev.response?.usage?.input_tokens) lastExact.set(cacheKey, { at: Date.now(), chars: sentChars, input: ev.response.usage.input_tokens })
         recordAiUsage({ task: 'asistente', model: ev.response?.model || model, usage: ev.response?.usage, tier: ev.response?.service_tier, ms: Date.now() - t0, ok: ev.type === 'response.completed' })
       }
       else if (ev.type === 'response.failed' || ev.type === 'error') {
+        recorded = true
         recordAiUsage({ task: 'asistente', model: ev.response?.model || model, usage: ev.response?.usage, tier: ev.response?.service_tier, ms: Date.now() - t0, ok: false })
         throw new AiError(ev.response?.error?.message ?? ev.error?.message ?? 'La IA no pudo responder', 502)
       }

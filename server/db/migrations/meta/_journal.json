@@ -211,6 +211,13 @@
       "when": 1793026805148,
       "tag": "0029_user_openai_key",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1793040584649,
+      "tag": "0030_ai_usage_key",
+      "breakpoints": true
     }
   ]
 }

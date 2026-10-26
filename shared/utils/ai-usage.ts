@@ -28,6 +28,7 @@ export const AI_TASKS: Record<string, string> = {
   contacto: 'Ficha de contacto desde archivo',
   justificante: 'Justificantes de presentación',
   vinculo_presupuesto: 'Vincular presupuestos y facturas',
+  bank_invoices: 'Conciliar movimientos con facturas',
 }
 
 export const aiTaskLabel = (task: string) => AI_TASKS[task] ?? task.replace(/_/g, ' ')
@@ -65,6 +66,9 @@ export interface AiUsageTotals {
   /** Coste reconstruido de antes de registrar cada llamada */
   estimatedUsd: number
   estimatedEur: number
+  /** Parte estimada que son respuestas del asistente cortadas a medias (OpenAI las cobra sin decir cuánto) */
+  cutUsd: number
+  cutEur: number
   errors: number
 }
 
@@ -73,8 +77,13 @@ export interface AiUsageRow extends AiUsageTotals {
 }
 
 export interface AiUsageReport {
-  scope: 'company' | 'app'
+  /** key: lo pagado con la clave de OpenAI de quien mira (todas sus empresas), lo comparable con su uso en OpenAI */
+  scope: 'company' | 'key' | 'app'
   canSeeApp: boolean
+  /** «sk-proj-…a1b2» de la clave propia de quien mira */
+  keyHint: string | null
+  /** Desde cuándo cada llamada guarda la clave que la pagó (lo anterior no sale en «Mi clave») */
+  keySince: string | null
   from: string
   to: string
   group: AiUsageGroup

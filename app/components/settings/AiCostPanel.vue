@@ -14,7 +14,7 @@ const groupChoice = ref<AiUsageGroup | null>(null)
 watch(period, () => (groupChoice.value = null))
 const group = computed<AiUsageGroup>({ get: () => groupChoice.value ?? autoGroup.value, set: v => (groupChoice.value = v) })
 const currency = ref<'eur' | 'usd'>('eur')
-const scope = ref<'company' | 'app'>('company')
+const scope = ref<AiUsageReport['scope']>('company')
 
 const query = computed(() => ({ ...periodRange(period.value), group: group.value, scope: scope.value }))
 const { data, status, error, refresh } = await useFetch<AiUsageReport>('/api/ai/usage', { query, lazy: true })
@@ -26,7 +26,12 @@ const money = (m: AiMoney | AiUsageTotals | null | undefined) => (m ? aiMoney(v(
 
 const GROUPS = [{ value: 'day', label: 'Días' }, { value: 'week', label: 'Semanas' }, { value: 'month', label: 'Meses' }]
 const CURRENCIES = [{ value: 'eur', label: '€' }, { value: 'usd', label: '$' }]
-const SCOPES = [{ value: 'company', label: 'Esta empresa' }, { value: 'app', label: 'Toda la app' }]
+// «Mi clave»: lo que OpenAI cobra a la clave de quien mira, en todas sus empresas (lo comparable con su panel de OpenAI)
+const scopes = computed(() => [
+  { value: 'company', label: 'Esta empresa' },
+  ...(data.value?.keyHint ? [{ value: 'key', label: 'Mi clave' }] : []),
+  ...(data.value?.canSeeApp ? [{ value: 'app', label: 'Toda la app' }] : []),
+])
 
 const totals = computed(() => data.value?.totals)
 const delta = computed(() => {
@@ -66,7 +71,9 @@ function shareRows(rows: Array<AiUsageTotals & { key: string, name?: string }>) 
   return rows.map(r => ({ ...r, width: (v(r) / top) * 100 }))
 }
 const models = computed(() => shareRows(data.value?.models ?? []))
-const people = computed(() => shareRows(data.value?.scope === 'app' ? data.value.companies : data.value?.users ?? []))
+const byCompany = computed(() => data.value?.scope === 'app' || data.value?.scope === 'key')
+const people = computed(() => shareRows(byCompany.value ? data.value!.companies : data.value?.users ?? []))
+const keySinceText = computed(() => (data.value?.keySince ? fdate(data.value.keySince) : null))
 
 const cacheText = (r: AiUsageTotals) => (r.input ? pct((r.cached / r.input) * 100) : '—')
 const perCall = (r: AiUsageTotals) => aiMoney(v(r) / Math.max(1, r.calls), cur.value)
@@ -82,8 +89,8 @@ const categoryColor = (c: string) => AI_CATEGORIES[c as AiCategory]?.color ?? AI
 <template>
   <UiCard class="ai-cost" icon="ph:coins" title="Coste de la IA" subtitle="Calculado con los tokens reales de cada llamada a OpenAI y su tarifa oficial: entrada, caché, salida y razonamiento.">
     <div class="cost">
-      <div v-if="data?.canSeeApp || data?.usdPerEur" class="head-ctl">
-        <UiSegmented v-if="data?.canSeeApp" v-model="scope" :options="SCOPES" label="Alcance" />
+      <div v-if="scopes.length > 1 || data?.usdPerEur" class="head-ctl">
+        <UiSegmented v-if="scopes.length > 1" v-model="scope" :options="scopes" label="Alcance" />
         <UiSegmented v-if="data?.usdPerEur" v-model="currency" :options="CURRENCIES" label="Moneda" />
       </div>
 
@@ -173,7 +180,7 @@ const categoryColor = (c: string) => AI_CATEGORIES[c as AiCategory]?.color ?? AI
               </ul>
             </section>
             <section v-if="people.length" class="block">
-              <h3 class="block-t">{{ data.scope === 'app' ? 'Por empresa' : 'Por usuario' }}</h3>
+              <h3 class="block-t">{{ byCompany ? 'Por empresa' : 'Por usuario' }}</h3>
               <ul class="bars">
                 <li v-for="p in people" :key="p.key" class="bar-row plain">
                   <div class="b-main">
@@ -234,7 +241,7 @@ const categoryColor = (c: string) => AI_CATEGORIES[c as AiCategory]?.color ?? AI
                 <p class="c-t">
                   <span class="truncate">{{ aiTaskLabel(r.task) }}</span>
                   <UiBadge v-if="r.estimated" size="sm" tone="neutral">Estimado</UiBadge>
-                  <UiBadge v-if="!r.ok" size="sm" tone="warning">Sin resultado</UiBadge>
+                  <UiBadge v-if="!r.ok" size="sm" tone="warning">{{ r.estimated ? 'Cortada' : 'Sin resultado' }}</UiBadge>
                 </p>
                 <p class="c-sub muted num">
                   {{ time(r.at) }} · <span class="mono">{{ shortModel(r.model) }}</span> · {{ aiTokens(r.input) }} entrada{{ r.cached ? ` (${aiTokens(r.cached)} en caché)` : '' }} · {{ aiTokens(r.output) }} salida{{ r.reasoning ? ` (${aiTokens(r.reasoning)} razonando)` : '' }}{{ r.ms ? ` · ${(r.ms / 1000).toLocaleString('es-ES', { maximumFractionDigits: 1 })} s` : '' }}{{ r.user ? ` · ${r.user}` : '' }}
@@ -255,10 +262,27 @@ const categoryColor = (c: string) => AI_CATEGORIES[c as AiCategory]?.color ?? AI
               No incluye el IVA de la factura de OpenAI.
             </span>
           </p>
-          <p v-if="totals?.estimatedUsd">
+          <p v-if="data.scope === 'key'">
+            <Icon name="ph:key" class="n-ic" aria-hidden="true" />
+            <span>
+              Lo pagado con tu clave <span class="mono">{{ data.keyHint }}</span> en todas tus empresas, también por quien del equipo la usa{{ keySinceText ? ` (cada llamada guarda su clave desde el ${keySinceText})` : '' }}.
+              Al compararlo con el uso de OpenAI: allí se suma lo que esa clave gaste fuera de esta app (otras instalaciones, pruebas, otros programas) y los días van en hora UTC; aquí, en hora de Madrid.
+            </span>
+          </p>
+          <p v-else-if="data.keyHint">
+            <Icon name="ph:key" class="n-ic" aria-hidden="true" />
+            <span>Para compararlo con lo que te cobra OpenAI, elige «Mi clave»: OpenAI factura por clave, no por empresa.</span>
+          </p>
+          <p v-if="totals && totals.estimatedUsd - totals.cutUsd > 1e-9">
             <Icon name="ph:clock-counter-clockwise" class="n-ic" aria-hidden="true" />
             <span>
-              {{ money({ usd: totals.estimatedUsd, eur: totals.estimatedEur }) }} de este periodo es una estimación de lo anterior al registro exacto{{ exactSinceText ? ` (desde el ${exactSinceText} cada llamada guarda su coste real)` : '' }}: los documentos con los tokens que se guardaron al leerlos; el asistente y el banco, por la longitud de lo enviado.
+              {{ money({ usd: totals.estimatedUsd - totals.cutUsd, eur: totals.estimatedEur - totals.cutEur }) }} de este periodo es una estimación de lo anterior al registro exacto{{ exactSinceText ? ` (desde el ${exactSinceText} cada llamada guarda su coste real)` : '' }}: los documentos con los tokens que se guardaron al leerlos; el asistente y el banco, por la longitud de lo enviado.
+            </span>
+          </p>
+          <p v-if="totals?.cutUsd">
+            <Icon name="ph:scissors" class="n-ic" aria-hidden="true" />
+            <span>
+              {{ money({ usd: totals.cutUsd, eur: totals.cutEur }) }} son respuestas del asistente cortadas a medias (se cerró el chat o se cambió de app): OpenAI cobra lo que ya había procesado sin decir cuánto, así que se estima por lo enviado y lo recibido.
             </span>
           </p>
         </footer>

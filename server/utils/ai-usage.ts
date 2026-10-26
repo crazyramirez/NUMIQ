@@ -1,6 +1,7 @@
-import { and, desc, eq, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import type { AiCategory } from '../../shared/utils/ai-usage'
+import type { AiKey } from './ai-key'
 
 /**
  * Registro del consumo de IA: cada petición a OpenAI guarda sus tokens reales (entrada, caché, salida y
@@ -8,7 +9,7 @@ import type { AiCategory } from '../../shared/utils/ai-usage'
  * (requireCompany los deja en el contexto), también para el trabajo que sigue en segundo plano.
  */
 
-interface AiScope { companyId: number | null, userId: number | null, path: string }
+interface AiScope { companyId: number | null, userId: number | null, path: string, key: Promise<AiKey | null> | null }
 
 export function setAiScope(event: H3Event, companyId: number, userId: number) {
   event.context.aiScope = { companyId, userId }
@@ -18,10 +19,10 @@ function currentScope(): AiScope {
   try {
     const event = useEvent()
     const s = event.context.aiScope as { companyId: number, userId: number } | undefined
-    return { companyId: s?.companyId ?? null, userId: s?.userId ?? null, path: event.path ?? '' }
+    return { companyId: s?.companyId ?? null, userId: s?.userId ?? null, path: event.path ?? '', key: currentAiKey() }
   }
   catch {
-    return { companyId: null, userId: null, path: '' }
+    return { companyId: null, userId: null, path: '', key: null }
   }
 }
 
@@ -62,7 +63,7 @@ async function lastKnownRate() {
  * Guarda una petición facturada. Nunca falla ni retrasa la respuesta: se escribe en segundo plano.
  * `model` es el que devuelve la API (versión fechada), que es el que se cobra.
  */
-export function recordAiUsage(entry: { task: string, model: string, usage: OpenAiUsage | null | undefined, tier?: string | null, ms: number, ok: boolean }) {
+export function recordAiUsage(entry: { task: string, model: string, usage: OpenAiUsage | null | undefined, tier?: string | null, ms: number, ok: boolean, estimated?: boolean }) {
   const u = entry.usage
   if (!u || !(u.input_tokens || u.output_tokens)) return
   const scope = currentScope()
@@ -75,6 +76,7 @@ export function recordAiUsage(entry: { task: string, model: string, usage: OpenA
   const day = madridDay()
   void (async () => {
     if (!knownModel(entry.model)) console.warn(`[ai] Sin tarifa para ${entry.model}: añádela en NUXT_OPENAI_PRICES`)
+    const key = await scope.key?.catch(() => null)
     const rate = await usdPerEur(day) ?? await lastKnownRate()
     await useDb().insert(tables.aiUsage).values({
       companyId: scope.companyId,
@@ -93,8 +95,26 @@ export function recordAiUsage(entry: { task: string, model: string, usage: OpenA
       usdPerEur: rate,
       ms: Math.round(entry.ms),
       ok: entry.ok,
+      estimated: entry.estimated ?? false,
+      keyUserId: key?.userId ?? null,
+      keyHint: key?.hint ?? null,
     })
   })().catch(err => console.error('[ai] No se pudo registrar el consumo:', err))
+}
+
+/**
+ * Petición cortada a medias (el usuario cerró el chat o cambió de app): OpenAI cobra lo que ya había
+ * procesado pero no llega a devolver el uso. Quien llama estima los tokens.
+ */
+export function recordCutAiUsage(entry: { task: string, model: string, input: number, cached: number, output: number, ms: number }) {
+  recordAiUsage({
+    task: entry.task,
+    model: entry.model,
+    usage: { input_tokens: entry.input, input_tokens_details: { cached_tokens: entry.cached }, output_tokens: entry.output },
+    ms: entry.ms,
+    ok: false,
+    estimated: true,
+  })
 }
 
 // ─── Lecturas anteriores al registro: coste estimado ─────────────────────────
@@ -256,6 +276,27 @@ export async function backfillAiUsage() {
   for (let i = 0; i < rows.length; i += 200) await db.insert(u).values(rows.slice(i, i + 200))
   console.info(`[ai] Consumo anterior reconstruido: ${rows.length} registros estimados`)
   return rows.length
+}
+
+/**
+ * Llamadas guardadas antes de registrar la clave que las pagó. Desde que hay claves por usuario (la primera
+ * se guardó en `openai_key_at`) solo pudo pagar la del usuario o la del titular de su empresa: la que les
+ * toca hoy. Lo anterior se pagó con la clave de la instalación y se queda sin clave.
+ */
+export async function attributeAiKeys() {
+  const db = useDb()
+  const u = tables.aiUsage
+  const [first] = await db.select({ at: sql<Date | null>`MIN(${tables.users.openaiKeyAt})`.mapWith(tables.users.openaiKeyAt) }).from(tables.users)
+  if (!first?.at) return
+  const since = new Date(first.at)
+  const pending = and(isNull(u.keyUserId), isNotNull(u.userId), gte(u.createdAt, since))
+  const groups = await db.select({ userId: u.userId, companyId: u.companyId }).from(u).where(pending).groupBy(u.userId, u.companyId)
+  for (const g of groups) {
+    const key = await findAiKey(g.userId!, g.companyId)
+    if (!key) continue
+    await db.update(u).set({ keyUserId: key.userId, keyHint: key.hint })
+      .where(and(pending, eq(u.userId, g.userId!), g.companyId == null ? isNull(u.companyId) : eq(u.companyId, g.companyId)))
+  }
 }
 
 /** Quien ve el coste de toda la app (todas las empresas): el titular de la cuenta de la app */

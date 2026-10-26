@@ -1084,10 +1084,15 @@ export const aiUsage = mysqlTable('ai_usage', {
   ms: int('ms').notNull().default(0),
   ok: boolean('ok').notNull().default(true),
   estimated: boolean('estimated').notNull().default(false),
+  /** Dueño de la clave de OpenAI que pagó la llamada (la propia o la del titular de la empresa) */
+  keyUserId: int('key_user_id'),
+  /** «sk-proj-…a1b2» de esa clave, para compararla con su uso en OpenAI aunque luego se cambie */
+  keyHint: varchar('key_hint', { length: 20 }),
   createdAt: createdAt(),
 }, t => [
   index('ai_usage_company_day_idx').on(t.companyId, t.day),
   index('ai_usage_company_created_idx').on(t.companyId, t.createdAt),
+  index('ai_usage_key_day_idx').on(t.keyUserId, t.day),
 ])
 
 // ─── Auditoría (registro de eventos: trazabilidad exigida a los SIF) ─────────
