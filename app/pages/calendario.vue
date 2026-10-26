@@ -359,7 +359,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
     </section>
 
     <div class="cal-layout">
-      <section class="card cal-card rise" style="--i: 1" :class="{ busy: loading && !!data }">
+      <section class="card cal-card rise" style="--i: 1" :class="{ busy: loading && !!data, fit: view === 'agenda' }">
         <span class="loadbar" aria-hidden="true" />
         <header class="cal-bar">
           <div class="nav">
@@ -500,7 +500,10 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
           <Icon name="ph:arrow-right" class="cc-go" aria-hidden="true" />
         </button>
         <p class="keys" aria-hidden="true">
-          <span class="kbd">←</span><span class="kbd">→</span> mes · <span class="kbd">H</span> hoy<template v-if="canEdit"> · <span class="kbd">N</span> nuevo</template> · arrastra tus eventos a otro día
+          <span class="key"><span class="kbd">←</span><span class="kbd">→</span> mes</span>
+          <span class="key"><span class="kbd">H</span> hoy</span>
+          <span v-if="canEdit" class="key"><span class="kbd">N</span> nuevo</span>
+          <span class="keys-hint">Arrastra tus eventos a otro día</span>
         </p>
       </aside>
     </div>
@@ -1166,10 +1169,49 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 4px 6px;
   padding: 0 var(--s-2);
   font-size: var(--text-2xs);
   color: var(--text-4);
+}
+
+/* Cada atajo con su texto, sin partirse entre líneas */
+.key {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.key + .key::before {
+  content: '·';
+  margin-right: 2px;
+}
+
+.keys-hint {
+  flex-basis: 100%;
+}
+
+/* Agenda junto al lateral: mide lo mismo que él y su lista se desplaza por dentro */
+@container calpage (min-width: 1101px) {
+  .cal-card.fit {
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+    height: 0;
+    min-height: 100%;
+  }
+
+  .cal-card.fit .cal-view {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .cal-card.fit :deep(.ag-date) {
+    top: 8px;
+  }
 }
 
 /* ─── Contenedor estrecho ─── */
