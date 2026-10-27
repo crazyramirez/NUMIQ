@@ -61,9 +61,10 @@ export function usePeriodQuery(opts: { allowAll?: boolean } = {}) {
       return Number.isInteger(n) && n >= 2000 && n <= thisYear + 1 ? n : undefined
     },
     format: v => (v == null ? 'todos' : String(v)),
+    remember: false,
   })
-  const quarter = useQueryState<Quarter | null>('t', null, { parse: r => ([1, 2, 3, 4].includes(Number(r)) ? Number(r) as Quarter : undefined), format: v => (v ? String(v) : '') })
-  const month = useQueryState<number | null>('mes', null, { parse: r => (Number(r) >= 1 && Number(r) <= 12 ? Math.floor(Number(r)) : undefined), format: v => (v ? String(v) : '') })
+  const quarter = useQueryState<Quarter | null>('t', null, { parse: r => ([1, 2, 3, 4].includes(Number(r)) ? Number(r) as Quarter : undefined), format: v => (v ? String(v) : ''), remember: false })
+  const month = useQueryState<number | null>('mes', null, { parse: r => (Number(r) >= 1 && Number(r) <= 12 ? Math.floor(Number(r)) : undefined), format: v => (v ? String(v) : ''), remember: false })
 
   const period = computed<Period>({
     get: () => ({ year: year.value, quarter: year.value && !month.value ? quarter.value : null, month: year.value ? month.value : null }),

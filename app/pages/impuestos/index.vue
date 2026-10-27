@@ -9,7 +9,7 @@ const canFile = computed(() => canUpload('taxes'))
 const currentYear = new Date().getFullYear()
 // Año en la URL (?anio=2025): al volver desde un modelo o un enlace se sigue en el mismo ejercicio. Sin él,
 // el último año elegido en Facturas, Gastos, Contactos o Informes; y el que se elige aquí, se recuerda allí
-const year = useQueryState('anio', currentYear, { parse: r => (Number.isInteger(Number(r)) && Number(r) >= 2000 && Number(r) <= currentYear ? Number(r) : undefined) })
+const year = useQueryState('anio', currentYear, { parse: r => (Number.isInteger(Number(r)) && Number(r) >= 2000 && Number(r) <= currentYear ? Number(r) : undefined), remember: false })
 const periodMemory = usePeriodMemory()
 if (!hasPeriodQuery(useRoute().query) && periodMemory.value?.year) year.value = Math.min(periodMemory.value.year, currentYear)
 watch(year, (y) => {

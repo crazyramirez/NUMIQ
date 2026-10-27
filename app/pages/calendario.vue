@@ -20,7 +20,7 @@ const today = ref(todayISO())
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
 const view = useQueryState('vista', 'mes', { allowed: ['mes', 'agenda', 'ano'] as const })
-const selected = useQueryState('fecha', today.value, { parse: raw => (ISO.test(raw) ? raw : undefined) })
+const selected = useQueryState('fecha', today.value, { parse: raw => (ISO.test(raw) ? raw : undefined), remember: false })
 const ym = computed(() => selected.value.slice(0, 7))
 const year = computed(() => Number(selected.value.slice(0, 4)))
 

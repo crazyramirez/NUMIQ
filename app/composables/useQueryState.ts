@@ -8,6 +8,8 @@ interface QueryStateOptions<T> {
   debounce?: number
   parse?: (raw: string) => T | undefined
   format?: (value: T) => string
+  /** false: no se recupera al volver al listado desde el menú (el periodo, que se recuerda aparte; la fecha del calendario) */
+  remember?: boolean
 }
 
 type Patch = Record<string, string | undefined>
@@ -135,8 +137,8 @@ export function useQueryPatch() {
 
 /**
  * Estado de un listado (búsqueda, filtros, página) guardado en la URL con `replace`: al abrir un elemento
- * y volver atrás, el listado aparece tal como se dejó. El valor por defecto no se escribe, así el enlace
- * del menú abre el listado limpio.
+ * y volver atrás, el listado aparece tal como se dejó. El valor por defecto no se escribe en la URL; lo
+ * último elegido queda en la memoria de listados (`rememberListState`), y el enlace del menú lo recupera.
  */
 export function useQueryState<T>(key: string, fallback: T, opts: QueryStateOptions<T> = {}): Ref<T> {
   const router = useRouter()
@@ -157,9 +159,15 @@ export function useQueryState<T>(key: string, fallback: T, opts: QueryStateOptio
   const state = ref(read(current.value.query[key])) as Ref<T>
   let written = format(state.value)
 
+  // Memoria del listado: al momento (antes de que la URL se escriba), por si se sale tecleando aún
+  const me = useState<Me | null>('me')
+  const remember = () => rememberListState(listScope(me.value), path, key, opts.remember === false || written === empty ? undefined : written)
+  remember()
+
   watch(state, () => {
     if (current.value.path !== path) return
     written = format(state.value)
+    remember()
     patchQuery(router, path, { [key]: written === empty ? undefined : written }, opts.debounce)
   }, { deep: true })
 
@@ -170,6 +178,7 @@ export function useQueryState<T>(key: string, fallback: T, opts: QueryStateOptio
     const s = format(v)
     if (s === written) return
     written = s
+    remember()
     state.value = v
   })
 
