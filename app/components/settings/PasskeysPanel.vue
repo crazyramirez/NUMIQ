@@ -93,7 +93,7 @@ const LOCK_OPTIONS = [
   { value: 'off', label: 'Solo al entrar' },
 ]
 const LOCK_HINTS: Record<LockMode, string> = {
-  always: 'Cada vez que vuelvas a NUMIQ tras más de un minuto fuera, y tras 10 minutos sin tocarla. Lo más seguro en el móvil.',
+  always: 'En el móvil, cada vez que vuelvas a NUMIQ tras más de un minuto fuera y tras 10 minutos sin tocarla. En el ordenador, tras 15 minutos sin usarla: cambiar a otra ventana y volver no pide nada. Lo más seguro.',
   daily: 'Una vez al día en cada dispositivo. Entre medias, NUMIQ se abre sin pedir nada.',
   off: 'Solo al entrar en tu cuenta: quien coja tu móvil u ordenador desbloqueado podrá ver NUMIQ.',
 }

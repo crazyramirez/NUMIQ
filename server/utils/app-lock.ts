@@ -12,6 +12,8 @@ export type LockMode = 'always' | 'daily' | 'off'
 
 /** «Siempre»: sin señales de vida de la app a la vista durante este tiempo, se vuelve a pedir */
 export const LOCK_AWAY_MS = 2 * 60_000
+/** En el ordenador se cambia de ventana a cada rato: cuenta el rato sin usarla, como el bloqueo de pantalla */
+export const LOCK_AWAY_DESK_MS = 15 * 60_000
 /** «Una vez al día» */
 export const LOCK_DAILY_MS = 24 * 60 * 60_000
 /** Bajar la protección o quitar una llave: solo con la identidad comprobada hace muy poco */
@@ -21,7 +23,10 @@ export function weakerLock(next: LockMode, prev: LockMode) {
   return LOCK_RANK[next] < LOCK_RANK[prev]
 }
 
-interface SessionLock { key?: string, at?: number, seen?: number, verified?: number }
+/** `desk`: sesión de un ordenador (lo dice la app con la sesión desbloqueada) */
+interface SessionLock { key?: string, at?: number, seen?: number, verified?: number, desk?: boolean }
+
+const awayMs = (lock: SessionLock) => (lock.desk ? LOCK_AWAY_DESK_MS : LOCK_AWAY_MS)
 
 export interface LockStatus {
   userId: number
@@ -67,7 +72,7 @@ export async function lockStatus(event: H3Event): Promise<LockStatus | null> {
   const locked = bound && (
     mode === 'daily'
       ? now - (lock.at ?? 0) > LOCK_DAILY_MS
-      : mode === 'always' && now - Math.max(lock.at ?? 0, lock.seen ?? 0) > LOCK_AWAY_MS)
+      : mode === 'always' && now - Math.max(lock.at ?? 0, lock.seen ?? 0) > awayMs(lock))
   return { userId: session.user.id, mode, keys, bound, locked, lock }
 }
 
@@ -83,7 +88,7 @@ export function lockedError() {
 
 /** Lo que la app necesita saber (nunca el contenido de la cookie) */
 export function lockPayload(s: LockStatus) {
-  return { mode: s.mode, hasKeys: s.keys.length > 0, bound: s.bound, locked: s.locked, unlockedAt: s.lock.at ?? null, awayMs: LOCK_AWAY_MS, dailyMs: LOCK_DAILY_MS }
+  return { mode: s.mode, hasKeys: s.keys.length > 0, bound: s.bound, locked: s.locked, unlockedAt: s.lock.at ?? null, awayMs: awayMs(s.lock), dailyMs: LOCK_DAILY_MS }
 }
 
 /** Bloqueo de una sesión recién iniciada (contraseña, llave o enlace del correo): desbloqueada y comprobada */

@@ -1,10 +1,12 @@
 /**
  * Cuándo se bloquea NUMIQ en este dispositivo (useAppLock). Con «Siempre»: al volver tras más de un minuto
  * fuera (otra app, el móvil bloqueado, otra pestaña) y tras 10 minutos a la vista sin tocarla; al salir se
- * tapa al momento para que el multitarea no enseñe datos. Con «Cada 24 horas», al pasar el día. El
- * servidor bloquea por su cuenta si dejan de llegar señales de vida: esto solo lo adelanta.
+ * tapa al momento para que el multitarea no enseñe datos. En el ordenador, tras 15 minutos sin usarla, esté
+ * a la vista o detrás de otra ventana: cambiar a otro programa y volver no pide nada. Con «Cada 24 horas»,
+ * al pasar el día. El servidor bloquea por su cuenta si dejan de llegar señales de vida: esto solo lo adelanta.
  */
-const IDLE_MS = 10 * 60_000
+const desk = lockOnDesktop()
+const IDLE_MS = desk ? LOCK_GRACE_DESK_MS : 10 * 60_000
 const PING_MS = 30_000
 /** Escribir la última actividad como mucho cada pocos segundos */
 const ACTIVE_EVERY = 5_000
@@ -52,7 +54,8 @@ export default defineNuxtPlugin(() => {
     if (!always() || s.value.locked) return
     lastActive = Date.now()
     markActive(lastActive)
-    s.value.covered = true
+    // En el ordenador no hay multitarea que enseñe la pantalla: taparla solo parpadearía al volver
+    if (!desk) s.value.covered = true
   }
 
   function resume() {
@@ -61,7 +64,7 @@ export default defineNuxtPlugin(() => {
       return
     }
     const now = Date.now()
-    if (always() && now - seen() > LOCK_GRACE_MS) return appLock.lock()
+    if (always() && now - seen() > lockGraceMs()) return appLock.lock()
     if (s.value.mode === 'daily' && now - s.value.unlockedAt > s.value.dailyMs) return appLock.lock()
     s.value.covered = false
     active(true)

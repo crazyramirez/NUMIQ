@@ -9,6 +9,13 @@ export type LockMode = 'always' | 'daily' | 'off'
 
 /** «Siempre»: fuera de NUMIQ más de este tiempo y se vuelve a pedir */
 export const LOCK_GRACE_MS = 60_000
+/** En el ordenador se cambia de ventana a cada rato: cuenta el rato sin usar NUMIQ, como el bloqueo de pantalla */
+export const LOCK_GRACE_DESK_MS = 15 * 60_000
+
+/** Ordenador con ratón (no móvil ni tableta): «Siempre» no pide nada por cambiar de ventana */
+export const lockOnDesktop = () => import.meta.client && window.matchMedia('(hover: hover) and (pointer: fine)').matches && !/android|iphone|ipad|ipod/i.test(navigator.userAgent)
+
+export const lockGraceMs = () => (lockOnDesktop() ? LOCK_GRACE_DESK_MS : LOCK_GRACE_MS)
 
 interface LockPayload { mode: LockMode, hasKeys: boolean, bound: boolean, locked: boolean, unlockedAt: number | null, awayMs: number, dailyMs: number }
 
@@ -111,14 +118,14 @@ export function useAppLock() {
   async function sync(adopt = false) {
     const id = user.value?.id
     if (!id) return
-    const r = await $fetch<LockPayload & { deviceKey: boolean }>('/api/lock', { method: 'POST', body: { key: passkeyOnDevice() } })
+    const r = await $fetch<LockPayload & { deviceKey: boolean }>('/api/lock', { method: 'POST', body: { key: passkeyOnDevice(), desktop: lockOnDesktop() } })
     // La llave de este dispositivo se quitó de la cuenta
     if (!r.deviceKey) markPasskeyOnDevice('')
     const opening = state.value.userId !== id
     state.value.userId = id
     apply(r, adopt)
     // Al abrir NUMIQ con «Siempre», salvo si se acaba de entrar o de usar (recargar la página no la pide)
-    if (opening && r.bound && r.mode === 'always' && Date.now() - Math.max(lastActiveAt(), r.unlockedAt ?? 0) > LOCK_GRACE_MS) lock()
+    if (opening && r.bound && r.mode === 'always' && Date.now() - Math.max(lastActiveAt(), r.unlockedAt ?? 0) > lockGraceMs()) lock()
   }
 
   function lock() {
