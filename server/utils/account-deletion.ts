@@ -9,6 +9,7 @@ import type { Db } from './db'
  * tabla nueva queda cubierta sola; solo las tablas hijas sin company_id van en HIJAS, al final.
  */
 
+type Company = typeof tables.companies.$inferSelect
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0]
 type Column = { t: string, c: string, nullable: boolean }
 
@@ -65,6 +66,34 @@ export async function deleteAccount(userId: number) {
   })
   for (const c of plan.remove) await deleteCompanyFolder(c.id)
   return plan
+}
+
+/** Qué se pierde al eliminar una sola empresa: sus datos y quién deja de tener acceso */
+export async function companyDeletionPlan(company: Company, userId: number) {
+  const m = tables.companyMembers
+  const members = await useDb().select({ userId: m.userId, role: m.role, name: tables.users.name })
+    .from(m)
+    .innerJoin(tables.users, eq(tables.users.id, m.userId))
+    .where(eq(m.companyId, company.id))
+  const { documents, expenses, contacts, bank, files, last } = await backupPreview(company)
+  return {
+    id: company.id,
+    name: company.tradeName || company.legalName,
+    others: members.filter(x => x.userId !== userId).map(x => ({ name: x.name, role: x.role })),
+    counts: { documents, expenses, contacts, bank, files },
+    lastBackup: last?.at ?? null,
+  } satisfies Omit<CompanyToRemove, 'role'>
+}
+
+/**
+ * Borra una empresa con todos sus datos y archivos, sin tocar las demás empresas de nadie. Quien la
+ * tenía abierta pasa a otra de las suyas (o al asistente de bienvenida si no le queda ninguna)
+ */
+export async function deleteCompany(companyId: number) {
+  await useDb().transaction(async (tx) => {
+    await purgeCompany(tx, companyId, await referenceColumns(tx))
+  })
+  await deleteCompanyFolder(companyId)
 }
 
 /** Columnas enteras que apuntan a una empresa o a un usuario, en todas las tablas */

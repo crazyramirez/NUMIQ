@@ -5,7 +5,7 @@ const route = useRoute()
 const router = useRouter()
 const toast = useToast()
 const { confirm } = useConfirm()
-const { refresh: refreshMe, readOnly, canManage } = useMe()
+const { me, refresh: refreshMe, readOnly, canManage } = useMe()
 
 const ALL_SECTIONS = [
   { id: 'empresa', label: 'Empresa', icon: 'ph:buildings' },
@@ -484,6 +484,7 @@ function onDesignSaved(accent: string) {
               </section>
             </fieldset>
           </form>
+          <SettingsCompanyDelete v-if="section === 'empresa' && me?.company?.role === 'owner'" class="company-delete rise" style="--i: 3" />
 
           <!-- ─── Numeración ─── -->
           <UiCard v-show="section === 'numeracion'" class="rise" style="--i: 2" padding="none" title="Series de numeración" subtitle="Cada serie numera sus documentos de forma correlativa y sin saltos, como exige el reglamento de facturación.">
@@ -784,6 +785,10 @@ function onDesignSaved(accent: string) {
 .panel {
   min-width: 0;
   padding-bottom: 88px;
+}
+
+.company-delete {
+  margin-top: var(--s-4);
 }
 
 .readonly-note {
