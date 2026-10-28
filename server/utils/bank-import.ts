@@ -65,7 +65,7 @@ export async function readStatement(file: { name: string, data: Buffer }): Promi
   catch {
     throw createError({ statusCode: 422, statusMessage: BAD_FILE })
   }
-  let parsed = parseBankSheets(sheets)
+  let parsed = parseMoneyManager(sheets) ?? parseBankSheets(sheets)
   if (!parsed && await aiEnabled()) parsed = await columnsWithAi(sheets).catch(() => null)
   if (!parsed?.rows.length) throw createError({ statusCode: 422, statusMessage: BAD_FILE })
   return parsed
@@ -76,11 +76,36 @@ export async function readStatement(file: { name: string, data: Buffer }): Promi
  * que ya estaban (extractos solapados), actualiza el saldo y busca a qué corresponde cada movimiento nuevo.
  */
 export async function importStatement(company: Company, file: { name: string, data: Buffer }, opts: { accountId?: number | null, accountName?: string | null }) {
-  const db = useDb()
   const parsed = await readStatement(file)
+  if (parsed.format !== 'moneymanager') return importParsed(company, parsed, opts)
+  // Money Manager trae todas sus cuentas en un archivo: cada una va a la suya (la del mismo nombre o una nueva)
+  const groups = new Map<string, BankRow[]>()
+  for (const r of parsed.rows) groups.set(r.account ?? '', [...groups.get(r.account ?? '') ?? [], r])
+  if (groups.size > 1 && (opts.accountId || opts.accountName)) {
+    throw createError({ statusCode: 409, statusMessage: `Este archivo de Money Manager trae varias cuentas (${[...groups.keys()].map(n => n || 'sin nombre').join(', ')}). Elige «Detectar la cuenta» y cada una irá a la suya.` })
+  }
+  const results = []
+  for (const [label, rows] of groups) results.push(await importParsed(company, { ...parsed, rows }, { ...opts, label: label || null }))
+  const first = results[0]!
+  return {
+    ...first,
+    accountName: results.map(r => r.accountName).join(', '),
+    imported: results.reduce((s, r) => s + r.imported, 0),
+    duplicates: results.reduce((s, r) => s + r.duplicates, 0),
+    from: results.map(r => r.from).sort()[0]!,
+    to: results.map(r => r.to).sort().at(-1)!,
+    suggested: results.reduce((s, r) => s + r.suggested, 0),
+  }
+}
+
+/** `label`: nombre de la cuenta en el programa de origen (Money Manager), para encontrarla o crearla con ese nombre */
+async function importParsed(company: Company, parsed: ParsedStatement, opts: { accountId?: number | null, accountName?: string | null, label?: string | null }) {
+  const db = useDb()
   const accounts = await db.select().from(tables.bankAccounts).where(eq(tables.bankAccounts.companyId, company.id))
   const clean = (s: string | null) => s?.replace(/\s/g, '').toUpperCase() ?? null
+  const plainName = (s: string) => s.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
   let account = opts.accountId ? accounts.find(a => a.id === opts.accountId) ?? null : null
+  if (!account && !opts.accountName && opts.label) account = accounts.find(a => plainName(a.name) === plainName(opts.label!)) ?? null
   if (opts.accountId && !account) throw createError({ statusCode: 404, statusMessage: 'Cuenta no encontrada' })
   if (account && parsed.iban && account.iban && clean(account.iban) !== parsed.iban) {
     throw createError({ statusCode: 409, statusMessage: `Este extracto es de otra cuenta (${parsed.iban.slice(0, 4)} ··· ${parsed.iban.slice(-4)}). Elige «Detectar la cuenta» o la cuenta correcta.` })
@@ -96,7 +121,8 @@ export async function importStatement(company: Company, file: { name: string, da
     throw createError({ statusCode: 409, statusMessage: `Estos movimientos ya están en la cuenta «${ownerAccount.name}». Elige esa cuenta o «Detectar la cuenta».` })
   }
   if (!account && ownerAccount && !opts.accountName) account = ownerAccount
-  if (!account && !opts.accountName && accounts.length === 1) {
+  // Una cuenta con nombre propio en el origen (efectivo, tarjeta…) no se mete en la única que haya
+  if (!account && !opts.accountName && !opts.label && accounts.length === 1) {
     // Una sola cuenta: el extracto sin IBAN es suyo; con IBAN, si ella no tiene y el banco no contradice
     const only = accounts[0]!
     const bank = parsed.bankName ?? bankNameOf(parsed.iban)
@@ -106,7 +132,7 @@ export async function importStatement(company: Company, file: { name: string, da
     const bankName = parsed.bankName ?? bankNameOf(parsed.iban)
     // "CaixaBank"; con dos cuentas del mismo banco, "CaixaBank ···1332"
     const twin = accounts.some(a => a.bankName && a.bankName === bankName)
-    const name = opts.accountName?.trim() || (bankName ? `${bankName}${twin && parsed.iban ? ` ···${parsed.iban.slice(-4)}` : ''}` : 'Cuenta principal')
+    const name = opts.accountName?.trim() || opts.label?.trim() || (bankName ? `${bankName}${twin && parsed.iban ? ` ···${parsed.iban.slice(-4)}` : ''}` : 'Cuenta principal')
     const [res] = await db.insert(tables.bankAccounts).values({
       companyId: company.id, name: name.slice(0, 120), bankName, iban: parsed.iban, isDefault: accounts.length === 0,
     }).$returningId()

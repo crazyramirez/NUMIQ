@@ -300,7 +300,7 @@ async function bancoResumen(company: Company) {
     db.select({ fecha: t.date, importe: t.amount, concepto: t.description, estado: t.status }).from(t).where(eq(t.companyId, company.id)).orderBy(desc(t.date), desc(t.id)).limit(15),
     db.select({ n: sql<number>`COUNT(*)`.mapWith(Number) }).from(t).where(and(eq(t.companyId, company.id), eq(t.status, 'pending'))),
   ])
-  if (!accounts.length) return { aviso: 'Aún no hay extractos importados: se suben en Banco (/banco) en formato Norma 43, Excel o CSV.' }
+  if (!accounts.length) return { aviso: 'Aún no hay extractos importados: se suben en Banco (/banco) en formato Norma 43, Excel o CSV, o la exportación a Excel de Money Manager.' }
   return {
     cuentas: accounts.map(a => ({ nombre: a.name, iban: a.iban ? `${a.iban.slice(0, 4)}···${a.iban.slice(-4)}` : null, saldo: a.balance, saldoA: a.balanceAt })),
     saldoTotal: round2(accounts.reduce((s, a) => s + a.balance, 0)),

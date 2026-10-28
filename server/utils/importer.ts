@@ -390,6 +390,8 @@ async function processFile(k: Knowledge, companyId: number, batchId: number, fil
     if (kind.family === 'sheet') {
       const sheets = readSheets(data, kind.ext)
       if (!sheets.length) throw new AiError('La hoja de cálculo está vacía', 422)
+      // Movimientos de cuentas, no facturas: van al banco, donde se concilian
+      if (parseMoneyManager(sheets)) throw new AiError('Es una exportación de Money Manager con los movimientos de tus cuentas: impórtala en Banco → Importar extracto.', 422)
       const analysis = await analyzeSheets(sheets, ctx)
       meta = { model: analysis.model, ms: analysis.ms, tokens: analysis.tokens }
       sheet = { mappings: analysis.mappings }

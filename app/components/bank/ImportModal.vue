@@ -33,7 +33,7 @@ watch(open, (v) => {
 })
 
 const accountOptions = computed(() => [
-  { value: 'auto', label: 'Detectar la cuenta por el IBAN' },
+  { value: 'auto', label: 'Detectar la cuenta' },
   ...props.accounts.map(a => ({ value: a.id, label: a.name })),
   { value: 'new', label: 'Nueva cuenta…' },
 ])
@@ -74,7 +74,7 @@ async function submit() {
       <DocsDropzone
         v-if="!file"
         title="Arrastra aquí el extracto"
-        hint="Norma 43 (AEB 43), Excel o CSV · de cualquier banco"
+        hint="Norma 43 (AEB 43), Excel o CSV de cualquier banco · exportación de Money Manager"
         accept=".n43,.aeb,.q43,.csb,.txt,.dat,.csv,.tsv,.xls,.xlsx,.ods"
         :multiple="false"
         @files="onFiles"
@@ -94,6 +94,7 @@ async function submit() {
       <details class="how">
         <summary><Icon name="ph:question" aria-hidden="true" /> ¿Cómo descargo el extracto?</summary>
         <p>En la banca online, entra en la cuenta → <strong>Movimientos</strong> → elige las fechas → <strong>Descargar</strong> o <strong>Exportar</strong>. Si te deja elegir, usa <strong>Norma 43</strong> (también llamado AEB 43 o cuaderno 43): es el más completo. Excel o CSV también valen.</p>
+        <p>¿Llevas tus cuentas en <strong>Money Manager</strong>? En la app, <strong>Más → Copia de seguridad → Exportar a Excel</strong> y sube el archivo: cada cuenta de Money Manager (banco, efectivo, tarjeta…) va a la cuenta de NUMIQ con su mismo nombre, o se crea.</p>
         <p>Puedes importar extractos que se solapan: los movimientos repetidos se descartan solos.</p>
       </details>
 

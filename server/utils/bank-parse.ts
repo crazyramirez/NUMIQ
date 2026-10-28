@@ -12,10 +12,12 @@ export interface BankRow {
   reference: string | null
   bankCode: string | null
   balance: number | null
+  /** Money Manager: cuenta de la app a la que pertenece el apunte (un archivo puede traer varias) */
+  account?: string | null
 }
 
 export interface ParsedStatement {
-  format: 'norma43' | 'sheet'
+  format: 'norma43' | 'sheet' | 'moneymanager'
   iban: string | null
   bankName: string | null
   holder: string | null
@@ -223,6 +225,76 @@ export function statementFromColumns(sheet: SheetData, cols: BankColumns, order:
   const last = rows.at(-1)!
   const newest = first.date > last.date ? first : last
   return { format: 'sheet', iban, bankName: iban ? BANKS[iban.slice(4, 8)] ?? null : null, holder: null, rows, closingBalance: newest.balance }
+}
+
+/** Cabeceras de la exportación de Money Manager (Realbyte), en los idiomas en que la usan nuestros clientes */
+const MM_HEAD = {
+  type: /^(ingreso\s*\/\s*gastos?|income\s*\/\s*exp(ense)?s?\.?|receitas?\s*\/\s*despesas?|einnahmen?\s*\/\s*ausgaben?|revenus?\s*\/\s*d[ée]penses?|entrate?\s*\/\s*uscite?)$/i,
+  account: /^(cuentas?|accounts?|contas?|konten|konto|comptes?|conti?)$/i,
+  category: /^(categor[íi]as?|category|categories|kategorie|cat[ée]gorie)$/i,
+  subcategory: /^sub\s*-?\s*categor|^unterkategorie|^sous-cat/i,
+  note: /^(notas?|notes?|notiz|nota)$/i,
+  description: /^(descripci[óo]n|description|descri[çc][ãa]o|beschreibung|descrizione)$/i,
+  amount: /^(importe|amount|valor|betrag|montant|importo)$/i,
+}
+
+/** El tipo del apunte dice si entra (1) o sale (−1) dinero; los importes vienen sin signo */
+function mmSign(type: string): 1 | -1 | null {
+  const t = type.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  if (/transf/.test(t)) {
+    if (/out|sal|envi|aus|sort|uscit|enviad/.test(t)) return -1
+    if (/\bin\b|-in$|entr|recib|ein|ricev/.test(t)) return 1
+    return null
+  }
+  if (/^(gastos?|exp(\.|enses?)?|despesas?|ausgaben?|depenses?|uscite?|spes[ae])$/.test(t)) return -1
+  if (/^(ingresos?|incomes?|receitas?|einnahmen?|revenus?|entrate?)$/.test(t)) return 1
+  return null
+}
+
+/**
+ * Exportación de Money Manager: una fila por apunte con la cuenta, la categoría, la nota y el importe sin
+ * signo; la columna Ingreso/Gasto dice si entra o sale. Cada apunte lleva su cuenta, porque un mismo
+ * archivo trae todas las de la app (banco, efectivo, tarjeta…).
+ */
+export function parseMoneyManager(sheets: SheetData[]): ParsedStatement | null {
+  for (const sheet of sheets) {
+    for (let h = 0; h < Math.min(sheet.rows.length, 5); h++) {
+      const cells = sheet.rows[h]!.map(c => cellText(c).trim())
+      const find = (re: RegExp, from = 0) => cells.findIndex((c, i) => i >= from && re.test(c))
+      const type = find(MM_HEAD.type)
+      const account = find(MM_HEAD.account)
+      if (type < 0 || account < 0 || find(MM_HEAD.category) < 0) continue
+      const category = find(MM_HEAD.category)
+      const subcategory = find(MM_HEAD.subcategory)
+      const note = find(MM_HEAD.note)
+      const description = find(MM_HEAD.description)
+      // Importe en la moneda de la cuenta (la segunda columna «Cuentas»), si no en la del apunte, si no en la principal (EUR)
+      const amountCols = [find(MM_HEAD.account, account + 1), find(MM_HEAD.amount), cells.findIndex(c => /^[A-Z]{3}$/.test(c))].filter(i => i >= 0)
+      const text = (r: SheetCell[], i: number) => (i >= 0 ? cellText(r[i] ?? null).trim() : '')
+      const rows: BankRow[] = []
+      for (const r of sheet.rows.slice(h + 1)) {
+        const date = parseSheetDate(r[0])
+        const sign = mmSign(text(r, type))
+        const value = amountCols.map(i => parseAmount(r[i])).find(v => v != null && v !== 0)
+        if (!date || !sign || value == null) continue
+        const payee = text(r, note)
+        const cat = [text(r, category), text(r, subcategory)].filter(Boolean).join(' › ')
+        rows.push({
+          date,
+          valueDate: null,
+          amount: round2(sign * Math.abs(value)),
+          description: ([...new Set([payee, text(r, description), cat].filter(Boolean))].join(' · ') || text(r, type)).slice(0, 500),
+          counterparty: payee.slice(0, 200) || null,
+          reference: null,
+          bankCode: null,
+          balance: null,
+          account: text(r, account).slice(0, 120) || null,
+        })
+      }
+      if (rows.length) return { format: 'moneymanager', iban: null, bankName: null, holder: null, rows, closingBalance: null }
+    }
+  }
+  return null
 }
 
 /** Nombre del banco por el código de entidad del IBAN */

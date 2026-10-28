@@ -19,6 +19,8 @@ export interface ChangeEntry {
 }
 
 export const CHANGELOG: readonly ChangeEntry[] = Object.freeze([
+  // ─── 28 de octubre de 2026 ───
+  { at: '2026-10-28T12:00', kind: 'new', area: 'Banco', icon: 'ph:wallet', title: 'Importa tus cuentas de Money Manager', body: 'En Banco → Importar, sube la exportación a Excel de Money Manager (Más → Copia de seguridad → Exportar a Excel). Los gastos entran como cargos y los ingresos como abonos, con la nota, la descripción y la categoría en el concepto. Cada cuenta de Money Manager (banco, efectivo, tarjeta…) va a la cuenta de NUMIQ con su mismo nombre o se crea, y si vuelves a importar no se repite nada.', to: '/banco' },
   // ─── 27 de octubre de 2026 ───
   { at: '2026-10-27T18:00', kind: 'improved', area: 'Seguridad', icon: 'ph:lock-simple', title: 'En el ordenador, el bloqueo ya no te interrumpe', body: 'Con el bloqueo en «Siempre», en el ordenador NUMIQ ya no te pide la huella, Windows Hello o la contraseña cada vez que cambias a otra ventana o pestaña y vuelves: solo tras 15 minutos sin usarla, como el bloqueo de pantalla. En el móvil sigue igual: al volver tras más de un minuto fuera.', to: '/ajustes?s=cuenta' },
   { at: '2026-10-27T17:00', kind: 'improved', area: 'Listados', icon: 'ph:magnifying-glass', title: 'Tus búsquedas y filtros te esperan al volver', body: 'Si buscas o filtras en Facturas, Presupuestos, Recurrentes, Productos, Gastos, Banco, Clientes o Proveedores y te vas a otra sección o abres una ficha, al volver (desde el menú, las pestañas o «Volver») el listado sigue con la misma búsqueda, filtros y página. Para empezar de cero, pulsa otra vez el listado en el menú estando en él o borra la búsqueda.' },
