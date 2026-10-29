@@ -21,7 +21,8 @@ export const designInputSchema = z.object({
   defaultEmailMessage: z.string().max(3000, 'Máximo 3000 caracteres').optional().default(''),
   defaultEmailSubjectQuote: z.string().trim().max(200, 'Máximo 200 caracteres').optional().default('Presupuesto {numero} · {empresa}'),
   defaultEmailMessageQuote: z.string().max(3000, 'Máximo 3000 caracteres').optional().default(''),
-  emailSignature: z.string().max(1000, 'Máximo 1000 caracteres').optional().default(''),
+  emailSignature: richDocSchema.nullish().default(null)
+    .refine(doc => richToPlain(doc).length <= 1000, 'La firma admite como máximo 1000 caracteres'),
   emailSignatureImageSize: z.enum(['sm', 'md', 'lg']).optional().default('md'),
   emailSignatureImageLayout: z.enum(['below', 'left']).optional().default('below'),
   footerText: z.string().max(600, 'Máximo 600 caracteres'),
@@ -44,7 +45,7 @@ export const signatureImageUrl = (rel: string | null | undefined) => (rel ? `/ap
  * a la medida elegida sin agrandarla). Null si no hay ni texto ni imagen.
  */
 export async function emailSignature(company: Parameters<typeof signatureTokens>[0] & { emailSignaturePath: string | null }, design: InvoiceDesign): Promise<MailSignature | null> {
-  const text = renderSignature(design.emailSignature, signatureTokens(company))
+  const doc = renderSignature(design.emailSignature, signatureTokens(company))
   let image: MailSignature['image'] = null
   const data = company.emailSignaturePath ? await readStoredFile(company.emailSignaturePath).catch(() => null) : null
   const kind = data && detectImage(data)
@@ -54,8 +55,8 @@ export async function emailSignature(company: Parameters<typeof signatureTokens>
     const scale = Math.min(1, box.w / size.width, box.h / size.height)
     image = { content: data, mime: kind.mime, filename: `firma.${kind.ext}`, width: Math.round(size.width * scale), height: Math.round(size.height * scale) }
   }
-  if (!text && !image) return null
-  return { text, image, imageLeft: design.emailSignatureImageLayout === 'left' }
+  if (!doc && !image) return null
+  return { doc, image, imageLeft: design.emailSignatureImageLayout === 'left' }
 }
 
 export async function saveCompanyDesign(companyId: number, design: InvoiceDesign) {

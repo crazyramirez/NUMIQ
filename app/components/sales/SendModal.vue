@@ -31,7 +31,7 @@ const sending = ref(false)
 
 const { data: mail } = useFetch<{ configured: boolean, account: string | null }>('/api/mail/status', { lazy: true, server: false })
 const { data: designData } = useFetch<{ design: InvoiceDesign, signatureImageUrl: string | null }>('/api/invoice-design', { lazy: true, server: false })
-const hasSignature = computed(() => !!(designData.value?.design.emailSignature.trim() || designData.value?.signatureImageUrl))
+const hasSignature = computed(() => !!(!richIsEmpty(designData.value?.design.emailSignature) || designData.value?.signatureImageUrl))
 
 function defaults() {
   const n = props.doc.number ?? ''

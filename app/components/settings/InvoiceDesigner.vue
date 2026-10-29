@@ -227,33 +227,58 @@ const SIGNATURE_LAYOUTS = [
   { value: 'left', label: 'A la izquierda' },
 ]
 const sigTokens = computed(() => data.value?.signatureTokens ?? {})
-const sigText = computed(() => renderSignature(d.emailSignature, sigTokens.value))
+// Vista previa con los datos de la empresa (el HTML sale de bloques, con todo el texto escapado)
+const sigHtml = computed(() => richToHtml(renderSignature(d.emailSignature, sigTokens.value)))
 const sigBox = computed(() => SIGNATURE_IMAGE_BOX[d.emailSignatureImageSize])
 const sigImageUrl = ref(data.value?.signatureImageUrl ?? null)
 const sigInput = ref<HTMLInputElement>()
 const sigUploading = ref(false)
 
+/** Cada campo, en su propia línea al final */
 function insertSignatureToken(token: string) {
-  const cur = d.emailSignature ?? ''
-  d.emailSignature = `${cur}${cur && !/\n$/.test(cur) ? '\n' : ''}${token}`
+  d.emailSignature = [...(d.emailSignature ?? []), { k: 'p', c: [{ t: token }] }]
 }
 
 /** Plantilla con los datos de la empresa (las líneas sin dato no se muestran) */
 function fillSignature() {
-  d.emailSignature = 'Un saludo\n\n{empresa}\n{web}\n{email}\n{telefono}'
+  const line = (t: string, b = false): RichBlock => ({ k: 'p', c: [{ t, ...(b ? { b } : {}) }] })
+  d.emailSignature = [line('Un saludo'), line(''), line('{empresa}', true), line('{web}'), line('{email}'), line('{telefono}')]
 }
 
-async function uploadSignatureImage(file: File | undefined, fromLogo = false) {
-  if (!fromLogo && !file) return
-  if (file && file.size > 1024 * 1024) {
-    toast.error('La imagen supera 1 MB', 'Prueba con un PNG o JPG más ligero.')
-    return
+/** SVG → PNG nítido (Gmail y Outlook no muestran SVG), con el doble de la medida mayor de la firma */
+async function svgToPng(svg: Blob): Promise<Blob> {
+  const text = await svg.text()
+  const box = text.match(/viewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)/i)
+  const ratio = box ? Number(box[1]) / Number(box[2]) : 0
+  const img = new Image()
+  img.src = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }))
+  try {
+    await img.decode()
+    const r = ratio || (img.naturalWidth && img.naturalHeight ? img.naturalWidth / img.naturalHeight : 2)
+    const max = SIGNATURE_IMAGE_BOX.lg
+    const w = Math.round(Math.min(max.w, max.h * r) * 2)
+    const canvas = Object.assign(document.createElement('canvas'), { width: w, height: Math.round(w / r) })
+    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+    return await new Promise<Blob>((ok, ko) => canvas.toBlob(b => (b ? ok(b) : ko(new Error('No se pudo convertir el SVG'))), 'image/png'))
   }
+  finally {
+    URL.revokeObjectURL(img.src)
+  }
+}
+
+async function uploadSignatureImage(file: Blob | undefined, fromLogo = false) {
   sigUploading.value = true
   try {
+    if (fromLogo && logoUrl.value) file = await $fetch<Blob>(logoUrl.value, { responseType: 'blob' })
+    if (!file) return
+    if (file.type === 'image/svg+xml') file = await svgToPng(file)
+    if (file.size > 1024 * 1024) {
+      toast.error('La imagen supera 1 MB', 'Prueba con un PNG o JPG más ligero.')
+      return
+    }
     const body = new FormData()
-    if (file) body.append('file', file)
-    const r = await $fetch<{ imageUrl: string }>('/api/company/email-signature', { method: 'POST', query: fromLogo ? { fromLogo: 1 } : undefined, body: fromLogo ? undefined : body })
+    body.append('file', file, file instanceof File ? file.name : 'firma.png')
+    const r = await $fetch<{ imageUrl: string }>('/api/company/email-signature', { method: 'POST', body })
     sigImageUrl.value = r.imageUrl
     toast.success('Imagen de la firma actualizada')
   }
@@ -537,14 +562,14 @@ async function removeSignatureImage() {
                 <Icon name="ph:plus" /> {{ t.l }}
               </button>
             </div>
-            <UiTextarea
+            <UiRichText
               v-model="d.emailSignature"
-              rows="7"
-              :placeholder="'Un saludo\n\nNombre y apellidos\nCargo\n{empresa}\n{web}\n{email}\n{telefono}'"
-              hint="Los campos se rellenan con los datos de Ajustes › Empresa; una línea sin dato no aparece. Si la firma ya se despide, quita «Un saludo» del mensaje"
-              maxlength="1000"
+              compact
+              label="Texto de la firma"
+              placeholder="Despedida, nombre, cargo, datos de contacto…"
               :disabled="!canEdit"
             />
+            <p class="hint">Selecciona texto para ponerlo en negrita, cursiva o subrayado. Los campos se rellenan con los datos de Ajustes › Empresa y una línea sin dato no aparece. Si la firma ya se despide, quita «Un saludo» del mensaje.</p>
           </div>
 
           <div class="field">
@@ -555,28 +580,28 @@ async function removeSignatureImage() {
                 <Icon v-else name="ph:image" />
               </div>
               <div class="sig-img-side">
-                <p class="hint">Logo, sello o banner · PNG o JPG · máx. 1 MB</p>
+                <p class="hint">Logo, sello o banner · PNG, JPG o SVG · máx. 1 MB</p>
                 <div v-if="canEdit" class="drop-actions">
                   <UiButton size="sm" :icon="sigImageUrl ? 'ph:arrows-clockwise' : 'ph:upload-simple'" :loading="sigUploading" @click="sigInput?.click()">{{ sigImageUrl ? 'Cambiar' : 'Subir imagen' }}</UiButton>
                   <UiButton v-if="logoUrl && !sigImageUrl" size="sm" variant="ghost" icon="ph:image-square" :disabled="sigUploading" @click="uploadSignatureImage(undefined, true)">Usar el logo</UiButton>
                   <UiButton v-if="sigImageUrl" size="sm" variant="ghost" icon="ph:trash" @click="removeSignatureImage">Quitar</UiButton>
                 </div>
               </div>
-              <input ref="sigInput" type="file" accept="image/png,image/jpeg" class="sr-only" @change="uploadSignatureImage(($event.target as HTMLInputElement).files?.[0])">
+              <input ref="sigInput" type="file" accept="image/png,image/jpeg,image/svg+xml" class="sr-only" @change="uploadSignatureImage(($event.target as HTMLInputElement).files?.[0])">
             </div>
           </div>
 
           <div v-if="sigImageUrl" class="form-grid">
             <UiSelect v-model="d.emailSignatureImageSize" class="c-6" label="Tamaño" :options="SIGNATURE_SIZES" :disabled="!canEdit" />
-            <UiSelect v-model="d.emailSignatureImageLayout" class="c-6" label="Posición" :options="SIGNATURE_LAYOUTS" :disabled="!canEdit || !sigText" />
+            <UiSelect v-model="d.emailSignatureImageLayout" class="c-6" label="Posición" :options="SIGNATURE_LAYOUTS" :disabled="!canEdit || !sigHtml" />
           </div>
 
-          <div v-if="sigText || sigImageUrl" class="field">
+          <div v-if="sigHtml || sigImageUrl" class="field">
             <span class="label">Así se verá</span>
-            <div class="sig-preview" :style="{ '--a': d.accentColor }">
-              <div class="sig-body" :class="{ left: !!sigImageUrl && !!sigText && d.emailSignatureImageLayout === 'left' }">
-                <p v-if="sigText" class="sig-text">{{ sigText }}</p>
-                <img v-if="sigImageUrl" :src="sigImageUrl" alt="" :style="{ maxWidth: `${sigBox.w}px`, maxHeight: `${sigBox.h}px` }">
+            <div class="sig-preview" :style="{ '--a': d.accentColor, '--img-w': `${sigBox.w}px` }">
+              <div class="sig-body" :class="{ left: !!sigImageUrl && !!sigHtml && d.emailSignatureImageLayout === 'left' }">
+                <div v-if="sigHtml" class="sig-text" v-html="sigHtml" />
+                <img v-if="sigImageUrl" :src="sigImageUrl" alt="" :style="{ maxWidth: `min(${sigBox.w}px, 100%)`, maxHeight: `${sigBox.h}px` }">
               </div>
             </div>
           </div>
@@ -1200,11 +1225,18 @@ async function removeSignatureImage() {
   gap: 16px;
 }
 
+/* La tarjeta es más estrecha que el correo: la imagen cede sitio al texto */
 .sig-body.left img {
   order: -1;
+  flex: 0 1 auto;
+  min-width: 0;
+  width: auto;
+  max-width: min(var(--img-w, 180px), 40%) !important;
 }
 
 .sig-body.left .sig-text {
+  flex: 1 0 55%;
+  min-width: 0;
   padding-left: 16px;
   border-left: 2px solid var(--a);
 }
@@ -1215,7 +1247,31 @@ async function removeSignatureImage() {
   line-height: 1.55;
   color: #3f4654;
   white-space: pre-line;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+}
+
+/* Como en el correo: cada párrafo, una línea */
+.sig-text :deep(p),
+.sig-text :deep(ul),
+.sig-text :deep(ol) {
+  margin: 0;
+}
+
+.sig-text :deep(h3) {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #11141b;
+}
+
+.sig-text :deep(ul),
+.sig-text :deep(ol) {
+  padding-left: 20px;
+  list-style: disc;
+}
+
+.sig-text :deep(ol) {
+  list-style: decimal;
 }
 
 .sig-body img {

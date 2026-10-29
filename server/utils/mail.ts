@@ -105,7 +105,8 @@ const escapeHtml = (s: string) => s.replace(/[&<>"']/g, ch => `&#${ch.charCodeAt
 
 /** Firma al pie del correo: texto de varias líneas e imagen opcional (va como adjunto en línea, CID) */
 export interface MailSignature {
-  text: string
+  /** Texto con formato (negrita, cursiva, subrayado, listas), ya con los datos de la empresa */
+  doc: RichDoc | null
   image: { content: Buffer, mime: string, filename: string, width: number, height: number } | null
   /** Imagen a la izquierda del texto (si no, debajo) */
   imageLeft: boolean
@@ -126,9 +127,25 @@ function linkify(html: string, accent: string) {
     .replace(/(^|[\s:])(\+?\d[\d ]{7,}\d)(?=$|[\s<])/gm, (_, pre: string, tel: string) => `${pre}${a(`tel:${tel.replace(/\s/g, '')}`, tel)}`)
 }
 
+/** Texto con formato → HTML de correo (estilos en línea; cada párrafo, una línea; uno vacío, un hueco) */
+function richMailHtml(doc: RichDoc, accent: string) {
+  const spans = (c: RichSpan[]) => c.map((s) => {
+    let h = linkify(escapeHtml(s.t), accent).replace(/\n/g, '<br>')
+    if (s.u) h = `<u>${h}</u>`
+    if (s.i) h = `<em>${h}</em>`
+    if (s.b) h = `<strong>${h}</strong>`
+    return h
+  }).join('')
+  return doc.map((b) => {
+    if (b.k === 'p') return `<div>${spans(b.c) || '&nbsp;'}</div>`
+    if (b.k === 'h') return `<div style="font-size:16px;font-weight:700;color:#11141b">${spans(b.c)}</div>`
+    return `<${b.k} style="margin:4px 0;padding-left:20px">${b.items.map(it => `<li>${spans(it)}</li>`).join('')}</${b.k}>`
+  }).join('')
+}
+
 function signatureHtml(s: MailSignature, accent: string) {
-  const text = s.text
-    ? `<p style="margin:0;font-size:14px;line-height:1.55;color:#3f4654">${linkify(escapeHtml(s.text), accent).replace(/\n/g, '<br>')}</p>`
+  const text = s.doc
+    ? `<div style="margin:0;font-size:14px;line-height:1.55;color:#3f4654">${richMailHtml(s.doc, accent)}</div>`
     : ''
   const img = s.image
     ? `<img src="cid:${SIGNATURE_CID}" width="${s.image.width}" height="${s.image.height}" alt="" style="display:block;border:0;width:${s.image.width}px;height:${s.image.height}px">`
@@ -143,7 +160,7 @@ function signatureHtml(s: MailSignature, accent: string) {
 export function mailLayout(o: { brand: string, accent?: string | null, title: string, lines: string[], details?: Array<[string, string]>, action?: { label: string, url: string } | null, signature?: MailSignature | null, footer: string }) {
   const accent = o.accent || '#4f46e5'
   const details = o.details ?? []
-  const text = [o.title, '', ...o.lines, ...(details.length ? ['', ...details.map(([k, v]) => `${k}: ${v}`)] : []), ...(o.action ? ['', `${o.action.label}: ${o.action.url}`] : []), ...(o.signature?.text ? ['', '--', o.signature.text] : []), '', o.footer].join('\n')
+  const text = [o.title, '', ...o.lines, ...(details.length ? ['', ...details.map(([k, v]) => `${k}: ${v}`)] : []), ...(o.action ? ['', `${o.action.label}: ${o.action.url}`] : []), ...(o.signature?.doc ? ['', '--', richToPlain(o.signature.doc)] : []), '', o.footer].join('\n')
   const pad = (i: number) => `${i ? 4 : 14}px 16px ${i === details.length - 1 ? 14 : 4}px`
   const detailsHtml = details.length
     ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0 4px;background:#f6f7f9;border-radius:10px">${details.map(([k, v], i) => `<tr><td style="padding:${pad(i)};font-size:13px;color:#6b7280">${escapeHtml(k)}</td><td align="right" style="padding:${pad(i)};font-size:14px;font-weight:600;color:#11141b">${escapeHtml(v)}</td></tr>`).join('')}</table>`

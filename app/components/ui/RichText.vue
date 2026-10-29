@@ -4,7 +4,8 @@
  * Guarda bloques (RichDoc), nunca HTML; lo pegado de Word, Google Docs o una web se limpia.
  * Atajos: Ctrl+B / Ctrl+I / Ctrl+U, «- » o «1. » al empezar una línea crea una lista.
  */
-const props = defineProps<{ placeholder?: string, label?: string }>()
+/** `compact`: campo de formulario (Ajustes) con barra fija y solo negrita, cursiva y subrayado */
+const props = defineProps<{ placeholder?: string, label?: string, compact?: boolean, disabled?: boolean }>()
 const model = defineModel<RichDoc | null>({ default: null })
 
 const el = ref<HTMLDivElement>()
@@ -116,17 +117,22 @@ const tools = computed(() => [
   { key: 'b', icon: 'ph:text-b-bold', label: 'Negrita (Ctrl+B)', on: state.b, act: () => run('bold') },
   { key: 'i', icon: 'ph:text-italic', label: 'Cursiva (Ctrl+I)', on: state.i, act: () => run('italic') },
   { key: 'u', icon: 'ph:text-underline', label: 'Subrayado (Ctrl+U)', on: state.u, act: () => run('underline') },
-  { key: 'sep1' },
-  { key: 'h', icon: 'ph:text-h', label: 'Subtítulo', on: state.h, act: toggleHeading },
-  { key: 'ul', icon: 'ph:list-bullets', label: 'Lista con viñetas («- » al empezar)', on: state.ul, act: () => run('insertUnorderedList') },
-  { key: 'ol', icon: 'ph:list-numbers', label: 'Lista numerada («1. » al empezar)', on: state.ol, act: () => run('insertOrderedList') },
+  // Subtítulos y listas, fuera del modo compacto
+  ...(props.compact
+    ? []
+    : [
+        { key: 'sep1' },
+        { key: 'h', icon: 'ph:text-h', label: 'Subtítulo', on: state.h, act: toggleHeading },
+        { key: 'ul', icon: 'ph:list-bullets', label: 'Lista con viñetas («- » al empezar)', on: state.ul, act: () => run('insertUnorderedList') },
+        { key: 'ol', icon: 'ph:list-numbers', label: 'Lista numerada («1. » al empezar)', on: state.ol, act: () => run('insertOrderedList') },
+      ]),
   { key: 'sep2' },
   { key: 'x', icon: 'ph:text-t-slash', label: 'Quitar formato', on: false, act: clearFormat },
 ])
 </script>
 
 <template>
-  <div class="rich-edit" :class="{ focused, empty }">
+  <div class="rich-edit" :class="{ focused, empty, compact, disabled, control: compact }">
     <div class="rt-bar" role="toolbar" :aria-label="`Formato${label ? ` de ${label.toLowerCase()}` : ''}`">
       <template v-for="t in tools" :key="t.key">
         <span v-if="!t.icon" class="rt-sep" aria-hidden="true" />
@@ -148,7 +154,7 @@ const tools = computed(() => [
     <div
       ref="el"
       class="rt-area rich"
-      contenteditable="true"
+      :contenteditable="!disabled"
       role="textbox"
       aria-multiline="true"
       :aria-label="label"
@@ -268,5 +274,67 @@ const tools = computed(() => [
   .focused .rt-bar {
     display: flex;
   }
+}
+
+/* Campo de formulario: caja como los demás campos, barra fija arriba y colores del tema */
+.compact {
+  --p-text: var(--text);
+  --p-text-2: var(--text-2);
+  --p-text-3: var(--text-4);
+  --p-soft: var(--surface-hover);
+  --p-accent: var(--brand);
+  --p-line: var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.compact .rt-bar,
+.compact.focused .rt-bar {
+  position: static;
+  display: flex;
+  width: auto;
+  margin: 0;
+  padding: 4px 6px;
+  background: var(--surface-2);
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  box-shadow: none;
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+}
+
+.compact .rt-area,
+.compact .rt-area:hover,
+.compact .rt-area:focus {
+  min-height: 150px;
+  margin: 0;
+  padding: 10px 12px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  line-height: 1.55;
+  overflow-wrap: break-word;
+}
+
+.compact .rt-area :deep(p),
+.compact .rt-area :deep(h3),
+.compact .rt-area :deep(ul),
+.compact .rt-area :deep(ol) {
+  margin: 0;
+}
+
+.compact.disabled {
+  background: var(--surface-sunken);
+  color: var(--text-3);
+}
+
+.compact.disabled .rt-bar {
+  pointer-events: none;
+  opacity: 0.5;
 }
 </style>

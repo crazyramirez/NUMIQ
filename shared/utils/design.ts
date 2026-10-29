@@ -50,8 +50,8 @@ export interface InvoiceDesign {
   defaultEmailSubjectQuote: string
   /** Mensaje por defecto al enviar un presupuesto por email */
   defaultEmailMessageQuote: string
-  /** Firma al pie de los correos a clientes, con campos de la empresa ({web}, {telefono}…) */
-  emailSignature: string
+  /** Firma al pie de los correos a clientes, con formato y campos de la empresa ({web}, {telefono}…) */
+  emailSignature: RichDoc | null
   /** Tamaño de la imagen de la firma */
   emailSignatureImageSize: SignatureImageSize
   /** Imagen de la firma debajo del texto o a su izquierda */
@@ -81,7 +81,7 @@ export function defaultDesign(accentColor?: string | null): InvoiceDesign {
     defaultEmailMessage: 'Hola, {cliente}:\n\nTe enviamos la factura {numero} por importe de {importe}, con vencimiento el {vencimiento}.\n\nGracias por tu confianza.\n\nUn saludo,\n{empresa}',
     defaultEmailSubjectQuote: 'Presupuesto {numero} · {empresa}',
     defaultEmailMessageQuote: 'Hola, {cliente}:\n\nTe enviamos el presupuesto {numero} por {importe}.\n\nQuedamos a tu disposición para cualquier duda o ajuste.\n\nUn saludo,\n{empresa}',
-    emailSignature: '',
+    emailSignature: null,
     emailSignatureImageSize: 'md',
     emailSignatureImageLayout: 'below',
     footerText: '',
@@ -118,7 +118,7 @@ export function normalizeDesign(raw: Partial<InvoiceDesign> | null | undefined, 
     defaultEmailMessage: (upgrade(raw.defaultEmailMessage, LEGACY_EMAIL_MESSAGE, d.defaultEmailMessage) ?? d.defaultEmailMessage).slice(0, 3000),
     defaultEmailSubjectQuote: (raw.defaultEmailSubjectQuote ?? d.defaultEmailSubjectQuote).slice(0, 200),
     defaultEmailMessageQuote: (upgrade(raw.defaultEmailMessageQuote, LEGACY_EMAIL_MESSAGE_QUOTE, d.defaultEmailMessageQuote) ?? d.defaultEmailMessageQuote).slice(0, 3000),
-    emailSignature: (raw.emailSignature ?? '').slice(0, 1000),
+    emailSignature: signatureDoc(raw.emailSignature),
     emailSignatureImageSize: (['sm', 'md', 'lg'] as const).includes(raw.emailSignatureImageSize as SignatureImageSize) ? raw.emailSignatureImageSize as SignatureImageSize : d.emailSignatureImageSize,
     emailSignatureImageLayout: raw.emailSignatureImageLayout === 'left' ? 'left' : 'below',
     footerText: (raw.footerText ?? '').slice(0, 600),
@@ -139,17 +139,42 @@ export function signatureTokens(c: { legalName: string, tradeName?: string | nul
   }
 }
 
+/** Firma guardada como documento con formato (las primeras se guardaron como texto: cada línea, un párrafo) */
+function signatureDoc(raw: unknown): RichDoc | null {
+  if (typeof raw === 'string') return normalizeRich(raw.slice(0, 1000).split(/\r?\n/).map(t => ({ k: 'p' as const, c: [{ t }] })))
+  return Array.isArray(raw) ? normalizeRich(raw as RichDoc) : null
+}
+
 /** Firma con sus campos rellenos; una línea cuyos campos están todos vacíos («Tel. {telefono}») desaparece */
-export function renderSignature(template: string, tokens: Record<string, string>): string {
-  return template
-    .split('\n')
-    .flatMap((line) => {
-      const keys = [...line.matchAll(/\{(\w+)\}/g)].map(m => m[1]!).filter(k => k in tokens)
-      if (keys.length && keys.every(k => !tokens[k])) return []
-      return [renderEmailTemplate(line, tokens).trimEnd()]
-    })
-    .join('\n')
-    .trim()
+export function renderSignature(doc: RichDoc | null | undefined, tokens: Record<string, string>): RichDoc | null {
+  if (!doc) return null
+  const line = (spans: RichSpan[]): RichSpan[] | null => {
+    const keys = [...spansText(spans).matchAll(/\{(\w+)\}/g)].map(m => m[1]!).filter(k => k in tokens)
+    if (keys.length && keys.every(k => !tokens[k])) return null
+    const out = mergeSpans(spans.map(s => ({ ...s, t: renderEmailTemplate(s.t, tokens) })))
+    if (!keys.length) return out
+    // «{empresa} · {web}» sin web: fuera el separador que queda colgando
+    const sep = /[\s·•|,/–-]+/
+    while (out.length && !out[0]!.t.replace(new RegExp(`^${sep.source}`), '')) out.shift()
+    while (out.length && !out.at(-1)!.t.replace(new RegExp(`${sep.source}$`), '')) out.pop()
+    if (out.length) {
+      out[0] = { ...out[0]!, t: out[0]!.t.replace(new RegExp(`^${sep.source}`), '') }
+      out[out.length - 1] = { ...out.at(-1)!, t: out.at(-1)!.t.replace(new RegExp(`${sep.source}$`), '') }
+    }
+    return out
+  }
+  const out: RichDoc = []
+  for (const b of doc) {
+    if ('c' in b) {
+      const c = line(b.c)
+      if (c) out.push({ k: b.k, c })
+    }
+    else {
+      const items = b.items.map(line).filter((it): it is RichSpan[] => !!it)
+      if (items.length) out.push({ k: b.k, items })
+    }
+  }
+  return normalizeRich(out)
 }
 
 /**
