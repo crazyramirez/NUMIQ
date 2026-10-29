@@ -14,6 +14,7 @@ export type DesignDensity = 'normal' | 'compact'
  */
 export type LineColumnsMode = 'auto' | 'full' | 'amount' | 'concept'
 export const LINE_COLUMNS_MODES: LineColumnsMode[] = ['auto', 'full', 'amount', 'concept']
+export type SignatureImageSize = 'sm' | 'md' | 'lg'
 
 export interface InvoiceDesign {
   layout: DesignLayout
@@ -49,6 +50,12 @@ export interface InvoiceDesign {
   defaultEmailSubjectQuote: string
   /** Mensaje por defecto al enviar un presupuesto por email */
   defaultEmailMessageQuote: string
+  /** Firma al pie de los correos a clientes, con campos de la empresa ({web}, {telefono}…) */
+  emailSignature: string
+  /** Tamaño de la imagen de la firma */
+  emailSignatureImageSize: SignatureImageSize
+  /** Imagen de la firma debajo del texto o a su izquierda */
+  emailSignatureImageLayout: 'below' | 'left'
   /** Pie legal: registro mercantil, protección de datos… */
   footerText: string
 }
@@ -74,6 +81,9 @@ export function defaultDesign(accentColor?: string | null): InvoiceDesign {
     defaultEmailMessage: 'Hola, {cliente}:\n\nTe enviamos la factura {numero} por importe de {importe}, con vencimiento el {vencimiento}.\n\nGracias por tu confianza.\n\nUn saludo,\n{empresa}',
     defaultEmailSubjectQuote: 'Presupuesto {numero} · {empresa}',
     defaultEmailMessageQuote: 'Hola, {cliente}:\n\nTe enviamos el presupuesto {numero} por {importe}.\n\nQuedamos a tu disposición para cualquier duda o ajuste.\n\nUn saludo,\n{empresa}',
+    emailSignature: '',
+    emailSignatureImageSize: 'md',
+    emailSignatureImageLayout: 'below',
     footerText: '',
   }
 }
@@ -108,8 +118,38 @@ export function normalizeDesign(raw: Partial<InvoiceDesign> | null | undefined, 
     defaultEmailMessage: (upgrade(raw.defaultEmailMessage, LEGACY_EMAIL_MESSAGE, d.defaultEmailMessage) ?? d.defaultEmailMessage).slice(0, 3000),
     defaultEmailSubjectQuote: (raw.defaultEmailSubjectQuote ?? d.defaultEmailSubjectQuote).slice(0, 200),
     defaultEmailMessageQuote: (upgrade(raw.defaultEmailMessageQuote, LEGACY_EMAIL_MESSAGE_QUOTE, d.defaultEmailMessageQuote) ?? d.defaultEmailMessageQuote).slice(0, 3000),
+    emailSignature: (raw.emailSignature ?? '').slice(0, 1000),
+    emailSignatureImageSize: (['sm', 'md', 'lg'] as const).includes(raw.emailSignatureImageSize as SignatureImageSize) ? raw.emailSignatureImageSize as SignatureImageSize : d.emailSignatureImageSize,
+    emailSignatureImageLayout: raw.emailSignatureImageLayout === 'left' ? 'left' : 'below',
     footerText: (raw.footerText ?? '').slice(0, 600),
   }
+}
+
+/** Campos de la empresa que admite la firma de los correos */
+export function signatureTokens(c: { legalName: string, tradeName?: string | null, nif: string, email?: string | null, phone?: string | null, website?: string | null, address?: string | null, postalCode?: string | null, city?: string | null }): Record<string, string> {
+  const place = [c.postalCode, c.city].filter(Boolean).join(' ')
+  return {
+    empresa: c.tradeName || c.legalName,
+    razon_social: c.legalName,
+    nif: c.nif,
+    email: c.email ?? '',
+    telefono: c.phone ?? '',
+    web: (c.website ?? '').replace(/^https?:\/\//i, '').replace(/\/+$/, ''),
+    direccion: [c.address, place].filter(Boolean).join(', '),
+  }
+}
+
+/** Firma con sus campos rellenos; una línea cuyos campos están todos vacíos («Tel. {telefono}») desaparece */
+export function renderSignature(template: string, tokens: Record<string, string>): string {
+  return template
+    .split('\n')
+    .flatMap((line) => {
+      const keys = [...line.matchAll(/\{(\w+)\}/g)].map(m => m[1]!).filter(k => k in tokens)
+      if (keys.length && keys.every(k => !tokens[k])) return []
+      return [renderEmailTemplate(line, tokens).trimEnd()]
+    })
+    .join('\n')
+    .trim()
 }
 
 /**
@@ -160,3 +200,7 @@ export function lineColumns(design: Pick<InvoiceDesign, 'lineColumns' | 'discoun
   const quantity = lines.some(l => l.quantity !== 1)
   return { quantity, price: quantity || discount, discount, vat: new Set(lines.map(l => l.vatRate)).size > 1, amount: true }
 }
+
+// Al final del archivo: una constante con literal de objeto oculta al auto-import la exportación siguiente
+/** Caja máxima (px) de la imagen de la firma en el correo */
+export const SIGNATURE_IMAGE_BOX: Readonly<Record<SignatureImageSize, { w: number, h: number }>> = Object.freeze({ sm: { w: 120, h: 60 }, md: { w: 180, h: 90 }, lg: { w: 260, h: 130 } })

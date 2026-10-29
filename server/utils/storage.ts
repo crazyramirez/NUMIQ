@@ -58,6 +58,24 @@ export function detectImage(data: Buffer): ImageKind | null {
   return null
 }
 
+/** Ancho y alto en píxeles de un PNG o JPG (null si no se puede leer) */
+export function imageSize(data: Buffer): { width: number, height: number } | null {
+  const kind = detectImage(data)
+  if (kind?.ext === 'png' && data.length >= 24) return { width: data.readUInt32BE(16), height: data.readUInt32BE(20) }
+  if (kind?.ext !== 'jpg') return null
+  // Marcadores JPEG hasta el SOF (C0–CF salvo C4, C8 y CC), que lleva alto y ancho
+  let i = 2
+  while (i + 9 < data.length) {
+    if (data[i] !== 0xFF) return null
+    const marker = data[i + 1]!
+    if (marker >= 0xC0 && marker <= 0xCF && marker !== 0xC4 && marker !== 0xC8 && marker !== 0xCC) {
+      return { width: data.readUInt16BE(i + 7), height: data.readUInt16BE(i + 5) }
+    }
+    i += 2 + data.readUInt16BE(i + 2)
+  }
+  return null
+}
+
 /** Logo de la empresa como data URL (para el PDF) o null */
 export async function companyLogo(logoPath: string | null | undefined) {
   if (!logoPath) return null

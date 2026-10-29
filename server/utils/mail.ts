@@ -103,11 +103,47 @@ export async function verifyMail() {
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`)
 
+/** Firma al pie del correo: texto de varias líneas e imagen opcional (va como adjunto en línea, CID) */
+export interface MailSignature {
+  text: string
+  image: { content: Buffer, mime: string, filename: string, width: number, height: number } | null
+  /** Imagen a la izquierda del texto (si no, debajo) */
+  imageLeft: boolean
+}
+
+export const SIGNATURE_CID = 'firma@numiq'
+
+/** Adjunto en línea de la imagen de la firma, para añadirlo al correo */
+export const signatureAttachment = (s: MailSignature | null | undefined): Mail.Attachment[] =>
+  s?.image ? [{ filename: s.image.filename, content: s.image.content, contentType: s.image.mime, cid: SIGNATURE_CID, contentDisposition: 'inline' }] : []
+
+/** Enlaza webs, emails y teléfonos de la firma (texto ya escapado) */
+function linkify(html: string, accent: string) {
+  const a = (href: string, label: string) => `<a href="${href}" style="color:${accent};text-decoration:none">${label}</a>`
+  return html
+    .replace(/\b[\w.+-]+@[\w-]+(\.[\w-]+)+\b/g, m => a(`mailto:${m}`, m))
+    .replace(/(^|[\s(])((https?:\/\/|www\.)[^\s<]+[^\s<.,;)])/g, (_, pre: string, url: string) => `${pre}${a(url.startsWith('http') ? url : `https://${url}`, url)}`)
+    .replace(/(^|[\s:])(\+?\d[\d ]{7,}\d)(?=$|[\s<])/gm, (_, pre: string, tel: string) => `${pre}${a(`tel:${tel.replace(/\s/g, '')}`, tel)}`)
+}
+
+function signatureHtml(s: MailSignature, accent: string) {
+  const text = s.text
+    ? `<p style="margin:0;font-size:14px;line-height:1.55;color:#3f4654">${linkify(escapeHtml(s.text), accent).replace(/\n/g, '<br>')}</p>`
+    : ''
+  const img = s.image
+    ? `<img src="cid:${SIGNATURE_CID}" width="${s.image.width}" height="${s.image.height}" alt="" style="display:block;border:0;width:${s.image.width}px;height:${s.image.height}px">`
+    : ''
+  if (img && text && s.imageLeft) {
+    return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:28px 0 0"><tr><td valign="middle" style="padding-right:16px">${img}</td><td valign="middle" style="padding-left:16px;border-left:2px solid ${accent}">${text}</td></tr></table>`
+  }
+  return `<div style="margin:28px 0 0">${text}${img ? `<div style="margin-top:${text ? 14 : 0}px">${img}</div>` : ''}</div>`
+}
+
 /** Plantilla sobria y compatible con clientes de correo (tablas e estilos en línea) */
-export function mailLayout(o: { brand: string, accent?: string | null, title: string, lines: string[], details?: Array<[string, string]>, action?: { label: string, url: string } | null, footer: string }) {
+export function mailLayout(o: { brand: string, accent?: string | null, title: string, lines: string[], details?: Array<[string, string]>, action?: { label: string, url: string } | null, signature?: MailSignature | null, footer: string }) {
   const accent = o.accent || '#4f46e5'
   const details = o.details ?? []
-  const text = [o.title, '', ...o.lines, ...(details.length ? ['', ...details.map(([k, v]) => `${k}: ${v}`)] : []), ...(o.action ? ['', `${o.action.label}: ${o.action.url}`] : []), '', o.footer].join('\n')
+  const text = [o.title, '', ...o.lines, ...(details.length ? ['', ...details.map(([k, v]) => `${k}: ${v}`)] : []), ...(o.action ? ['', `${o.action.label}: ${o.action.url}`] : []), ...(o.signature?.text ? ['', '--', o.signature.text] : []), '', o.footer].join('\n')
   const pad = (i: number) => `${i ? 4 : 14}px 16px ${i === details.length - 1 ? 14 : 4}px`
   const detailsHtml = details.length
     ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0 4px;background:#f6f7f9;border-radius:10px">${details.map(([k, v], i) => `<tr><td style="padding:${pad(i)};font-size:13px;color:#6b7280">${escapeHtml(k)}</td><td align="right" style="padding:${pad(i)};font-size:14px;font-weight:600;color:#11141b">${escapeHtml(v)}</td></tr>`).join('')}</table>`
@@ -121,6 +157,7 @@ export function mailLayout(o: { brand: string, accent?: string | null, title: st
 ${o.lines.map(l => `<p style="margin:0 0 12px;font-size:15px;line-height:1.55;color:#3f4654">${escapeHtml(l).replace(/\n/g, '<br>')}</p>`).join('\n')}
 ${detailsHtml}
 ${o.action ? `<p style="margin:24px 0"><a href="${escapeHtml(o.action.url)}" style="display:inline-block;background:${accent};color:#fff;text-decoration:none;font-weight:600;padding:12px 24px;border-radius:9px">${escapeHtml(o.action.label)}</a></p>` : ''}
+${o.signature ? signatureHtml(o.signature, accent) : ''}
 <p style="margin:24px 0 0;padding-top:16px;border-top:1px solid #eef0f3;font-size:12px;color:#8a919e">${escapeHtml(o.footer)}</p>
 </td></tr></table></td></tr></table></body></html>`
   return { text, html }

@@ -1,0 +1,1 @@
+ALTER TABLE `companies` ADD `email_signature_path` varchar(500);

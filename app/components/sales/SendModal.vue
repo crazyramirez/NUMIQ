@@ -30,7 +30,8 @@ const errors = reactive<Record<string, string | null>>({ to: null, subject: null
 const sending = ref(false)
 
 const { data: mail } = useFetch<{ configured: boolean, account: string | null }>('/api/mail/status', { lazy: true, server: false })
-const { data: designData } = useFetch<{ design: InvoiceDesign }>('/api/invoice-design', { lazy: true, server: false })
+const { data: designData } = useFetch<{ design: InvoiceDesign, signatureImageUrl: string | null }>('/api/invoice-design', { lazy: true, server: false })
+const hasSignature = computed(() => !!(designData.value?.design.emailSignature.trim() || designData.value?.signatureImageUrl))
 
 function defaults() {
   const n = props.doc.number ?? ''
@@ -119,7 +120,7 @@ async function send() {
       <UiInput v-model="form.to" label="Para" type="email" placeholder="cliente@empresa.es" icon="ph:envelope-simple" :error="errors.to" hint="Varios destinatarios separados por comas" required />
       <UiInput v-model="form.cc" label="CC" placeholder="Opcional" icon="ph:users" />
       <UiInput v-model="form.subject" label="Asunto" :error="errors.subject" required />
-      <UiTextarea v-model="form.message" label="Mensaje" rows="9" :error="errors.message" />
+      <UiTextarea v-model="form.message" label="Mensaje" rows="9" :error="errors.message" :hint="hasSignature ? 'Al final se añade tu firma (Ajustes › Diseño de factura)' : undefined" />
 
       <div class="att">
         <span class="label">Adjuntos</span>

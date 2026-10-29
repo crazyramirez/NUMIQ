@@ -8,7 +8,7 @@ const emit = defineEmits<{ saved: [accent: string] }>()
 const toast = useToast()
 const { confirm } = useConfirm()
 
-const { data, refresh } = await useFetch<{ design: InvoiceDesign, logoUrl: string | null }>('/api/invoice-design')
+const { data, refresh } = await useFetch<{ design: InvoiceDesign, logoUrl: string | null, signatureImageUrl: string | null, signatureTokens: Record<string, string> }>('/api/invoice-design')
 const saved = ref<InvoiceDesign>(normalizeDesign(data.value?.design))
 const d = reactive<InvoiceDesign>({ ...saved.value })
 const logoUrl = ref(data.value?.logoUrl ?? null)
@@ -204,6 +204,76 @@ function insertToken(kind: 'invoice' | 'quote', token: string) {
   else {
     const cur = d.defaultEmailMessageQuote ?? ''
     d.defaultEmailMessageQuote = `${cur}${cur && !/\s$/.test(cur) ? ' ' : ''}${token}`
+  }
+}
+
+// ─── Firma de los correos ────────────────────────────────────────────────────
+const SIGNATURE_TOKENS = [
+  { k: '{empresa}', l: 'Nombre comercial' },
+  { k: '{razon_social}', l: 'Razón social' },
+  { k: '{nif}', l: 'NIF' },
+  { k: '{web}', l: 'Web' },
+  { k: '{email}', l: 'Email' },
+  { k: '{telefono}', l: 'Teléfono' },
+  { k: '{direccion}', l: 'Dirección' },
+]
+const SIGNATURE_SIZES = [
+  { value: 'sm', label: 'Pequeña' },
+  { value: 'md', label: 'Mediana' },
+  { value: 'lg', label: 'Grande' },
+]
+const SIGNATURE_LAYOUTS = [
+  { value: 'below', label: 'Debajo del texto' },
+  { value: 'left', label: 'A la izquierda' },
+]
+const sigTokens = computed(() => data.value?.signatureTokens ?? {})
+const sigText = computed(() => renderSignature(d.emailSignature, sigTokens.value))
+const sigBox = computed(() => SIGNATURE_IMAGE_BOX[d.emailSignatureImageSize])
+const sigImageUrl = ref(data.value?.signatureImageUrl ?? null)
+const sigInput = ref<HTMLInputElement>()
+const sigUploading = ref(false)
+
+function insertSignatureToken(token: string) {
+  const cur = d.emailSignature ?? ''
+  d.emailSignature = `${cur}${cur && !/\n$/.test(cur) ? '\n' : ''}${token}`
+}
+
+/** Plantilla con los datos de la empresa (las líneas sin dato no se muestran) */
+function fillSignature() {
+  d.emailSignature = 'Un saludo\n\n{empresa}\n{web}\n{email}\n{telefono}'
+}
+
+async function uploadSignatureImage(file: File | undefined, fromLogo = false) {
+  if (!fromLogo && !file) return
+  if (file && file.size > 1024 * 1024) {
+    toast.error('La imagen supera 1 MB', 'Prueba con un PNG o JPG más ligero.')
+    return
+  }
+  sigUploading.value = true
+  try {
+    const body = new FormData()
+    if (file) body.append('file', file)
+    const r = await $fetch<{ imageUrl: string }>('/api/company/email-signature', { method: 'POST', query: fromLogo ? { fromLogo: 1 } : undefined, body: fromLogo ? undefined : body })
+    sigImageUrl.value = r.imageUrl
+    toast.success('Imagen de la firma actualizada')
+  }
+  catch (err) {
+    toast.error('No se pudo guardar la imagen', errorMessage(err))
+  }
+  finally {
+    sigUploading.value = false
+    if (sigInput.value) sigInput.value.value = ''
+  }
+}
+
+async function removeSignatureImage() {
+  if (!(await confirm({ title: '¿Quitar la imagen de la firma?', body: 'Tus correos llevarán solo el texto de la firma.', confirmLabel: 'Quitar', danger: true }))) return
+  try {
+    await $fetch('/api/company/email-signature', { method: 'DELETE' })
+    sigImageUrl.value = null
+  }
+  catch (err) {
+    toast.error('No se pudo quitar la imagen', errorMessage(err))
   }
 }
 </script>
@@ -442,6 +512,74 @@ function insertToken(kind: 'invoice' | 'quote', token: string) {
               />
             </div>
           </template>
+        </div>
+      </UiCard>
+
+      <UiCard title="Firma del correo" subtitle="Al pie de las facturas, presupuestos y recordatorios que envías" icon="ph:signature">
+        <div class="stack gap-4">
+          <div class="field">
+            <div class="tok-head">
+              <span class="label">Texto de la firma</span>
+              <button v-if="canEdit" type="button" class="sig-fill" @click="fillSignature">
+                <Icon name="ph:magic-wand" /> Usar datos de la empresa
+              </button>
+            </div>
+            <div class="tokens">
+              <button
+                v-for="t in SIGNATURE_TOKENS"
+                :key="t.k"
+                type="button"
+                class="token"
+                :disabled="!canEdit"
+                :title="`Insertar ${t.l}${sigTokens[t.k.slice(1, -1)] ? `: ${sigTokens[t.k.slice(1, -1)]}` : ' (sin rellenar en Empresa)'}`"
+                @click="insertSignatureToken(t.k)"
+              >
+                <Icon name="ph:plus" /> {{ t.l }}
+              </button>
+            </div>
+            <UiTextarea
+              v-model="d.emailSignature"
+              rows="7"
+              :placeholder="'Un saludo\n\nNombre y apellidos\nCargo\n{empresa}\n{web}\n{email}\n{telefono}'"
+              hint="Los campos se rellenan con los datos de Ajustes › Empresa; una línea sin dato no aparece. Si la firma ya se despide, quita «Un saludo» del mensaje"
+              maxlength="1000"
+              :disabled="!canEdit"
+            />
+          </div>
+
+          <div class="field">
+            <span class="label">Imagen</span>
+            <div class="sig-img">
+              <div class="sig-thumb" :class="{ has: !!sigImageUrl }">
+                <img v-if="sigImageUrl" :src="sigImageUrl" alt="Imagen de la firma">
+                <Icon v-else name="ph:image" />
+              </div>
+              <div class="sig-img-side">
+                <p class="hint">Logo, sello o banner · PNG o JPG · máx. 1 MB</p>
+                <div v-if="canEdit" class="drop-actions">
+                  <UiButton size="sm" :icon="sigImageUrl ? 'ph:arrows-clockwise' : 'ph:upload-simple'" :loading="sigUploading" @click="sigInput?.click()">{{ sigImageUrl ? 'Cambiar' : 'Subir imagen' }}</UiButton>
+                  <UiButton v-if="logoUrl && !sigImageUrl" size="sm" variant="ghost" icon="ph:image-square" :disabled="sigUploading" @click="uploadSignatureImage(undefined, true)">Usar el logo</UiButton>
+                  <UiButton v-if="sigImageUrl" size="sm" variant="ghost" icon="ph:trash" @click="removeSignatureImage">Quitar</UiButton>
+                </div>
+              </div>
+              <input ref="sigInput" type="file" accept="image/png,image/jpeg" class="sr-only" @change="uploadSignatureImage(($event.target as HTMLInputElement).files?.[0])">
+            </div>
+          </div>
+
+          <div v-if="sigImageUrl" class="form-grid">
+            <UiSelect v-model="d.emailSignatureImageSize" class="c-6" label="Tamaño" :options="SIGNATURE_SIZES" :disabled="!canEdit" />
+            <UiSelect v-model="d.emailSignatureImageLayout" class="c-6" label="Posición" :options="SIGNATURE_LAYOUTS" :disabled="!canEdit || !sigText" />
+          </div>
+
+          <div v-if="sigText || sigImageUrl" class="field">
+            <span class="label">Así se verá</span>
+            <div class="sig-preview" :style="{ '--a': d.accentColor }">
+              <div class="sig-body" :class="{ left: !!sigImageUrl && !!sigText && d.emailSignatureImageLayout === 'left' }">
+                <p v-if="sigText" class="sig-text">{{ sigText }}</p>
+                <img v-if="sigImageUrl" :src="sigImageUrl" alt="" :style="{ maxWidth: `${sigBox.w}px`, maxHeight: `${sigBox.h}px` }">
+              </div>
+            </div>
+          </div>
         </div>
       </UiCard>
     </div>
@@ -980,5 +1118,108 @@ function insertToken(kind: 'invoice' | 'quote', token: string) {
 .tok-desc {
   font-size: var(--text-2xs);
   color: var(--text-3);
+}
+
+/* Firma del correo */
+.sig-fill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--brand-text);
+}
+
+.sig-fill :deep(svg) {
+  width: 14px;
+  height: 14px;
+}
+
+.sig-img {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+
+.sig-thumb {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 96px;
+  height: 64px;
+  padding: 6px;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--text-3);
+}
+
+.sig-thumb.has {
+  border-style: solid;
+  border-color: var(--border);
+  /* Fondo claro: así se verá en el correo */
+  background: #fff;
+}
+
+.sig-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.sig-thumb :deep(svg) {
+  width: 22px;
+  height: 22px;
+}
+
+.sig-img-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+/* Vista previa sobre blanco, como en el correo */
+.sig-preview {
+  padding: var(--s-4);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+
+.sig-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.sig-body.left {
+  flex-direction: row;
+  align-items: center;
+  gap: 16px;
+}
+
+.sig-body.left img {
+  order: -1;
+}
+
+.sig-body.left .sig-text {
+  padding-left: 16px;
+  border-left: 2px solid var(--a);
+}
+
+.sig-text {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #3f4654;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.sig-body img {
+  display: block;
+  object-fit: contain;
 }
 </style>

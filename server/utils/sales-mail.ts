@@ -92,6 +92,7 @@ export async function sendSalesEmail(company: Company, userId: number | null, id
     [input.kind === 'reminder' ? 'Pendiente' : 'Importe', eurText(input.kind === 'reminder' ? pending : doc.total)],
     ...(doc.dueDate ? [[isQuote ? 'Válido hasta' : 'Vencimiento', doc.dueDate.split('-').reverse().join('/')] as [string, string]] : []),
   ]
+  const signature = await emailSignature(company, design)
   const { text, html } = mailLayout({
     brand,
     accent: design.accentColor,
@@ -102,6 +103,7 @@ export async function sendSalesEmail(company: Company, userId: number | null, id
     action: doc.publicToken && site && !input.internal && !(isQuote && input.attachPdf)
       ? { label: `Ver ${label.toLowerCase()}`, url: `${site.replace(/\/+$/, '')}/p/${doc.publicToken}` }
       : null,
+    signature,
     footer: [company.legalName, `NIF ${company.nif}`, company.email].filter(Boolean).join(' · '),
   })
 
@@ -137,7 +139,7 @@ export async function sendSalesEmail(company: Company, userId: number | null, id
       html,
       fromName: brand,
       replyTo: company.email ?? undefined,
-      attachments: [...(input.attachPdf ? [{ filename, content: buffer, contentType: 'application/pdf' }] : []), ...extraFiles],
+      attachments: [...(input.attachPdf ? [{ filename, content: buffer, contentType: 'application/pdf' }] : []), ...extraFiles, ...signatureAttachment(signature)],
     })
     if ('skipped' in info) throw new Error('Omitido: dirección de pruebas o fuera de NUXT_MAIL_ONLY_TO')
     await db.insert(tables.sentEmails).values({ ...record, status: 'sent', messageId: info.messageId?.slice(0, 255) ?? null })

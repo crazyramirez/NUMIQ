@@ -7,5 +7,8 @@ export default defineEventHandler(async (event) => {
     design,
     // La versión cambia con cada logo nuevo: evita que el navegador muestre el anterior
     logoUrl: company.logoPath ? `/api/company/logo?v=${encodeURIComponent(company.logoPath.split('/').pop() ?? '')}` : null,
+    signatureImageUrl: signatureImageUrl(company.emailSignaturePath),
+    // Datos de la empresa con los que se rellena la firma (vista previa)
+    signatureTokens: signatureTokens(company),
   }
 })

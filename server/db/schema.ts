@@ -140,6 +140,8 @@ export const companies = mysqlTable('companies', {
   country: varchar('country', { length: 2 }).notNull().default('ES'),
   iban: varchar('iban', { length: 34 }),
   logoPath: varchar('logo_path', { length: 500 }),
+  /** Imagen de la firma de los correos a clientes (PNG o JPG; va incrustada en el mensaje) */
+  emailSignaturePath: varchar('email_signature_path', { length: 500 }),
   /** Epígrafe IAE / CNAE de la actividad principal */
   activityCode: varchar('activity_code', { length: 20 }),
   activityDescription: varchar('activity_description', { length: 255 }),

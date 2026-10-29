@@ -225,6 +225,13 @@
       "when": 1793052864178,
       "tag": "0031_app_lock",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "5",
+      "when": 1793267379271,
+      "tag": "0032_email_signature",
+      "breakpoints": true
     }
   ]
 }
