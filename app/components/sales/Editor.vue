@@ -288,12 +288,20 @@ const moreOpen = ref(moreCount.value > 0)
 // «Solo descripción»: sin conceptos, la descripción explica el trabajo y cada tipo de IVA lleva su base imponible
 const conceptless = ref(!!doc.value && isConceptless(doc.value.lines))
 
+// Conceptos de antes de pasar a «Solo descripción»: al volver se recuperan tal cual (se puede conmutar sin perder nada)
+let keptConcepts: { lines: Line[], bases: string, autoDescription: string | null } | null = null
+const basesKey = (lines: Line[]) => JSON.stringify(lines.map(l => [l.vatRate, l.unitPrice ?? null]))
+
 function setConceptless(on: boolean) {
   if (on === conceptless.value) return
   if (on) {
     // Los conceptos escritos pasan a la descripción (si estaba vacía) y sus importes, a una base por tipo de IVA
     const written = form.lines.filter(l => l.description.trim())
-    if (written.length && !richToPlain(form.description)?.trim()) form.description = plainToRich(written.map(l => l.description.trim()).join('\n'))
+    let autoDescription: string | null = null
+    if (written.length && !richToPlain(form.description)?.trim()) {
+      form.description = plainToRich(written.map(l => l.description.trim()).join('\n'))
+      autoDescription = JSON.stringify(form.description)
+    }
     const bases = new Map<number, Line>()
     for (const l of form.lines) {
       const base = lineAmounts({ ...l, quantity: l.quantity ?? 0, unitPrice: l.unitPrice ?? 0 }).base
@@ -301,7 +309,18 @@ function setConceptless(on: boolean) {
       cur.unitPrice = round2((cur.unitPrice ?? 0) + base)
       bases.set(l.vatRate, cur)
     }
+    const kept = form.lines.map(l => ({ ...l }))
     form.lines = bases.size ? [...bases.values()] : [blankLine()]
+    keptConcepts = written.length ? { lines: kept, bases: basesKey(form.lines), autoDescription } : null
+  }
+  else if (keptConcepts) {
+    // Vuelven los conceptos de antes; la descripción rellenada al cambiar, si no se tocó, se deshace
+    const { lines, bases, autoDescription } = keptConcepts
+    const basesChanged = basesKey(form.lines) !== bases
+    form.lines = lines
+    if (autoDescription && JSON.stringify(form.description) === autoDescription) form.description = null
+    keptConcepts = null
+    if (basesChanged) toast.info('Conceptos recuperados', 'Los importes que cambiaste en «Solo descripción» no se aplican: revisa los precios.')
   }
   else {
     form.lines = form.lines.map(l => ({ ...l, key: ++keySeq, description: '' }))
