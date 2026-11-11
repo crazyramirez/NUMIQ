@@ -21,7 +21,7 @@ export function pdfFilename(kind: string, number: string | null) {
 }
 
 /** PDF de una factura o presupuesto de la empresa con su diseño y su logo */
-export async function salesPdf(company: Company, id: number, designOverride?: InvoiceDesign, opts: { verifactu?: boolean, defaultTexts?: boolean, forcePaymentMethod?: string } = {}) {
+export async function salesPdf(company: Company, id: number, designOverride?: InvoiceDesign, opts: { verifactu?: boolean, defaultTexts?: boolean, forcePaymentMethod?: string | null } = {}) {
   const db = useDb()
   const doc = await loadSalesDocument(company.id, id)
   const design = designOverride ?? await getCompanyDesign(company)
@@ -43,7 +43,7 @@ export async function salesPdf(company: Company, id: number, designOverride?: In
     issueDate: doc.issueDate,
     dueDate: doc.dueDate,
     operationDate: doc.operationDate,
-    paymentMethod: opts.forcePaymentMethod ?? doc.paymentMethod,
+    paymentMethod: opts.forcePaymentMethod !== undefined ? opts.forcePaymentMethod : doc.paymentMethod,
     description: doc.description,
     // En la vista previa del diseño, los textos por defecto (si los hay) en lugar de los del documento
     notes: opts.defaultTexts && design.defaultNotes.trim() ? design.defaultNotes : doc.notes,
@@ -89,7 +89,8 @@ export async function designPreviewPdf(company: Company, design: InvoiceDesign, 
     return (await salesPdf(company, last.id, design, {
       verifactu: company.verifactuEnabled && !isQuote,
       defaultTexts: true,
-      forcePaymentMethod: isQuote ? undefined : 'transfer',
+      // La vista previa del diseño enseña la forma de pago con la que empiezan los documentos nuevos
+      forcePaymentMethod: isQuote ? design.quotePaymentMethod : design.paymentMethod,
     })).buffer
   }
 
@@ -102,7 +103,7 @@ export async function designPreviewPdf(company: Company, design: InvoiceDesign, 
     issueDate: today,
     dueDate,
     operationDate: null,
-    paymentMethod: isQuote ? null : 'transfer',
+    paymentMethod: isQuote ? design.quotePaymentMethod : design.paymentMethod,
     notes: isQuote ? null : (design.defaultNotes.trim() || 'Gracias por confiar en nosotros.'),
     terms: isQuote ? (design.defaultTerms.trim() || 'Presupuesto válido durante 30 días. Pago 50% al inicio y 50% a la entrega.') : null,
     irpfRate: company.kind === 'autonomo' ? 15 : 0,

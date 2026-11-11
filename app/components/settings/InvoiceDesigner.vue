@@ -31,6 +31,12 @@ const FONTS: Array<{ value: DesignFont, label: string, hint: string }> = [
   { value: 'Lora', label: 'Lora', hint: 'Serif elegante' },
 ]
 
+// Forma de pago con la que empiezan facturas y presupuestos nuevos
+const PAYMENT_DEFAULT_OPTIONS = [
+  ...Object.entries(PAYMENT_METHODS).map(([value, label]) => ({ value, label })),
+  { value: null, label: 'Sin forma de pago' },
+]
+
 // ─── Vista previa: el PDF real, regenerado con cada cambio ───────────────────
 // Columnas de la tabla de conceptos
 const LINE_COLUMN_OPTIONS: Array<{ value: LineColumnsMode, label: string, hint: string }> = [
@@ -428,6 +434,11 @@ async function removeSignatureImage() {
           <UiSelect v-model="d.lineColumns" label="Tabla de conceptos" :options="LINE_COLUMN_OPTIONS" :disabled="!canEdit" :hint="LINE_COLUMN_OPTIONS.find(o => o.value === d.lineColumns)?.hint" />
           <UiSwitch v-if="d.lineColumns === 'auto' || d.lineColumns === 'full'" :model-value="d.discountColumn === 'always'" :disabled="!canEdit" label="Columna de descuento siempre visible" hint="Si no, solo aparece cuando alguna línea lleva descuento" @update:model-value="d.discountColumn = $event ? 'always' : 'auto'" />
           <UiSwitch v-model="d.showItemCodes" :disabled="!canEdit" label="Referencia de producto (SKU)" hint="Columna «Ref.» con el código de tu catálogo" />
+          <div class="pay-defaults">
+            <UiSelect v-model="d.paymentMethod" label="Forma de pago en facturas" :options="PAYMENT_DEFAULT_OPTIONS" :disabled="!canEdit" />
+            <UiSelect v-model="d.quotePaymentMethod" label="Forma de pago en presupuestos" :options="PAYMENT_DEFAULT_OPTIONS" :disabled="!canEdit" />
+            <p class="hint pay-defaults-hint">Con la que empiezan los documentos nuevos. Cambia sola cuando eliges otra o la quitas en un documento.</p>
+          </div>
           <UiSwitch v-model="d.showPaymentInfo" :disabled="!canEdit" label="Datos de pago" hint="IBAN y texto de pago al pie de las facturas" />
           <UiTextarea v-model="d.paymentText" label="Texto de pago" placeholder="Pago a 30 días mediante transferencia bancaria.&#10;Indica el número de factura en el concepto." hint="Puedes usar varias líneas" rows="3" maxlength="500" :disabled="!canEdit || !d.showPaymentInfo" />
           <UiInput
@@ -657,6 +668,17 @@ async function removeSignatureImage() {
 </template>
 
 <style scoped>
+.pay-defaults {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--s-3) var(--s-4);
+}
+
+.pay-defaults-hint {
+  grid-column: 1 / -1;
+  margin-top: calc(var(--s-1) * -1);
+}
+
 .designer {
   display: grid;
   grid-template-columns: minmax(0, 400px) minmax(0, 1fr);

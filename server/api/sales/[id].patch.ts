@@ -17,6 +17,8 @@ export default defineEventHandler(async (event) => {
   if (issue) number = await issueSalesDocument(company.id, id)
   const current = issue ? 'issued' : before?.status
   if (quote && status && current !== status && current !== 'invoiced') await setSalesStatus(company.id, id, status)
+  // La forma de pago elegida (o quitada) es la que llevarán los siguientes documentos de este tipo
+  if (await sentPaymentMethod(event)) await rememberPaymentMethod(company, input.kind, input.paymentMethod)
   await audit(event, { companyId: company.id, userId: user.id, action: issue ? 'sales.issue' : 'sales.update', entity: 'sales_document', entityId: id, data: { number } })
   return { id, number }
 })

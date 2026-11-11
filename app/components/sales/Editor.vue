@@ -127,7 +127,8 @@ const form = reactive({
   operationDate: null as string | null,
   // La retención la decide el cliente al elegirlo (empresa o profesional sí, particular no)
   irpfRate: 0,
-  paymentMethod: 'transfer',
+  // La de la última vez en este tipo de documento (null: sin forma de pago)
+  paymentMethod: (design.value ? design.value.design[isQuote.value ? 'quotePaymentMethod' : 'paymentMethod'] : 'transfer') as string | null,
   description: null as RichDoc | null,
   notes: isQuote.value ? '' : design.value?.design.defaultNotes ?? '',
   terms: isQuote.value ? design.value?.design.defaultTerms ?? '' : '',
@@ -152,7 +153,7 @@ if (doc.value) {
     dueDate: doc.value.dueDate,
     operationDate: doc.value.operationDate,
     irpfRate: doc.value.irpfRate,
-    paymentMethod: doc.value.paymentMethod ?? 'transfer',
+    paymentMethod: doc.value.paymentMethod,
     description: doc.value.description ?? null,
     notes: doc.value.notes ?? '',
     terms: doc.value.terms ?? '',
@@ -170,7 +171,7 @@ else if (source.value) {
     contactId: source.value.contactId,
     customerReference: source.value.customerReference ?? '',
     irpfRate: source.value.irpfRate,
-    paymentMethod: source.value.paymentMethod ?? 'transfer',
+    paymentMethod: source.value.paymentMethod,
     rectifiesId: source.value.id,
     notes: `Rectifica la factura ${source.value.number} de ${fdateShort(source.value.issueDate)}.`,
     lines: source.value.lines.map(({ id: _id, ...l }) => ({ ...l, quantity: -(l.quantity ?? 0), key: ++keySeq })),
@@ -242,6 +243,18 @@ watch(() => form.issueDate, (d, old) => {
 const showOperationDate = ref(!!form.operationDate)
 const showReference = ref(!!form.customerReference)
 
+// ─── Forma de pago ───────────────────────────────────────────────────────────
+// Quitarla o volver a ponerla vale para este documento y, al guardar, para los siguientes del mismo tipo
+const lastPayment = ref<string>(form.paymentMethod ?? 'transfer')
+function removePayment() {
+  lastPayment.value = form.paymentMethod ?? lastPayment.value
+  form.paymentMethod = null
+  toast.info('Sin forma de pago', `Al guardar, ${isQuote.value ? 'tus próximos presupuestos' : 'tus próximas facturas'} tampoco la llevarán.`)
+}
+function addPayment() {
+  form.paymentMethod = lastPayment.value
+}
+
 // ─── Líneas ──────────────────────────────────────────────────────────────────
 const pricesWithVat = ref(false)
 const surcharge = ref(form.lines.some(l => l.surchargeRate > 0))
@@ -303,6 +316,7 @@ function removeLine(i: number) {
 
 function duplicateLine(i: number) {
   const copy = { ...form.lines[i]!, key: ++keySeq }
+  if (grossPrices.has(form.lines[i]!.key)) grossPrices.set(copy.key, grossPrices.get(form.lines[i]!.key)!)
   form.lines.splice(i + 1, 0, copy)
 }
 
@@ -320,17 +334,60 @@ function pickItem(line: Line, item: CatalogItem) {
   line.vatRate = Number(item.vatRate)
   line.surchargeRate = surcharge.value ? SURCHARGE_BY_VAT[line.vatRate] ?? 0 : 0
   if (!line.quantity) line.quantity = 1
+  // Con precios con IVA, el del catálogo con su IVA (y la línea cuadra con él)
+  if (pricesWithVat.value) {
+    grossPrices.set(line.key, grossOf(line))
+    resyncNet(line)
+  }
 }
 
 function onVatChange(line: Line) {
   if (surcharge.value) line.surchargeRate = SURCHARGE_BY_VAT[line.vatRate] ?? 0
+  resyncNet(line)
 }
 
-const round4 = (n: number) => Math.round(n * 10000) / 10000
-const shownPrice = (l: Line) => (l.unitPrice == null ? null : pricesWithVat.value ? round2(l.unitPrice * (1 + l.vatRate / 100)) : l.unitPrice)
+// Precios con IVA: manda el precio escrito (por línea) y el precio sin IVA se calcula para que
+// cantidad × precio con IVA cuadre al céntimo con la base y el IVA de la factura
+const grossPrices = reactive(new Map<number, number | null>())
+const grossOf = (l: Line) => (l.unitPrice == null ? null : round2(l.unitPrice * (1 + l.vatRate / 100)))
+const shownPrice = (l: Line) => (pricesWithVat.value ? (grossPrices.has(l.key) ? grossPrices.get(l.key) ?? null : grossOf(l)) : l.unitPrice)
 function setPrice(l: Line, v: number | null) {
-  l.unitPrice = v == null ? null : pricesWithVat.value ? round4(v / (1 + l.vatRate / 100)) : v
+  if (!pricesWithVat.value) {
+    l.unitPrice = v
+    return
+  }
+  grossPrices.set(l.key, v)
+  resyncNet(l)
 }
+function resyncNet(l: Line) {
+  if (!pricesWithVat.value || !grossPrices.has(l.key)) return
+  const g = grossPrices.get(l.key)
+  l.unitPrice = g == null ? null : netUnitFromGross(g, l.quantity ?? 0, l.discountPct ?? 0, l.vatRate)
+}
+/** Importe de la línea: con IVA si se escriben los precios con IVA */
+function lineShown(l: Line) {
+  const base = lineAmounts({ ...l, quantity: l.quantity ?? 0, unitPrice: l.unitPrice ?? 0 }).base
+  return pricesWithVat.value ? round2(base + pctOf(base, l.vatRate)) : base
+}
+/** Precio con IVA sin base exacta posible (21 %: 100 € sale 99,99 o 100,01): la línea queda en el total más cercano */
+function grossOff(l: Line) {
+  if (!pricesWithVat.value) return false
+  const g = shownPrice(l)
+  if (g == null) return false
+  return lineShown(l) !== lineAmounts({ quantity: l.quantity ?? 0, unitPrice: g, discountPct: l.discountPct ?? 0, vatRate: l.vatRate }).base
+}
+watch(pricesWithVat, (on) => {
+  grossPrices.clear()
+  if (!on) return
+  for (const l of form.lines) {
+    grossPrices.set(l.key, grossOf(l))
+    resyncNet(l)
+  }
+})
+// Cantidad o descuento nuevos: el precio con IVA se mantiene y se recalcula el de sin IVA
+watch(() => form.lines.map(l => `${l.key}|${l.quantity}|${l.discountPct}|${l.vatRate}`).join(','), () => {
+  if (pricesWithVat.value) form.lines.forEach(resyncNet)
+})
 
 // Guardar un concepto escrito a mano en el catálogo
 const itemModal = ref(false)
@@ -713,11 +770,18 @@ const R_CODES = [
               <span class="paper-label">{{ isQuote ? 'Válido hasta' : 'Vencimiento' }}</span>
               <input v-model="form.dueDate" type="date" class="cell" :aria-label="isQuote ? 'Válido hasta' : 'Vencimiento'">
             </div>
-            <div>
+            <div v-if="form.paymentMethod" class="pay-meta">
               <span class="paper-label">Forma de pago</span>
-              <select v-model="form.paymentMethod" class="cell" aria-label="Forma de pago">
-                <option v-for="(label, value) in PAYMENT_METHODS" :key="value" :value="value">{{ label }}</option>
-              </select>
+              <span class="pay-pick">
+                <select v-model="form.paymentMethod" class="cell" aria-label="Forma de pago">
+                  <option v-for="(label, value) in PAYMENT_METHODS" :key="value" :value="value">{{ label }}</option>
+                </select>
+                <button type="button" class="pay-x no-print" title="Quitar la forma de pago de este documento (y de los siguientes)" aria-label="Quitar la forma de pago" @click="removePayment"><Icon name="ph:x-bold" aria-hidden="true" /></button>
+              </span>
+            </div>
+            <div v-else class="pay-meta off no-print">
+              <span class="paper-label">Forma de pago</span>
+              <button type="button" class="pay-add" title="No aparece en el documento" @click="addPayment"><Icon name="ph:plus-bold" aria-hidden="true" /> Añadir</button>
             </div>
             <div v-if="showReference || form.customerReference">
               <span class="paper-label">{{ design?.design?.customerReferenceLabel || 'Orden de Pedido' }}</span>
@@ -831,16 +895,17 @@ const R_CODES = [
               <span class="r">{{ pricesWithVat ? 'Precio c/IVA' : 'Precio' }}</span>
               <span class="r">Dto.</span>
               <span class="r">IVA</span>
-              <span class="r">Importe</span>
+              <span class="r">{{ pricesWithVat ? 'Importe c/IVA' : 'Importe' }}</span>
               <span />
             </div>
             <TransitionGroup name="line">
               <div v-for="(l, i) in form.lines" :key="l.key" v-ctx="() => lineCtx(l, i)" class="l-row" :data-line="l.key">
                 <div class="l-desc">
                   <SalesConceptInput v-model="l.description" :items="items ?? []" :linked="!!l.itemId" @pick="pickItem(l, $event)" @update:model-value="l.itemId && !$event ? (l.itemId = null) : undefined" />
-                  <div v-if="l.itemId || !l.irpfApplies" class="l-tags">
+                  <div v-if="l.itemId || !l.irpfApplies || grossOff(l)" class="l-tags">
                     <span v-if="l.itemId" class="l-tag"><Icon name="ph:bookmark-simple-fill" /> Catálogo</span>
                     <span v-if="!l.irpfApplies" class="l-tag warn">Sin retención</span>
+                    <span v-if="grossOff(l)" class="l-tag warn" :title="`Con IVA del ${l.vatRate} % ninguna base en céntimos da ese importe exacto: ${eur(lineShown(l))} es el más cercano`"><Icon name="ph:info" /> Lo más cercano con IVA: {{ eur(lineShown(l)) }}</span>
                   </div>
                 </div>
                 <SalesNumCell v-model="l.quantity" label="Cantidad" :decimals="3" class="l-qty" data-label="Cantidad" />
@@ -851,7 +916,7 @@ const R_CODES = [
                     <option v-for="r in VAT_RATES" :key="r" :value="r">{{ r }} %</option>
                   </select>
                 </span>
-                <span class="l-amount num" data-label="Importe">{{ eur(lineAmounts({ ...l, quantity: l.quantity ?? 0, unitPrice: l.unitPrice ?? 0 }).base) }}</span>
+                <span class="l-amount num" :data-label="pricesWithVat ? 'Importe c/IVA' : 'Importe'">{{ eur(lineShown(l)) }}</span>
                 <UiMenu :items="lineMenu(l, i)" :width="230" class="l-menu">
                   <template #default="{ toggle }">
                     <button type="button" class="l-btn" aria-label="Opciones de la línea" @click="toggle"><Icon name="ph:dots-three-vertical-bold" /></button>
@@ -1097,6 +1162,80 @@ const R_CODES = [
 .paper select.cell {
   cursor: pointer;
   appearance: none;
+}
+
+/* Forma de pago: X para quitarla del documento; sin ella, solo «Añadir» (no se imprime) */
+.pay-pick {
+  position: relative;
+  display: block;
+}
+
+.pay-pick .cell {
+  padding-right: 30px;
+}
+
+.pay-x {
+  position: absolute;
+  top: 50%;
+  right: -4px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: #8a91a0;
+  border-radius: 6px;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity var(--t-fast), background var(--t-fast), color var(--t-fast);
+}
+
+.pay-meta:hover .pay-x,
+.pay-x:focus-visible,
+.pay-pick:focus-within .pay-x {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .pay-x {
+    opacity: 1;
+  }
+}
+
+.pay-x:hover {
+  color: var(--p-text);
+  background: var(--p-soft);
+}
+
+.pay-x :deep(svg) {
+  width: 12px;
+  height: 12px;
+}
+
+.pay-meta.off .paper-label {
+  opacity: 0.55;
+}
+
+.pay-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 0 8px;
+  margin: 0 -8px;
+  font-size: 13px;
+  font-weight: 560;
+  color: var(--p-accent);
+  border-radius: 7px;
+  transition: background var(--t-fast);
+}
+
+.pay-add:hover {
+  background: color-mix(in srgb, var(--p-accent) 8%, transparent);
+}
+
+.pay-add :deep(svg) {
+  width: 12px;
+  height: 12px;
 }
 
 .paper-party p.missing {

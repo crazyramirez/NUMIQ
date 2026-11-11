@@ -308,7 +308,7 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
     ['Fecha', date(doc.issueDate)],
     [isQuote ? 'Válido hasta' : 'Vencimiento', date(doc.dueDate)],
     ...(doc.operationDate ? [['Fecha de operación', date(doc.operationDate)] as [string, string]] : []),
-    ['Forma de pago', PAYMENT[doc.paymentMethod ?? ''] ?? '—'],
+    ...(doc.paymentMethod && PAYMENT[doc.paymentMethod] ? [['Forma de pago', PAYMENT[doc.paymentMethod]] as [string, string]] : []),
     ...(doc.customerReference ? [[design.customerReferenceLabel?.trim() || 'Orden de Pedido', doc.customerReference] as [string, string]] : []),
   ]
   const meta: Node = t.meta === 'boxes'

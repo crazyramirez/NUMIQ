@@ -1,3 +1,4 @@
+import type { H3Event } from 'h3'
 import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 
@@ -12,6 +13,8 @@ export const designInputSchema = z.object({
   showItemCodes: z.boolean(),
   showPaymentInfo: z.boolean(),
   paymentText: z.string().max(500, 'Máximo 500 caracteres'),
+  paymentMethod: z.enum(DOC_PAYMENT_METHODS).nullable().optional().default('transfer'),
+  quotePaymentMethod: z.enum(DOC_PAYMENT_METHODS).nullable().optional().default('transfer'),
   customerReferenceLabel: z.string().trim().max(40, 'Máximo 40 caracteres').optional().default('Orden de Pedido'),
   notesLabel: z.string().trim().max(40, 'Máximo 40 caracteres'),
   termsLabel: z.string().trim().max(40, 'Máximo 40 caracteres'),
@@ -35,6 +38,23 @@ export async function getCompanyDesign(company: { id: number, brandColor: string
     .limit(1)
   if (!t) return defaultDesign(company.brandColor)
   return normalizeDesign({ ...(t.options as Partial<InvoiceDesign> | null), layout: t.layout as DesignLayout, accentColor: t.accentColor, font: t.font as DesignFont }, company.brandColor)
+}
+
+/**
+ * Lo que eligió el usuario en el último documento (otra forma de pago o quitarla) pasa a ser lo de
+ * los siguientes del mismo tipo: facturas por un lado, presupuestos y proformas por otro.
+ */
+export async function rememberPaymentMethod(company: { id: number, brandColor: string | null }, kind: string, method: DocPaymentMethod | null) {
+  const key = kind === 'quote' || kind === 'proforma' ? 'quotePaymentMethod' : 'paymentMethod'
+  const design = await getCompanyDesign(company)
+  if (design[key] === method) return
+  await saveCompanyDesign(company.id, { ...design, [key]: method })
+}
+
+/** El cuerpo trae la forma de pago (el editor siempre): sin ella no se cambia lo recordado */
+export async function sentPaymentMethod(event: H3Event) {
+  const raw = await readBody<Record<string, unknown> | null>(event).catch(() => null)
+  return !!raw && typeof raw === 'object' && 'paymentMethod' in raw
 }
 
 /** URL de la imagen de la firma; la versión cambia con cada imagen nueva (evita la caché del navegador) */

@@ -120,7 +120,7 @@ export function assistantToolDefs() {
         condiciones: str(),
         referencia: str('Referencia o nº de pedido del cliente'),
         descripcion: str('Descripción del trabajo que va antes de las líneas'),
-        vaciar: clear(['notas', 'condiciones', 'referencia', 'vencimiento', 'fecha_operacion', 'descripcion']),
+        vaciar: clear(['notas', 'condiciones', 'referencia', 'vencimiento', 'fecha_operacion', 'descripcion', 'forma_pago']),
       }),
     }),
     fn('enviar_email', 'Prepara el envío por email de facturas o presupuestos con su PDF (o un recordatorio de pago) para que el usuario lo confirme. NO envía nada hasta que confirme. Los borradores solo pueden enviarse a la empresa o al propio usuario, para revisarlos (van con la marca BORRADOR); al cliente solo van documentos emitidos.', {
@@ -517,7 +517,8 @@ async function crearBorrador(company: Company, actor: Actor, a: { tipo: string, 
     issueDate,
     dueDate: toISODate(due),
     irpfRate,
-    paymentMethod: 'transfer',
+    // La forma de pago con la que empiezan los documentos nuevos (o ninguna, si se quitó)
+    paymentMethod: (await getCompanyDesign(company))[kind === 'quote' ? 'quotePaymentMethod' : 'paymentMethod'],
     notes: a.notas,
     lines,
   } as SalesInput)

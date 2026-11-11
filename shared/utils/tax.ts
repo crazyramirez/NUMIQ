@@ -74,6 +74,36 @@ export function lineAmounts(l: LineInput) {
   return { gross, discount, base: round2(gross - discount) }
 }
 
+/**
+ * Precio unitario sin IVA (4 decimales) para un precio escrito con IVA, de modo que la línea con su IVA
+ * dé exactamente cantidad × precio con IVA (menos el descuento). Dividir sin más descuadra un céntimo:
+ * 100 € con IVA → 82,6446 → base 82,64 + IVA 17,35 = 99,99 €.
+ */
+export function netUnitFromGross(grossUnit: number, quantity: number, discountPct: number, vatRate: number): number {
+  const rate = Number(vatRate) || 0
+  const naive = Math.round(Number(`${(Number(grossUnit) || 0) / (1 + rate / 100)}e4`)) / 1e4
+  const q = Number(quantity) || 0
+  const d = Number(discountPct) || 0
+  if (!q || d >= 100) return naive
+  // Total con IVA que debe dar la línea, con los mismos redondeos que el cálculo de la factura
+  const target = lineAmounts({ quantity: q, unitPrice: grossUnit, discountPct: d, vatRate: rate }).base
+  const withVat = (base: number) => round2(base + pctOf(base, rate))
+  // Base en céntimos cuyo total con IVA se acerca más al objetivo (alguno puede no existir: se queda el más cercano)
+  const c0 = Math.round(Number(`${target / (1 + rate / 100)}e2`))
+  let base = c0 / 100
+  for (let c = c0 - 3; c <= c0 + 3; c++) {
+    if (Math.abs(withVat(c / 100) - target) < Math.abs(withVat(base) - target) - 1e-9) base = c / 100
+  }
+  // Precio que, por la cantidad y el descuento, da esa base
+  const p0 = Math.round(Number(`${base / (q * (1 - d / 100))}e4`))
+  for (let i = 0; i <= 50; i++) {
+    for (const p of i ? [p0 - i, p0 + i] : [p0]) {
+      if (lineAmounts({ quantity: q, unitPrice: p / 1e4, discountPct: d, vatRate: rate }).base === base) return p / 1e4
+    }
+  }
+  return p0 / 1e4
+}
+
 export function computeTotals(lines: LineInput[], irpfRate = 0): Totals {
   let subtotal = 0
   let discountTotal = 0

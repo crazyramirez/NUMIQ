@@ -15,6 +15,8 @@ export type DesignDensity = 'normal' | 'compact'
 export type LineColumnsMode = 'auto' | 'full' | 'amount' | 'concept'
 export const LINE_COLUMNS_MODES: LineColumnsMode[] = ['auto', 'full', 'amount', 'concept']
 export type SignatureImageSize = 'sm' | 'md' | 'lg'
+export type DocPaymentMethod = 'transfer' | 'card' | 'cash' | 'direct_debit' | 'bizum' | 'other'
+export const DOC_PAYMENT_METHODS = Object.freeze(['transfer', 'card', 'cash', 'direct_debit', 'bizum', 'other'] as const)
 
 export interface InvoiceDesign {
   layout: DesignLayout
@@ -32,6 +34,10 @@ export interface InvoiceDesign {
   showPaymentInfo: boolean
   /** Texto de pago (p. ej. "Pago a 30 días mediante transferencia"), puede tener varias líneas */
   paymentText: string
+  /** Forma de pago con la que empiezan las facturas nuevas (null: sin forma de pago en el documento) */
+  paymentMethod: DocPaymentMethod | null
+  /** Forma de pago con la que empiezan los presupuestos nuevos (null: sin forma de pago) */
+  quotePaymentMethod: DocPaymentMethod | null
   /** Etiqueta que encabeza la referencia del cliente o número de pedido (por defecto "Orden de Pedido") */
   customerReferenceLabel: string
   /** Título del bloque de observaciones de las facturas (vacío: sin título) */
@@ -72,6 +78,8 @@ export function defaultDesign(accentColor?: string | null): InvoiceDesign {
     showItemCodes: false,
     showPaymentInfo: true,
     paymentText: '',
+    paymentMethod: 'transfer',
+    quotePaymentMethod: 'transfer',
     customerReferenceLabel: 'Orden de Pedido',
     notesLabel: 'Observaciones',
     termsLabel: 'Condiciones',
@@ -108,6 +116,9 @@ export function normalizeDesign(raw: Partial<InvoiceDesign> | null | undefined, 
     showItemCodes: raw.showItemCodes ?? d.showItemCodes,
     showPaymentInfo: raw.showPaymentInfo ?? d.showPaymentInfo,
     paymentText: (raw.paymentText ?? '').slice(0, 500),
+    // null es intencionado (quitada del documento); solo falta en diseños guardados antes de existir
+    paymentMethod: paymentPref(raw.paymentMethod, d.paymentMethod),
+    quotePaymentMethod: paymentPref(raw.quotePaymentMethod, d.quotePaymentMethod),
     customerReferenceLabel: (raw.customerReferenceLabel ?? d.customerReferenceLabel).slice(0, 40),
     // Un título vacío es intencionado (sin título); solo falta en diseños guardados antes de existir
     notesLabel: (raw.notesLabel ?? d.notesLabel).slice(0, 40),
@@ -123,6 +134,11 @@ export function normalizeDesign(raw: Partial<InvoiceDesign> | null | undefined, 
     emailSignatureImageLayout: raw.emailSignatureImageLayout === 'left' ? 'left' : 'below',
     footerText: (raw.footerText ?? '').slice(0, 600),
   }
+}
+
+function paymentPref(v: unknown, fallback: DocPaymentMethod | null): DocPaymentMethod | null {
+  if (v === null) return null
+  return DOC_PAYMENT_METHODS.includes(v as DocPaymentMethod) ? v as DocPaymentMethod : fallback
 }
 
 /** Campos de la empresa que admite la firma de los correos */

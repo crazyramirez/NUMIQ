@@ -161,7 +161,7 @@ interface SalesChangeSet {
   issueDate?: string
   dueDate?: string | null
   operationDate?: string | null
-  paymentMethod?: Pay
+  paymentMethod?: Pay | null
   notes?: string | null
   terms?: string | null
   customerReference?: string | null
@@ -175,8 +175,8 @@ interface SalesChangeSet {
 
 type SalesLine = SalesInput['lines'][number]
 
-const SALES_CLEAR: Readonly<Record<string, 'notes' | 'terms' | 'customerReference' | 'dueDate' | 'operationDate' | 'description'>> = Object.freeze({
-  notas: 'notes', condiciones: 'terms', referencia: 'customerReference', vencimiento: 'dueDate', fecha_operacion: 'operationDate', descripcion: 'description',
+const SALES_CLEAR: Readonly<Record<string, 'notes' | 'terms' | 'customerReference' | 'dueDate' | 'operationDate' | 'description' | 'paymentMethod'>> = Object.freeze({
+  notas: 'notes', condiciones: 'terms', referencia: 'customerReference', vencimiento: 'dueDate', fecha_operacion: 'operationDate', descripcion: 'description', forma_pago: 'paymentMethod',
 })
 
 const isQuote = (kind: string) => kind === 'quote' || kind === 'proforma'
@@ -588,7 +588,7 @@ export async function planSales(ctx: OpCtx, family: SalesFamily, accion: string,
   if (ch.issueDate) parts.push(`fecha ${fd(ch.issueDate)}`)
   if (ch.dueDate !== undefined) parts.push(ch.dueDate ? `vence el ${fd(ch.dueDate)}` : 'sin vencimiento')
   if (ch.operationDate !== undefined) parts.push(ch.operationDate ? `fecha de operación ${fd(ch.operationDate)}` : 'sin fecha de operación')
-  if (ch.paymentMethod) parts.push(`pago por ${PAY_TEXT[ch.paymentMethod]}`)
+  if (ch.paymentMethod !== undefined) parts.push(ch.paymentMethod ? `pago por ${PAY_TEXT[ch.paymentMethod]}` : 'sin forma de pago')
   if (ch.notes !== undefined) parts.push(ch.notes ? 'notas nuevas' : 'sin notas')
   if (ch.terms !== undefined) parts.push(ch.terms ? 'condiciones nuevas' : 'sin condiciones')
   if (ch.customerReference !== undefined) parts.push(ch.customerReference ? `referencia ${ch.customerReference}` : 'sin referencia')
@@ -715,7 +715,8 @@ async function loadSalesInput(companyId: number, id: number) {
     dueDate: doc.dueDate,
     operationDate: doc.operationDate,
     irpfRate: doc.irpfRate,
-    paymentMethod: doc.paymentMethod ?? 'transfer',
+    // Sin forma de pago sigue sin ella al cambiar otra cosa
+    paymentMethod: doc.paymentMethod,
     description: doc.description,
     notes: doc.notes,
     terms: doc.terms,
@@ -757,7 +758,7 @@ async function salesModify(ctx: OpCtx, p: { ids: number[], labels: Record<string
         ...(ch.issueDate ? { issueDate: ch.issueDate } : {}),
         ...(ch.dueDate !== undefined ? { dueDate: ch.dueDate } : {}),
         ...(ch.operationDate !== undefined ? { operationDate: ch.operationDate } : {}),
-        ...(ch.paymentMethod ? { paymentMethod: ch.paymentMethod } : {}),
+        ...(ch.paymentMethod !== undefined ? { paymentMethod: ch.paymentMethod } : {}),
         ...(ch.notes !== undefined ? { notes: ch.notes } : {}),
         ...(ch.terms !== undefined ? { terms: ch.terms } : {}),
         ...(ch.customerReference !== undefined ? { customerReference: ch.customerReference } : {}),

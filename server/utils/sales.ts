@@ -28,7 +28,8 @@ export const salesInputSchema = z.object({
   dueDate: isoDate.nullish(),
   operationDate: isoDate.nullish(),
   irpfRate: z.number().min(0).max(100).default(0),
-  paymentMethod: z.enum(['transfer', 'card', 'cash', 'direct_debit', 'bizum', 'other']).default('transfer'),
+  /** null: el documento no lleva forma de pago */
+  paymentMethod: z.enum(DOC_PAYMENT_METHODS).nullable().default('transfer'),
   description: richDocSchema.nullish(),
   notes: z.string().max(5000).nullish(),
   terms: z.string().max(5000).nullish(),
@@ -304,7 +305,8 @@ export async function quoteToInvoice(company: typeof tables.companies.$inferSele
     issueDate: today,
     dueDate: toISODate(due),
     irpfRate: src.irpfRate,
-    paymentMethod: src.paymentMethod ?? 'transfer',
+    // Un presupuesto sin forma de pago: la de las facturas nuevas
+    paymentMethod: src.paymentMethod ?? (await getCompanyDesign(company)).paymentMethod,
     description: src.description,
     notes: src.notes,
     terms: src.terms,
