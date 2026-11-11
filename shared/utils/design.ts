@@ -38,6 +38,10 @@ export interface InvoiceDesign {
   paymentMethod: DocPaymentMethod | null
   /** Forma de pago con la que empiezan los presupuestos nuevos (null: sin forma de pago) */
   quotePaymentMethod: DocPaymentMethod | null
+  /** Las facturas nuevas llevan fecha de vencimiento */
+  showDueDate: boolean
+  /** Los presupuestos nuevos llevan «Válido hasta» */
+  quoteShowDueDate: boolean
   /** Etiqueta que encabeza la referencia del cliente o número de pedido (por defecto "Orden de Pedido") */
   customerReferenceLabel: string
   /** Título del bloque de observaciones de las facturas (vacío: sin título) */
@@ -80,6 +84,8 @@ export function defaultDesign(accentColor?: string | null): InvoiceDesign {
     paymentText: '',
     paymentMethod: 'transfer',
     quotePaymentMethod: 'transfer',
+    showDueDate: true,
+    quoteShowDueDate: true,
     customerReferenceLabel: 'Orden de Pedido',
     notesLabel: 'Observaciones',
     termsLabel: 'Condiciones',
@@ -119,6 +125,8 @@ export function normalizeDesign(raw: Partial<InvoiceDesign> | null | undefined, 
     // null es intencionado (quitada del documento); solo falta en diseños guardados antes de existir
     paymentMethod: paymentPref(raw.paymentMethod, d.paymentMethod),
     quotePaymentMethod: paymentPref(raw.quotePaymentMethod, d.quotePaymentMethod),
+    showDueDate: raw.showDueDate ?? d.showDueDate,
+    quoteShowDueDate: raw.quoteShowDueDate ?? d.quoteShowDueDate,
     customerReferenceLabel: (raw.customerReferenceLabel ?? d.customerReferenceLabel).slice(0, 40),
     // Un título vacío es intencionado (sin título); solo falta en diseños guardados antes de existir
     notesLabel: (raw.notesLabel ?? d.notesLabel).slice(0, 40),

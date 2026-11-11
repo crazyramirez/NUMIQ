@@ -306,7 +306,7 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
   // Fechas y forma de pago
   const metaItems: Array<[string, string]> = [
     ['Fecha', date(doc.issueDate)],
-    [isQuote ? 'Válido hasta' : 'Vencimiento', date(doc.dueDate)],
+    ...(doc.dueDate ? [[isQuote ? 'Válido hasta' : 'Vencimiento', date(doc.dueDate)] as [string, string]] : []),
     ...(doc.operationDate ? [['Fecha de operación', date(doc.operationDate)] as [string, string]] : []),
     ...(doc.paymentMethod && PAYMENT[doc.paymentMethod] ? [['Forma de pago', PAYMENT[doc.paymentMethod]] as [string, string]] : []),
     ...(doc.customerReference ? [[design.customerReferenceLabel?.trim() || 'Orden de Pedido', doc.customerReference] as [string, string]] : []),

@@ -437,7 +437,9 @@ async function removeSignatureImage() {
           <div class="pay-defaults">
             <UiSelect v-model="d.paymentMethod" label="Forma de pago en facturas" :options="PAYMENT_DEFAULT_OPTIONS" :disabled="!canEdit" />
             <UiSelect v-model="d.quotePaymentMethod" label="Forma de pago en presupuestos" :options="PAYMENT_DEFAULT_OPTIONS" :disabled="!canEdit" />
-            <p class="hint pay-defaults-hint">Con la que empiezan los documentos nuevos. Cambia sola cuando eliges otra o la quitas en un documento.</p>
+            <UiSwitch v-model="d.showDueDate" :disabled="!canEdit" label="Vencimiento en facturas" />
+            <UiSwitch v-model="d.quoteShowDueDate" :disabled="!canEdit" label="«Válido hasta» en presupuestos" />
+            <p class="hint pay-defaults-hint">Así empiezan los documentos nuevos. Cambia sola cuando eliges otra forma de pago o quitas uno de estos datos en un documento.</p>
           </div>
           <UiSwitch v-model="d.showPaymentInfo" :disabled="!canEdit" label="Datos de pago" hint="IBAN y texto de pago al pie de las facturas" />
           <UiTextarea v-model="d.paymentText" label="Texto de pago" placeholder="Pago a 30 días mediante transferencia bancaria.&#10;Indica el número de factura en el concepto." hint="Puedes usar varias líneas" rows="3" maxlength="500" :disabled="!canEdit || !d.showPaymentInfo" />

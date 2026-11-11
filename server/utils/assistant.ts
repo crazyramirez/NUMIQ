@@ -512,14 +512,15 @@ async function crearBorrador(company: Company, actor: Actor, a: { tipo: string, 
   const kind = a.tipo === 'presupuesto' ? 'quote' as const : 'invoice' as const
   // Retención: la del cliente o, si es empresa o profesional, la habitual de la empresa
   const irpfRate = kind === 'invoice' ? (client.irpfRate ?? (client.kind === 'company' && company.kind === 'autonomo' ? company.defaultIrpfRate : 0)) : 0
+  // Forma de pago y vencimiento / validez como empiezan los documentos nuevos (sin ellos, si se quitaron)
+  const design = await getCompanyDesign(company)
   const id = await saveSalesDraft(company.id, actor.id, {
     kind,
     contactId: client.id,
     issueDate,
-    dueDate: toISODate(due),
+    dueDate: design[kind === 'quote' ? 'quoteShowDueDate' : 'showDueDate'] ? toISODate(due) : null,
     irpfRate,
-    // La forma de pago con la que empiezan los documentos nuevos (o ninguna, si se quitó)
-    paymentMethod: (await getCompanyDesign(company))[kind === 'quote' ? 'quotePaymentMethod' : 'paymentMethod'],
+    paymentMethod: design[kind === 'quote' ? 'quotePaymentMethod' : 'paymentMethod'],
     notes: a.notas,
     lines,
   } as SalesInput)

@@ -15,6 +15,8 @@ export const designInputSchema = z.object({
   paymentText: z.string().max(500, 'Máximo 500 caracteres'),
   paymentMethod: z.enum(DOC_PAYMENT_METHODS).nullable().optional().default('transfer'),
   quotePaymentMethod: z.enum(DOC_PAYMENT_METHODS).nullable().optional().default('transfer'),
+  showDueDate: z.boolean().optional().default(true),
+  quoteShowDueDate: z.boolean().optional().default(true),
   customerReferenceLabel: z.string().trim().max(40, 'Máximo 40 caracteres').optional().default('Orden de Pedido'),
   notesLabel: z.string().trim().max(40, 'Máximo 40 caracteres'),
   termsLabel: z.string().trim().max(40, 'Máximo 40 caracteres'),
@@ -41,20 +43,32 @@ export async function getCompanyDesign(company: { id: number, brandColor: string
 }
 
 /**
- * Lo que eligió el usuario en el último documento (otra forma de pago o quitarla) pasa a ser lo de
- * los siguientes del mismo tipo: facturas por un lado, presupuestos y proformas por otro.
+ * Lo que el usuario cambia en un documento (otra forma de pago o quitarla, quitar o poner la fecha de
+ * vencimiento / validez) pasa a ser lo de los siguientes del mismo tipo: facturas por un lado,
+ * presupuestos y proformas por otro. Solo cuenta lo que trae el cuerpo (el editor, siempre) y, al
+ * editar, lo que cambia respecto a como estaba: abrir y guardar un documento antiguo no toca nada.
  */
-export async function rememberPaymentMethod(company: { id: number, brandColor: string | null }, kind: string, method: DocPaymentMethod | null) {
-  const key = kind === 'quote' || kind === 'proforma' ? 'quotePaymentMethod' : 'paymentMethod'
-  const design = await getCompanyDesign(company)
-  if (design[key] === method) return
-  await saveCompanyDesign(company.id, { ...design, [key]: method })
-}
-
-/** El cuerpo trae la forma de pago (el editor siempre): sin ella no se cambia lo recordado */
-export async function sentPaymentMethod(event: H3Event) {
+export async function rememberDocDefaults(
+  event: H3Event,
+  company: { id: number, brandColor: string | null },
+  kind: string,
+  now: { paymentMethod: DocPaymentMethod | null, dueDate?: string | null },
+  before?: { paymentMethod: DocPaymentMethod | null, dueDate: string | null } | null,
+) {
   const raw = await readBody<Record<string, unknown> | null>(event).catch(() => null)
-  return !!raw && typeof raw === 'object' && 'paymentMethod' in raw
+  if (!raw || typeof raw !== 'object') return
+  const quote = kind === 'quote' || kind === 'proforma'
+  const patch: Partial<InvoiceDesign> = {}
+  if ('paymentMethod' in raw && (!before || before.paymentMethod !== now.paymentMethod)) {
+    patch[quote ? 'quotePaymentMethod' : 'paymentMethod'] = now.paymentMethod
+  }
+  if ('dueDate' in raw && (!before || !!before.dueDate !== !!now.dueDate)) {
+    patch[quote ? 'quoteShowDueDate' : 'showDueDate'] = !!now.dueDate
+  }
+  if (!Object.keys(patch).length) return
+  const design = await getCompanyDesign(company)
+  if (Object.entries(patch).every(([k, v]) => design[k as keyof InvoiceDesign] === v)) return
+  await saveCompanyDesign(company.id, { ...design, ...patch })
 }
 
 /** URL de la imagen de la firma; la versión cambia con cada imagen nueva (evita la caché del navegador) */

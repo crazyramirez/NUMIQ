@@ -338,15 +338,17 @@ export async function quoteToInvoice(company: typeof tables.companies.$inferSele
   const today = toISODate(new Date())
   const due = new Date()
   due.setDate(due.getDate() + (src.contact?.paymentTermsDays ?? company.paymentTermsDays))
+  const design = await getCompanyDesign(company)
   const newId = await saveSalesDraft(company.id, userId, {
     kind: 'invoice',
     contactId: src.contactId,
     customerReference: src.customerReference,
     issueDate: today,
-    dueDate: toISODate(due),
+    // Como empiezan las facturas nuevas: con vencimiento o sin él
+    dueDate: design.showDueDate ? toISODate(due) : null,
     irpfRate: src.irpfRate,
     // Un presupuesto sin forma de pago: la de las facturas nuevas
-    paymentMethod: src.paymentMethod ?? (await getCompanyDesign(company)).paymentMethod,
+    paymentMethod: src.paymentMethod ?? design.paymentMethod,
     description: src.description,
     notes: src.notes,
     terms: src.terms,

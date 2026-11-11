@@ -123,7 +123,8 @@ const form = reactive({
   contactId: (Number(route.query.cliente) || null) as number | null,
   customerReference: '',
   issueDate: today,
-  dueDate: addDaysISO(today, isQuote.value ? 30 : defaultTerms) as string | null,
+  // Sin fecha si se quitó en el último documento de este tipo
+  dueDate: (design.value?.design[isQuote.value ? 'quoteShowDueDate' : 'showDueDate'] ?? true ? addDaysISO(today, isQuote.value ? 30 : defaultTerms) : null) as string | null,
   operationDate: null as string | null,
   // La retención la decide el cliente al elegirlo (empresa o profesional sí, particular no)
   irpfRate: 0,
@@ -220,7 +221,7 @@ function applyContactDefaults() {
   else {
     form.irpfRate = c.irpfRate ?? 0
   }
-  if (!isQuote.value) form.dueDate = addDaysISO(form.issueDate, c.paymentTermsDays ?? defaultTerms)
+  if (!isQuote.value && form.dueDate) form.dueDate = addDaysISO(form.issueDate, c.paymentTermsDays ?? defaultTerms)
   setSurcharge(c.equivalenceSurcharge)
 }
 
@@ -246,6 +247,18 @@ watch(() => form.issueDate, (d, old) => {
 })
 const showOperationDate = ref(!!form.operationDate)
 const showReference = ref(!!form.customerReference)
+
+// ─── Vencimiento / válido hasta: se puede quitar (y al guardar, los siguientes empiezan sin él) ───
+const dueLabel = computed(() => (isQuote.value ? 'Válido hasta' : 'Vencimiento'))
+let lastDue: string | null = form.dueDate
+function removeDue() {
+  lastDue = form.dueDate ?? lastDue
+  form.dueDate = null
+  toast.info(isQuote.value ? 'Sin fecha de validez' : 'Sin vencimiento', `Al guardar, ${isQuote.value ? 'tus próximos presupuestos' : 'tus próximas facturas'} tampoco la llevarán.`)
+}
+function addDue() {
+  form.dueDate = lastDue ?? addDaysISO(form.issueDate, isQuote.value ? 30 : contact.value?.paymentTermsDays ?? defaultTerms)
+}
 
 // ─── Forma de pago ───────────────────────────────────────────────────────────
 // Quitarla o volver a ponerla vale para este documento y, al guardar, para los siguientes del mismo tipo
@@ -783,9 +796,16 @@ const R_CODES = [
               <span class="paper-label">Fecha</span>
               <input v-model="form.issueDate" type="date" class="cell" aria-label="Fecha de emisión" required>
             </div>
-            <div>
-              <span class="paper-label">{{ isQuote ? 'Válido hasta' : 'Vencimiento' }}</span>
-              <input v-model="form.dueDate" type="date" class="cell" :aria-label="isQuote ? 'Válido hasta' : 'Vencimiento'">
+            <div v-if="form.dueDate" class="pay-meta">
+              <span class="paper-label">{{ dueLabel }}</span>
+              <span class="pay-pick">
+                <input v-model="form.dueDate" type="date" class="cell" :aria-label="dueLabel">
+                <button type="button" class="pay-x no-print" :title="`Quitar «${dueLabel}» de este documento (y de los siguientes)`" :aria-label="`Quitar ${dueLabel.toLowerCase()}`" @click="removeDue"><Icon name="ph:x-bold" aria-hidden="true" /></button>
+              </span>
+            </div>
+            <div v-else class="pay-meta off no-print">
+              <span class="paper-label">{{ dueLabel }}</span>
+              <button type="button" class="pay-add" title="No aparece en el documento" @click="addDue"><Icon name="ph:plus-bold" aria-hidden="true" /> Añadir</button>
             </div>
             <div v-if="form.paymentMethod" class="pay-meta">
               <span class="paper-label">Forma de pago</span>
@@ -993,6 +1013,7 @@ const R_CODES = [
                   <button v-for="d in TERMS" :key="d" type="button" class="chip" :class="{ on: termDays === d }" @click="setTerm(d)">{{ d === 0 ? 'Al contado' : `${d} días` }}</button>
                 </div>
                 <p v-if="form.dueDate" class="hint">Vence el {{ fdate(form.dueDate) }}</p>
+                <p v-else class="hint">Sin vencimiento en la factura: elige un plazo para ponerlo</p>
               </div>
               <IrpfField v-model="form.irpfRate" label="Retención de IRPF" :hint="irpfHint ?? 'Solo cuando facturas a empresas o profesionales'" />
             </div>
@@ -1181,7 +1202,7 @@ const R_CODES = [
   appearance: none;
 }
 
-/* Forma de pago: X para quitarla del documento; sin ella, solo «Añadir» (no se imprime) */
+/* Vencimiento y forma de pago: X para quitarlos del documento; sin ellos, solo «Añadir» (no se imprime) */
 .pay-pick {
   position: relative;
   display: block;

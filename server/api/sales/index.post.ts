@@ -23,8 +23,8 @@ export default defineEventHandler(async (event) => {
     }
   }
   if (status && isQuoteKind(input.kind) && status !== 'issued') await setSalesStatus(company.id, id, status)
-  // La forma de pago elegida (o quitada) es la que llevarán los siguientes documentos de este tipo
-  if (await sentPaymentMethod(event)) await rememberPaymentMethod(company, input.kind, input.paymentMethod)
+  // Forma de pago y fecha de vencimiento / validez elegidas: así empiezan los siguientes de este tipo
+  await rememberDocDefaults(event, company, input.kind, input)
   await audit(event, { companyId: company.id, userId: user.id, action: issue ? 'sales.issue' : 'sales.create', entity: 'sales_document', entityId: id, data: { number } })
   return { id, number }
 })

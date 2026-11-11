@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
   const { company, user } = await requireCompany(event)
   const id = idParam(event)
   const { issue: asked, status, ...input } = await readInput(event, schema)
-  const [before] = await useDb().select({ status: tables.salesDocuments.status }).from(tables.salesDocuments)
+  const [before] = await useDb().select({ status: tables.salesDocuments.status, paymentMethod: tables.salesDocuments.paymentMethod, dueDate: tables.salesDocuments.dueDate }).from(tables.salesDocuments)
     .where(and(eq(tables.salesDocuments.id, id), eq(tables.salesDocuments.companyId, company.id)))
   const quote = isQuoteKind(input.kind)
   const issue = before?.status === 'draft' && (asked || quote)
@@ -17,8 +17,8 @@ export default defineEventHandler(async (event) => {
   if (issue) number = await issueSalesDocument(company.id, id)
   const current = issue ? 'issued' : before?.status
   if (quote && status && current !== status && current !== 'invoiced') await setSalesStatus(company.id, id, status)
-  // La forma de pago elegida (o quitada) es la que llevarán los siguientes documentos de este tipo
-  if (await sentPaymentMethod(event)) await rememberPaymentMethod(company, input.kind, input.paymentMethod)
+  // Forma de pago y fecha de vencimiento / validez cambiadas: así empiezan los siguientes de este tipo
+  await rememberDocDefaults(event, company, input.kind, input, before)
   await audit(event, { companyId: company.id, userId: user.id, action: issue ? 'sales.issue' : 'sales.update', entity: 'sales_document', entityId: id, data: { number } })
   return { id, number }
 })

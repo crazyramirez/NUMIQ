@@ -92,7 +92,7 @@ const place = (p: PaperParty) => [[p.postalCode, p.city].filter(Boolean).join(' 
 
     <div class="paper-meta">
       <div><span class="paper-label">Fecha</span>{{ fdateShort(doc.issueDate) }}</div>
-      <div><span class="paper-label">{{ isQuote ? 'Válido hasta' : 'Vencimiento' }}</span>{{ fdateShort(doc.dueDate) }}</div>
+      <div v-if="doc.dueDate"><span class="paper-label">{{ isQuote ? 'Válido hasta' : 'Vencimiento' }}</span>{{ fdateShort(doc.dueDate) }}</div>
       <div v-if="doc.paymentMethod && PAYMENT_METHODS[doc.paymentMethod]"><span class="paper-label">Forma de pago</span>{{ PAYMENT_METHODS[doc.paymentMethod] }}</div>
       <div v-if="doc.customerReference"><span class="paper-label">{{ d.customerReferenceLabel || 'Orden de Pedido' }}</span>{{ doc.customerReference }}</div>
     </div>

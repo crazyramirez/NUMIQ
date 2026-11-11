@@ -21,7 +21,7 @@ export function pdfFilename(kind: string, number: string | null) {
 }
 
 /** PDF de una factura o presupuesto de la empresa con su diseño y su logo */
-export async function salesPdf(company: Company, id: number, designOverride?: InvoiceDesign, opts: { verifactu?: boolean, defaultTexts?: boolean, forcePaymentMethod?: string | null } = {}) {
+export async function salesPdf(company: Company, id: number, designOverride?: InvoiceDesign, opts: { verifactu?: boolean, defaultTexts?: boolean, forcePaymentMethod?: string | null, hideDueDate?: boolean } = {}) {
   const db = useDb()
   const doc = await loadSalesDocument(company.id, id)
   const design = designOverride ?? await getCompanyDesign(company)
@@ -41,7 +41,7 @@ export async function salesPdf(company: Company, id: number, designOverride?: In
     status: doc.status,
     number: doc.number,
     issueDate: doc.issueDate,
-    dueDate: doc.dueDate,
+    dueDate: opts.hideDueDate ? null : doc.dueDate,
     operationDate: doc.operationDate,
     paymentMethod: opts.forcePaymentMethod !== undefined ? opts.forcePaymentMethod : doc.paymentMethod,
     description: doc.description,
@@ -91,6 +91,7 @@ export async function designPreviewPdf(company: Company, design: InvoiceDesign, 
       defaultTexts: true,
       // La vista previa del diseño enseña la forma de pago con la que empiezan los documentos nuevos
       forcePaymentMethod: isQuote ? design.quotePaymentMethod : design.paymentMethod,
+      hideDueDate: !(isQuote ? design.quoteShowDueDate : design.showDueDate),
     })).buffer
   }
 
@@ -101,7 +102,7 @@ export async function designPreviewPdf(company: Company, design: InvoiceDesign, 
     status: 'issued',
     number: isQuote ? 'P2026-0001' : 'F2026-0001',
     issueDate: today,
-    dueDate,
+    dueDate: (isQuote ? design.quoteShowDueDate : design.showDueDate) ? dueDate : null,
     operationDate: null,
     paymentMethod: isQuote ? design.quotePaymentMethod : design.paymentMethod,
     notes: isQuote ? null : (design.defaultNotes.trim() || 'Gracias por confiar en nosotros.'),
