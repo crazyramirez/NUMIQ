@@ -59,6 +59,7 @@ interface SalesDoc {
   rectificationCode: string | null
   rectificationReason: string | null
   lines: Array<Omit<Line, 'key'> & { id: number }>
+  keptLines?: Array<Omit<Line, 'key'>> | null
   attachments?: Array<{ id: number, originalName: string, mime: string, size: number, createdAt: string }>
   imported?: boolean
   verifactu?: unknown
@@ -288,9 +289,12 @@ const moreOpen = ref(moreCount.value > 0)
 // «Solo descripción»: sin conceptos, la descripción explica el trabajo y cada tipo de IVA lleva su base imponible
 const conceptless = ref(!!doc.value && isConceptless(doc.value.lines))
 
-// Conceptos de antes de pasar a «Solo descripción»: al volver se recuperan tal cual (se puede conmutar sin perder nada)
-let keptConcepts: { lines: Line[], bases: string, autoDescription: string | null } | null = null
+// Conceptos de antes de pasar a «Solo descripción»: al volver se recuperan tal cual (se puede conmutar sin
+// perder nada). Se guardan con el documento, así siguen ahí aunque guardes y lo vuelvas a abrir
 const basesKey = (lines: Line[]) => JSON.stringify(lines.map(l => [l.vatRate, l.unitPrice ?? null]))
+let keptConcepts: { lines: Line[], bases: string, autoDescription: string | null } | null = conceptless.value && doc.value?.keptLines?.length
+  ? { lines: doc.value.keptLines.map(l => ({ ...l, key: ++keySeq })), bases: basesKey(form.lines), autoDescription: null }
+  : null
 
 function setConceptless(on: boolean) {
   if (on === conceptless.value) return
@@ -632,6 +636,7 @@ async function save(issue: boolean) {
       rectifiesId: kind.value === 'rectifying' ? form.rectifiesId : null,
       rectificationCode: kind.value === 'rectifying' ? form.rectificationCode : null,
       rectificationReason: kind.value === 'rectifying' ? form.rectificationReason || null : null,
+      keptLines: conceptless.value && keptConcepts ? keptConcepts.lines.map(({ key: _k, ...l }) => ({ ...l, quantity: l.quantity ?? 0, unitPrice: l.unitPrice ?? 0, discountPct: l.discountPct ?? 0 })).filter(l => l.description.trim()) : null,
       lines: validLines.value.map(l => ({
         itemId: l.itemId,
         description: conceptless.value ? '' : l.description.trim(),

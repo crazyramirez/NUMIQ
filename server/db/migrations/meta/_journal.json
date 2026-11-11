@@ -232,6 +232,13 @@
       "when": 1793267379271,
       "tag": "0032_email_signature",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "5",
+      "when": 1794408762634,
+      "tag": "0033_sales_kept_lines",
+      "breakpoints": true
     }
   ]
 }

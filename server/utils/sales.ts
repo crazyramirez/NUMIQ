@@ -37,6 +37,8 @@ export const salesInputSchema = z.object({
   rectificationCode: z.enum(['R1', 'R2', 'R3', 'R4', 'R5']).nullish(),
   rectificationReason: z.string().max(255).nullish(),
   lines: z.array(salesLineSchema).min(1, 'Añade al menos una línea').max(500),
+  /** «Solo descripción»: los conceptos de antes, para recuperarlos al volver (sin enviar = no se tocan) */
+  keptLines: z.array(salesLineSchema).max(500).nullish(),
   /** Firma: null = lo que diga Ajustes; sin enviar = no se toca */
   sign: z.boolean().nullable().optional(),
   signatureId: z.number().int().positive().nullable().optional(),
@@ -121,6 +123,13 @@ export async function saveSalesDraft(companyId: number, userId: number, input: S
     surchargeTotal: totals.surchargeTotal,
     irpfTotal: totals.irpfTotal,
     total: totals.total,
+  }
+  // Con conceptos no hace falta guardar ninguno aparte; en «Solo descripción», los que mande el editor
+  if (!isConceptless(input.lines)) values.keptLines = null
+  else if (input.keptLines !== undefined) {
+    values.keptLines = input.keptLines?.length
+      ? input.keptLines.map(l => ({ ...l, itemId: l.itemId ?? null, discountPct: l.discountPct ?? 0, surchargeRate: l.surchargeRate ?? 0, irpfApplies: l.irpfApplies ?? true }))
+      : null
   }
   if (input.sign !== undefined) values.sign = input.sign
   if (input.signatureId !== undefined) {
@@ -356,6 +365,7 @@ export async function quoteToInvoice(company: typeof tables.companies.$inferSele
       itemId: l.itemId, description: l.description, quantity: l.quantity, unitPrice: l.unitPrice,
       discountPct: l.discountPct, vatRate: l.vatRate, surchargeRate: l.surchargeRate, irpfApplies: l.irpfApplies,
     })),
+    keptLines: src.keptLines,
   })
   const db = useDb()
   await db.update(tables.salesDocuments).set({ sourceId: id })

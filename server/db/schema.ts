@@ -310,6 +310,9 @@ export const seriesCounters = mysqlTable('series_counters', {
 
 export type PartySnapshot = ContactAddress & { name: string, nif?: string | null, email?: string | null }
 
+/** Concepto guardado aparte mientras el documento está en «Solo descripción» */
+export type SalesKeptLine = { itemId: number | null, description: string, quantity: number, unitPrice: number, discountPct: number, vatRate: number, surchargeRate: number, irpfApplies: boolean }
+
 export const salesDocuments = mysqlTable('sales_documents', {
   id: int('id').autoincrement().primaryKey(),
   companyId: int('company_id').notNull(),
@@ -343,6 +346,8 @@ export const salesDocuments = mysqlTable('sales_documents', {
   paymentMethod: mysqlEnum('payment_method', ['transfer', 'card', 'cash', 'direct_debit', 'bizum', 'other']).default('transfer'),
   /** Descripción con formato antes de los conceptos (bloques, no HTML) */
   description: jsonText<RichDoc>('description'),
+  /** «Solo descripción»: los conceptos de antes, guardados sin mostrarse para recuperarlos al volver a «Con conceptos» */
+  keptLines: jsonText<SalesKeptLine[]>('kept_lines'),
   notes: text('notes'),
   terms: text('terms'),
   /** Rectificativa: factura que corrige y motivo (R1..R5) */
