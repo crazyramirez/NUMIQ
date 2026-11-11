@@ -144,6 +144,7 @@ export interface SalesChangesIn {
   condiciones: string | null
   referencia: string | null
   descripcion: string | null
+  numero?: string | null
   descuento: number | null
   base: number | null
   total: number | null
@@ -155,6 +156,7 @@ export interface SalesChangesIn {
 type LineOp = { op: 'add' | 'edit' | 'remove', match: string | null, description?: string, quantity?: number, unitPrice?: number, vatRate?: number, discountPct?: number, itemId?: number | null }
 
 interface SalesChangeSet {
+  number?: string
   contactId?: number
   irpfRate?: number
   vatRate?: number
@@ -564,6 +566,10 @@ export async function planSales(ctx: OpCtx, family: SalesFamily, accion: string,
   if (cambios.condiciones?.trim()) ch.terms = cambios.condiciones.trim().slice(0, 5000)
   if (cambios.referencia?.trim()) ch.customerReference = cambios.referencia.trim().slice(0, 80)
   if (cambios.descripcion?.trim()) ch.description = plainToRich(cambios.descripcion.slice(0, 5000))
+  if (cambios.numero?.trim()) {
+    if (found.length !== 1) throw new OpError('El número se cambia de uno en uno: indica un solo documento')
+    ch.number = cambios.numero.trim().slice(0, 40)
+  }
   ch.discountPct = checkRange(cambios.descuento, 0, 100, 'el descuento')
   if (cambios.base != null && cambios.total != null) throw new OpError('Indica la base o el total, no los dos: el otro sale de los impuestos')
   if (cambios.base != null) ch.taxBase = amount(cambios.base, 'la base')
@@ -579,6 +585,7 @@ export async function planSales(ctx: OpCtx, family: SalesFamily, accion: string,
   if (!Object.keys(ch).length) throw new OpError('Indica qué quieres cambiar')
 
   if (contact) parts.push(`${names(found.map(r => r.client)) || 'Sin cliente'} → ${contact.name}`)
+  if (ch.number) parts.push(`número ${ch.number}`)
   for (const op of ch.lineOps ?? []) parts.push(lineOpText(op))
   if (ch.taxBase != null) parts.push(`base ${eurText(ch.taxBase)}`)
   if (ch.total != null) parts.push(`total ${eurText(ch.total)}`)
@@ -707,6 +714,8 @@ async function loadSalesInput(companyId: number, id: number) {
   if (!doc) return null
   const lines = await db.select().from(tables.salesDocumentLines).where(eq(tables.salesDocumentLines.documentId, id)).orderBy(tables.salesDocumentLines.position)
   const input = {
+    // El número actual: sin cambios no se toca y deshacer devuelve el de antes
+    number: doc.number,
     kind: doc.kind,
     seriesId: doc.seriesId,
     contactId: doc.contactId,
@@ -753,6 +762,7 @@ async function salesModify(ctx: OpCtx, p: { ids: number[], labels: Record<string
       const ch = p.changes
       const next: SalesInput = {
         ...loaded.input,
+        ...(ch.number ? { number: ch.number } : {}),
         ...(ch.contactId ? { contactId: ch.contactId } : {}),
         ...(ch.irpfRate != null ? { irpfRate: ch.irpfRate } : {}),
         ...(ch.issueDate ? { issueDate: ch.issueDate } : {}),

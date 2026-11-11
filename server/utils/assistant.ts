@@ -120,6 +120,7 @@ export function assistantToolDefs() {
         condiciones: str(),
         referencia: str('Referencia o nº de pedido del cliente'),
         descripcion: str('Descripción del trabajo que va antes de las líneas'),
+        numero: str('Nuevo número del documento escrito a mano (p. ej. F2026-0050); solo con un documento a la vez'),
         vaciar: clear(['notas', 'condiciones', 'referencia', 'vencimiento', 'fecha_operacion', 'descripcion', 'forma_pago']),
       }),
     }),

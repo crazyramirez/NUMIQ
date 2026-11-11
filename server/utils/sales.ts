@@ -63,6 +63,25 @@ async function defaultSeriesId(companyId: number, kind: SalesInput['kind']) {
   return s?.id ?? null
 }
 
+const NUMBER_FAMILY: Record<string, Array<'invoice' | 'rectifying' | 'quote' | 'proforma'>> = {
+  invoice: ['invoice', 'rectifying'],
+  rectifying: ['invoice', 'rectifying'],
+  quote: ['quote'],
+  proforma: ['proforma'],
+}
+
+/** Ningún otro documento del mismo tipo (facturas con rectificativas, presupuestos, proformas) lleva ese número */
+async function assertNumberFree(tx: Pick<ReturnType<typeof useDb>, 'select'>, companyId: number, kind: string, number: string, exceptId?: number) {
+  const s = tables.salesDocuments
+  const [dup] = await tx.select({ id: s.id }).from(s)
+    .where(and(eq(s.companyId, companyId), inArray(s.kind, NUMBER_FAMILY[kind] ?? [kind as 'invoice']), eq(s.number, number), exceptId ? ne(s.id, exceptId) : undefined))
+    .limit(1)
+  if (dup) {
+    const what = kind === 'quote' ? 'un presupuesto' : kind === 'proforma' ? 'una proforma' : 'una factura'
+    throw createError({ statusCode: 409, statusMessage: `Ya tienes ${what} con el número ${number}`, data: { field: 'number' } })
+  }
+}
+
 /** Crea o actualiza un documento. Las facturas emitidas sin VeriFactu o importadas se pueden modificar. */
 export async function saveSalesDraft(companyId: number, userId: number, input: SalesInput, id?: number) {
   const db = useDb()
@@ -134,8 +153,15 @@ export async function saveSalesDraft(companyId: number, userId: number, input: S
       }
 
       const updateValues: Record<string, unknown> = { ...values }
-      if (input.number !== undefined) {
-        updateValues.number = input.number?.trim() || null
+      // Número a mano. Borrador: el suyo o vacío (automático al emitir). Emitido: nunca se queda sin número
+      const manual = input.number === undefined ? undefined : input.number?.trim() || null
+      if (manual !== undefined && manual !== doc.number && (doc.status === 'draft' || manual)) {
+        if (manual) await assertNumberFree(tx, companyId, input.kind, manual, docId)
+        updateValues.number = manual
+        if (doc.status !== 'draft') {
+          const seriesId = (values.seriesId as number | null) ?? null
+          updateValues.sequence = seriesId ? await claimManualNumber(tx, companyId, seriesId, Number(input.issueDate.slice(0, 4)), manual!, docId) : null
+        }
       }
       if (doc.status !== 'draft') {
         const contact = input.contactId
@@ -151,8 +177,12 @@ export async function saveSalesDraft(companyId: number, userId: number, input: S
       await tx.delete(tables.salesDocumentLines).where(eq(tables.salesDocumentLines.documentId, docId))
     }
     else {
+      // Número escrito a mano: se guarda ya y se usa al emitir (vacío: el siguiente de la serie)
+      const manual = input.number?.trim() || null
+      if (manual) await assertNumberFree(tx, companyId, input.kind, manual)
       const [res] = await tx.insert(tables.salesDocuments).values({
         ...values,
+        number: manual,
         companyId,
         status: 'draft',
         createdBy: userId,
@@ -199,13 +229,23 @@ export async function issueSalesDocument(companyId: number, id: number) {
     if (isInvoice) {
       // Correlatividad: no se puede emitir con fecha anterior a la última factura de la serie
       const [last] = await tx.select({ d: max(tables.salesDocuments.issueDate) }).from(tables.salesDocuments)
-        .where(and(eq(tables.salesDocuments.seriesId, doc.seriesId), eq(tables.salesDocuments.year, year), isNotNull(tables.salesDocuments.number), ne(tables.salesDocuments.id, id)))
+        .where(and(eq(tables.salesDocuments.seriesId, doc.seriesId), eq(tables.salesDocuments.year, year), isNotNull(tables.salesDocuments.number), ne(tables.salesDocuments.status, 'draft'), ne(tables.salesDocuments.id, id)))
       if (last?.d && last.d > doc.issueDate) {
         throw createError({ statusCode: 409, statusMessage: `La fecha no puede ser anterior a la última factura de la serie (${last.d})` })
       }
     }
 
-    const { sequence, number } = await takeNextNumber(tx, doc.seriesId, year)
+    // Número escrito a mano en el borrador, o el siguiente de la serie
+    let number: string
+    let sequence: number | null
+    if (doc.number) {
+      await assertNumberFree(tx, companyId, doc.kind, doc.number, id)
+      number = doc.number
+      sequence = await claimManualNumber(tx, companyId, doc.seriesId, year, doc.number, id)
+    }
+    else {
+      ({ sequence, number } = await takeNextNumber(tx, doc.seriesId, year))
+    }
     await tx.update(tables.salesDocuments).set({
       number,
       sequence,

@@ -1,4 +1,4 @@
-import { and, count, eq, inArray, isNotNull, isNull, max } from 'drizzle-orm'
+import { and, count, eq, inArray, isNotNull, isNull, max, ne } from 'drizzle-orm'
 
 /** Series con el próximo número que se asignará (vista previa en el editor y configuración) */
 export default defineEventHandler(async (event) => {
@@ -25,6 +25,8 @@ export default defineEventHandler(async (event) => {
         eq(tables.salesDocuments.companyId, company.id),
         inArray(tables.salesDocuments.seriesId, rows.map(s => s.id)),
         isNotNull(tables.salesDocuments.number),
+        // Un borrador puede llevar ya su número a mano: aún no cuenta como emitido
+        ne(tables.salesDocuments.status, 'draft'),
       ))
       .groupBy(tables.salesDocuments.seriesId)
     : []

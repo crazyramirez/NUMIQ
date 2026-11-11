@@ -181,6 +181,10 @@ else if (source.value) {
 const seriesOptions = computed(() => (allSeries.value ?? []).filter(s => s.kind === kind.value))
 if (!form.seriesId) form.seriesId = seriesOptions.value.find(s => s.isDefault)?.id ?? seriesOptions.value[0]?.id ?? null
 const nextNumber = computed(() => seriesOptions.value.find(s => s.id === form.seriesId)?.nextNumber ?? null)
+// Número a mano en cualquier documento; vacío = el siguiente de la serie (salvo si ya tiene número: no se queda sin él)
+const numberRequired = computed(() => !!doc.value?.number && doc.value.status !== 'draft')
+const numberLabel = computed(() => (isQuote.value ? 'Nº de presupuesto' : 'Nº de factura'))
+const issueNumber = computed(() => form.number.trim() || nextNumber.value)
 
 // ─── Cliente ─────────────────────────────────────────────────────────────────
 const contact = computed(() => contacts.value?.find(c => c.id === form.contactId) ?? null)
@@ -540,6 +544,10 @@ function validate(issue: boolean) {
   errors.contact = null
   errors.lines = null
   errors.lines = linesError()
+  if (numberRequired.value && !form.number.trim()) {
+    toast.error(`Falta el ${numberLabel.value.toLowerCase()}`, 'Un documento emitido no puede quedarse sin número.')
+    return false
+  }
   if (issue && !isQuote.value) {
     if (!form.contactId) errors.contact = 'Elige el cliente de la factura'
     else if (!contact.value?.nif) errors.contact = 'El cliente necesita NIF para emitir una factura completa'
@@ -557,8 +565,8 @@ async function save(issue: boolean) {
   }
   if (issue && !isQuote.value) {
     const ok = await confirm({
-      title: `¿Emitir ${kind.value === 'rectifying' ? 'la rectificativa' : 'la factura'} ${nextNumber.value ?? ''}?`,
-      body: `Total ${eur(totals.value.total)}${contact.value ? ` a ${contact.value.name}` : ''}. Se asignará el número ${nextNumber.value ?? ''} y quedará emitida.`,
+      title: `¿Emitir ${kind.value === 'rectifying' ? 'la rectificativa' : 'la factura'} ${issueNumber.value ?? ''}?`,
+      body: `Total ${eur(totals.value.total)}${contact.value ? ` a ${contact.value.name}` : ''}. ${form.number.trim() ? 'Llevará' : 'Se asignará'} el número ${issueNumber.value ?? ''} y quedará emitida.`,
       confirmLabel: 'Emitir',
     })
     if (!ok) return
@@ -577,7 +585,7 @@ async function save(issue: boolean) {
   try {
     const body = {
       kind: kind.value,
-      number: isAlreadyIssued.value ? form.number.trim() || null : undefined,
+      number: form.number.trim() || null,
       seriesId: form.seriesId,
       contactId: form.contactId,
       customerReference: form.customerReference.trim() || null,
@@ -692,7 +700,7 @@ const R_CODES = [
           <p class="muted ed-sub">
             <span class="ed-sub-t">
               <template v-if="doc?.number">{{ doc.number }}</template>
-              <template v-else-if="nextNumber"><span class="ed-sub-long">Se numerará como </span><span class="mono">{{ nextNumber }}</span> al {{ isQuote ? 'guardar' : 'emitir' }}</template>
+              <template v-else-if="issueNumber"><span class="ed-sub-long">Se numerará como </span><span class="mono">{{ issueNumber }}</span> al {{ isQuote ? 'guardar' : 'emitir' }}</template>
             </span>
             <span v-if="dirty" class="unsaved"><span class="unsaved-dot" aria-hidden="true" />Sin guardar</span>
           </p>
@@ -751,13 +759,22 @@ const R_CODES = [
             </div>
             <div class="paper-title">
               <h2>{{ paperTitle }}</h2>
-              <div v-if="isAlreadyIssued" class="paper-number-edit">
+              <div class="paper-number-edit">
                 <span class="clearable">
-                  <input v-model="form.number" class="cell" placeholder="Nº de factura" aria-label="Número de factura">
+                  <input
+                    v-model="form.number"
+                    class="cell"
+                    :placeholder="numberRequired ? numberLabel : nextNumber ?? 'Automático'"
+                    :aria-label="numberLabel"
+                    maxlength="40"
+                    spellcheck="false"
+                    autocomplete="off"
+                    :aria-invalid="numberRequired && !form.number.trim() ? true : undefined"
+                  >
                   <UiClear />
                 </span>
               </div>
-              <p v-else class="paper-number" :class="{ pending: !doc?.number }">{{ doc?.number ?? (nextNumber ? `${nextNumber} (al ${isQuote ? 'guardar' : 'emitir'})` : 'Borrador') }}</p>
+              <p v-if="!numberRequired" class="number-hint no-print">{{ form.number.trim() ? 'Número escrito a mano' : `Automático al ${isQuote ? 'guardar' : 'emitir'} · puedes escribir otro` }}</p>
             </div>
           </div>
 
@@ -2063,10 +2080,20 @@ const R_CODES = [
   }
 }
 
+/* Sigue la alineación del título (derecha; a la izquierda en el diseño clásico y en el móvil) */
 .paper-number-edit {
-  display: flex;
-  justify-content: flex-end;
   margin-top: 2px;
+}
+
+.paper-number-edit .clearable {
+  display: inline-block;
+  vertical-align: top;
+}
+
+.number-hint {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--p-text-3);
 }
 
 .paper-number-edit .cell {
@@ -2076,7 +2103,7 @@ const R_CODES = [
   font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 600;
-  text-align: right;
+  text-align: inherit;
   margin: 0;
 }
 </style>

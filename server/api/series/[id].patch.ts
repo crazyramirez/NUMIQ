@@ -35,6 +35,8 @@ export default defineEventHandler(async (event) => {
         eq(tables.salesDocuments.companyId, company.id),
         targetYearlyReset ? eq(tables.salesDocuments.year, year) : undefined,
         isNotNull(tables.salesDocuments.number),
+        // Un borrador puede llevar ya su número a mano: aún no cuenta como emitido
+        ne(tables.salesDocuments.status, 'draft'),
       ))
 
     if (maxIssued?.maxSeq && input.nextSequence <= maxIssued.maxSeq) {
