@@ -15,8 +15,9 @@ const activeArea = computed(() => areaOf(route.path).area?.key ?? null)
 // Contador de Documentos: importaciones leídas por la IA que esperan confirmación (el gestor no las confirma)
 const inbox = useInboxCount()
 watch(() => route.path, () => inbox.refresh(), { immediate: true })
-// El gestor no importa: Documentos le lleva directo al archivo
-const navTo = (item: NavArea) => (readOnly.value && item.key === 'documentos' ? '/documentos/archivo' : item.to)
+// Cada área vuelve a su última pestaña (Ingresos → Presupuestos…); el gestor no importa: Documentos le lleva al archivo
+const { areaHref } = useAreaTabs()
+const navTo = (item: NavArea) => (readOnly.value && item.key === 'documentos' ? '/documentos/archivo' : areaHref(item))
 
 const companyItems = computed<MenuItem[]>(() => [
   { heading: 'Tus empresas' },

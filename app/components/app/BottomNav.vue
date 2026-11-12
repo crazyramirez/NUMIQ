@@ -8,6 +8,12 @@ const route = useRoute()
 const { readOnly } = useMe()
 const { open: openScan } = useScan()
 const area = computed(() => areaOf(route.path).area?.key ?? null)
+// Ingresos y Gastos vuelven a su última pestaña (Presupuestos, Gastos fijos…)
+const { areaHref } = useAreaTabs()
+const hrefOf = (key: string) => {
+  const a = NAV.flat().find(x => x.key === key)
+  return a ? areaHref(a) : `/${key}`
+}
 
 const sheet = ref(false)
 watch(() => route.fullPath, () => (sheet.value = false))
@@ -39,7 +45,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
       <Icon :name="area === 'inicio' ? 'ph:squares-four-fill' : 'ph:squares-four'" class="bi-ic" aria-hidden="true" />
       <span>Inicio</span>
     </NuxtLink>
-    <NuxtLink to="/facturas" class="bi" :class="{ on: area === 'ingresos' }" :aria-current="area === 'ingresos' ? 'page' : undefined">
+    <NuxtLink :to="hrefOf('ingresos')" class="bi" :class="{ on: area === 'ingresos' }" :aria-current="area === 'ingresos' ? 'page' : undefined">
       <Icon :name="area === 'ingresos' ? 'ph:receipt-fill' : 'ph:receipt'" class="bi-ic" aria-hidden="true" />
       <span>Ingresos</span>
     </NuxtLink>
@@ -48,7 +54,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
         <Icon name="ph:plus-bold" aria-hidden="true" />
       </button>
     </div>
-    <NuxtLink to="/gastos" class="bi" :class="{ on: area === 'gastos' }" :aria-current="area === 'gastos' ? 'page' : undefined">
+    <NuxtLink :to="hrefOf('gastos')" class="bi" :class="{ on: area === 'gastos' }" :aria-current="area === 'gastos' ? 'page' : undefined">
       <Icon :name="area === 'gastos' ? 'ph:wallet-fill' : 'ph:wallet'" class="bi-ic" aria-hidden="true" />
       <span>Gastos</span>
     </NuxtLink>
