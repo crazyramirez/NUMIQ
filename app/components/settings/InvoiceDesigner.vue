@@ -213,6 +213,15 @@ function insertToken(kind: 'invoice' | 'quote', token: string) {
   }
 }
 
+// ✨ IA en los textos por defecto: quién factura (para el tono) y cómo cobra
+function designAiContext() {
+  return {
+    empresa: sigTokens.value.empresa || null,
+    forma_de_pago_habitual: d.paymentMethod ? PAYMENT_METHODS[d.paymentMethod] ?? null : null,
+    texto_de_pago: d.paymentText || null,
+  }
+}
+
 // ─── Firma de los correos ────────────────────────────────────────────────────
 const SIGNATURE_TOKENS = [
   { k: '{empresa}', l: 'Nombre comercial' },
@@ -442,7 +451,7 @@ async function removeSignatureImage() {
             <p class="hint pay-defaults-hint">Así empiezan los documentos nuevos. Cambia sola cuando eliges otra forma de pago o quitas uno de estos datos en un documento.</p>
           </div>
           <UiSwitch v-model="d.showPaymentInfo" :disabled="!canEdit" label="Datos de pago" hint="IBAN y texto de pago al pie de las facturas" />
-          <UiTextarea v-model="d.paymentText" label="Texto de pago" placeholder="Pago a 30 días mediante transferencia bancaria.&#10;Indica el número de factura en el concepto." hint="Puedes usar varias líneas" rows="3" maxlength="500" :disabled="!canEdit || !d.showPaymentInfo" />
+          <UiTextarea v-model="d.paymentText" label="Texto de pago" :ai="{ field: 'payment_text', context: designAiContext }" placeholder="Pago a 30 días mediante transferencia bancaria.&#10;Indica el número de factura en el concepto." hint="Puedes usar varias líneas" rows="3" maxlength="500" :disabled="!canEdit || !d.showPaymentInfo" />
           <UiInput
             v-model="d.customerReferenceLabel"
             label="Etiqueta para orden de pedido o referencia"
@@ -461,8 +470,8 @@ async function removeSignatureImage() {
             <UiInput v-model="d.notesLabel" class="c-6" label="Título en facturas" placeholder="Sin título" hint="Vacío: el texto va sin título" maxlength="40" :disabled="!canEdit" />
             <UiInput v-model="d.termsLabel" class="c-6" label="Título en presupuestos" placeholder="Sin título" hint="Vacío: el texto va sin título" maxlength="40" :disabled="!canEdit" />
           </div>
-          <UiTextarea v-model="d.defaultNotes" label="Observaciones por defecto" placeholder="Ej. Gracias por confiar en nosotros." hint="Aparecen ya escritas en cada factura nueva; puedes cambiarlas en cada una" rows="3" maxlength="1000" :disabled="!canEdit" />
-          <UiTextarea v-model="d.defaultTerms" label="Condiciones por defecto" placeholder="Validez, plazos de entrega, forma de pago…" hint="Aparecen ya escritas en cada presupuesto nuevo" rows="3" maxlength="1000" :disabled="!canEdit" />
+          <UiTextarea v-model="d.defaultNotes" label="Observaciones por defecto" :ai="{ field: 'default_notes', context: designAiContext, writeHint: 'Un agradecimiento breve y profesional' }" placeholder="Ej. Gracias por confiar en nosotros." hint="Aparecen ya escritas en cada factura nueva; puedes cambiarlas en cada una" rows="3" maxlength="1000" :disabled="!canEdit" />
+          <UiTextarea v-model="d.defaultTerms" label="Condiciones por defecto" :ai="{ field: 'default_terms', context: designAiContext, writeHint: 'Validez y condiciones habituales, sin inventar plazos' }" placeholder="Validez, plazos de entrega, forma de pago…" hint="Aparecen ya escritas en cada presupuesto nuevo" rows="3" maxlength="1000" :disabled="!canEdit" />
         </div>
       </UiCard>
 
@@ -489,7 +498,7 @@ async function removeSignatureImage() {
             />
             <div class="field">
               <div class="tok-head">
-                <span class="label">Mensaje por defecto</span>
+                <span class="tok-title"><span class="label">Mensaje por defecto</span><AiWrite v-if="canEdit" v-model="d.defaultEmailMessage" field="email_message" :context="() => ({ ...designAiContext(), documento: 'factura', variables_disponibles: EMAIL_TOKENS.map(t => `${t.k} = ${t.l}`) })" write-hint="Un mensaje breve para enviar la factura" /></span>
                 <span class="tok-label">Insertar campo:</span>
               </div>
               <div class="tokens">
@@ -525,7 +534,7 @@ async function removeSignatureImage() {
             />
             <div class="field">
               <div class="tok-head">
-                <span class="label">Mensaje por defecto</span>
+                <span class="tok-title"><span class="label">Mensaje por defecto</span><AiWrite v-if="canEdit" v-model="d.defaultEmailMessageQuote" field="email_message" :context="() => ({ ...designAiContext(), documento: 'presupuesto', variables_disponibles: EMAIL_TOKENS.filter(x => x.k !== '{vencimiento}').map(t => `${t.k} = ${t.l}`) })" write-hint="Un mensaje breve para enviar el presupuesto" /></span>
                 <span class="tok-label">Insertar campo:</span>
               </div>
               <div class="tokens">
@@ -1119,6 +1128,12 @@ async function removeSignatureImage() {
   justify-content: space-between;
   align-items: center;
   margin-bottom: var(--s-1);
+}
+
+.tok-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .tok-label {

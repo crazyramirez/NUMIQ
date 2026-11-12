@@ -518,7 +518,7 @@ async function remove() {
             <UiSwitch v-model="otherRole" :label="role === 'client' ? 'También es proveedor' : 'También es cliente'" :hint="role === 'client' ? 'Podrás registrar gastos suyos' : 'Podrás emitirle facturas'" />
           </div>
 
-          <UiTextarea v-model="form.notes" label="Notas internas" placeholder="Condiciones pactadas, persona de contacto…" rows="3" :error="errors.notes" />
+          <UiTextarea v-model="form.notes" label="Notas internas" :ai="{ field: 'contact_notes', context: () => ({ nombre: form.name || null, es: [form.isClient && 'cliente', form.isSupplier && 'proveedor'].filter(Boolean).join(' y ') || null }) }" placeholder="Condiciones pactadas, persona de contacto…" rows="3" :error="errors.notes" />
           <p v-if="errors.isClient" class="error-text" role="alert">{{ errors.isClient }}</p>
         </div>
       </Transition>

@@ -46,7 +46,10 @@ onMounted(() => revealSection(false))
 
 const { data: company, status, error, refresh } = await useFetch('/api/companies/current', { lazy: true })
 const { data: series, refresh: refreshSeries } = await useFetch<any[]>('/api/series', { lazy: true })
-const { data: ai, refresh: refreshAi } = await useFetch('/api/ai/status', { lazy: true })
+const { data: ai, refresh: refreshAiPanel } = await useFetch('/api/ai/status', { lazy: true })
+// Al guardar o quitar la clave, también los botones de IA de los formularios
+const aiStatus = useAiStatus()
+const refreshAi = () => Promise.all([refreshAiPanel(), aiStatus.refresh()])
 
 // ─── Edición de Series de Numeración ───
 const seriesModalOpen = ref(false)

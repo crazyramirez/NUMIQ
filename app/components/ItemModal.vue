@@ -192,7 +192,7 @@ async function remove() {
       </div>
 
       <div class="form-grid">
-        <UiTextarea v-model="form.description" label="Descripción" hint="Aparece bajo el concepto en la factura" rows="3" :error="errors.description" />
+        <UiTextarea v-model="form.description" label="Descripción" :ai="{ field: 'item_description', context: () => ({ nombre: form.name || null, tipo: form.kind === 'product' ? 'producto' : 'servicio', unidad: form.unit || null }), writeHint: 'A partir del nombre del producto o servicio' }" hint="Aparece bajo el concepto en la factura" rows="3" :error="errors.description" />
 
         <UiInput v-model="form.unitPrice" class="c-4" label="Precio (sin IVA)" numeric suffix="€" placeholder="0,00" :error="errors.unitPrice" required />
         <UiSelect v-model="form.vatRate" class="c-4" label="IVA" :options="vatOptions" />

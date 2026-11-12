@@ -75,6 +75,7 @@ const router = useRouter()
 const toast = useToast()
 const { confirm } = useConfirm()
 const { verifactu } = useMe()
+const { available: aiAvailable } = useAiStatus()
 
 const isQuote = computed(() => props.kind === 'quote' || props.kind === 'proforma')
 const base = computed(() => (isQuote.value ? '/presupuestos' : '/facturas'))
@@ -717,6 +718,35 @@ const signModel = computed<DocSigning>({
 const signPreview = ref<Signature | null>(null)
 const { settings: signingSettings } = useSignatures()
 const paperTitle = computed(() => ({ invoice: 'Factura', rectifying: 'Factura rectificativa', quote: 'Presupuesto', proforma: 'Factura proforma' }[kind.value]))
+
+// ─── Asistente de redacción (✨ IA): lo que sabe del documento para escribir cada campo ───
+function aiContext(skip?: 'description' | 'notes', line?: Line) {
+  const concepts = form.lines.filter(l => l !== line && l.description.trim()).map(l => l.description.trim().replace(/\n+/g, ' — '))
+  return {
+    documento: paperTitle.value,
+    emisor: issuerName.value,
+    actividad_del_emisor: company.value?.activityDescription ?? null,
+    cliente: contact.value?.name ?? null,
+    cliente_es: contact.value ? (contact.value.kind === 'person' ? 'particular' : 'empresa o profesional') : null,
+    otros_conceptos: line ? concepts : null,
+    conceptos: line ? null : concepts,
+    linea: line ? `${num(line.quantity ?? 0)} × ${line.unitPrice != null ? eur(line.unitPrice) : 'sin precio'}${line.discountPct ? ` (dto. ${num(line.discountPct)} %)` : ''}` : null,
+    descripcion: skip === 'description' ? null : richToPlain(form.description).slice(0, 1500) || null,
+    total_con_iva: totals.value.total ? eur(totals.value.total) : null,
+    [isQuote.value ? 'valido_hasta' : 'vencimiento']: form.dueDate ? fdate(form.dueDate) : null,
+    forma_de_pago: form.paymentMethod ? PAYMENT_METHODS[form.paymentMethod] ?? null : null,
+    observaciones: skip === 'notes' ? null : (isQuote.value ? form.terms : form.notes) || null,
+  }
+}
+// La descripción tiene formato: a la IA va (y vuelve) con marcas sencillas (## , - , **negrita**)
+const descriptionMd = computed({
+  get: () => richToMarkdown(form.description),
+  set: (v: string) => (form.description = markdownToRich(v)),
+})
+const notesText = computed({
+  get: () => (isQuote.value ? form.terms : form.notes),
+  set: (v: string) => (isQuote.value ? (form.terms = v) : (form.notes = v)),
+})
 const R_CODES = [
   { value: 'R1', label: 'R1 · Error fundado en derecho (art. 80.1, 80.2 y 80.6 LIVA)' },
   { value: 'R2', label: 'R2 · Concurso de acreedores (art. 80.3)' },
@@ -918,7 +948,7 @@ const R_CODES = [
           <!-- Descripción con formato -->
           <div class="desc-block">
             <div class="desc-head">
-              <span class="paper-label">Descripción</span>
+              <span class="paper-label with-ai">Descripción <AiWrite v-model="descriptionMd" field="sales_description" :context="() => aiContext('description')" write-hint="A partir del cliente y los conceptos" on-paper class="no-print" /></span>
               <div class="mode no-print" role="group" aria-label="Cómo se detalla el trabajo">
                 <button type="button" :aria-pressed="!conceptless" @click="setConceptless(false)">Con conceptos</button>
                 <button type="button" :aria-pressed="conceptless" @click="setConceptless(true)">Solo descripción</button>
@@ -961,7 +991,8 @@ const R_CODES = [
             </div>
             <TransitionGroup name="line">
               <div v-for="(l, i) in form.lines" :key="l.key" v-ctx="() => lineCtx(l, i)" class="l-row" :data-line="l.key">
-                <div class="l-desc">
+                <div class="l-desc" :class="{ 'has-ai': aiAvailable, 'ai-empty': !l.description.trim() }">
+                  <AiWrite v-model="l.description" field="sales_concept" :context="() => aiContext(undefined, l)" write-hint="A partir de la descripción y los otros conceptos" compact on-paper class="l-ai no-print" />
                   <SalesConceptInput v-model="l.description" :items="items ?? []" :linked="!!l.itemId" @pick="pickItem(l, $event)" @update:model-value="l.itemId && !$event ? (l.itemId = null) : undefined" />
                   <div v-if="l.itemId || !l.irpfApplies || grossOff(l)" class="l-tags">
                     <span v-if="l.itemId" class="l-tag"><Icon name="ph:bookmark-simple-fill" /> Catálogo</span>
@@ -995,7 +1026,10 @@ const R_CODES = [
           <!-- Notas y totales -->
           <div class="paper-bottom">
             <div>
-              <span class="paper-label" :class="{ 'no-title': !notesTitle }" :title="notesTitle ? undefined : 'Sin título en el documento: lo puedes cambiar en Ajustes → Diseño de factura'">{{ notesTitle || (isQuote ? 'Condiciones · sin título' : 'Observaciones · sin título') }}</span>
+              <div class="notes-head">
+                <span class="paper-label" :class="{ 'no-title': !notesTitle }" :title="notesTitle ? undefined : 'Sin título en el documento: lo puedes cambiar en Ajustes → Diseño de factura'">{{ notesTitle || (isQuote ? 'Condiciones · sin título' : 'Observaciones · sin título') }}</span>
+                <AiWrite v-model="notesText" :field="isQuote ? 'sales_terms' : 'sales_notes'" :context="() => aiContext('notes')" :write-hint="isQuote ? 'Validez, plazos y forma de pago, con los datos del presupuesto' : 'Agradecimiento y datos útiles para el cliente'" on-paper class="no-print" />
+              </div>
               <textarea v-if="isQuote" v-model="form.terms" class="cell area" rows="3" placeholder="Validez, plazos de entrega, forma de pago…" aria-label="Condiciones" />
               <textarea v-else v-model="form.notes" class="cell area" rows="3" placeholder="Notas para el cliente (opcional)" aria-label="Observaciones" />
               <div v-if="signPreview" class="paper-sign spaced">
@@ -1386,6 +1420,66 @@ const R_CODES = [
 
 .desc-block {
   margin-top: 30px;
+}
+
+/* Etiquetas con ✨ IA al lado */
+.paper-label.with-ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.notes-head .paper-label {
+  margin-bottom: 0;
+}
+
+/* ✨ de cada concepto: arriba a la derecha, al pasar por la línea o al escribir en ella */
+.l-desc {
+  position: relative;
+}
+
+.l-desc.has-ai:not(.ai-empty) :deep(.desc),
+.l-desc.has-ai:focus-within :deep(.desc) {
+  padding-right: 32px;
+}
+
+.l-desc.has-ai:has(.ai-undo) :deep(.desc) {
+  padding-right: 124px;
+}
+
+.l-ai {
+  position: absolute;
+  top: 5px;
+  right: 4px;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity var(--t-fast);
+}
+
+.l-row:hover .l-ai,
+.l-desc:focus-within .l-ai,
+.l-ai.ai-busy,
+.l-ai.ai-open,
+.l-ai:has(.ai-undo) {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .l-ai {
+    opacity: 0.75;
+  }
+
+  /* Concepto vacío en el móvil: el ✨ aparece al tocar el campo (si no, tapa el texto de ejemplo) */
+  .l-desc.ai-empty:not(:focus-within) .l-ai:not(.ai-open, .ai-busy) {
+    display: none;
+  }
 }
 
 .desc-head {

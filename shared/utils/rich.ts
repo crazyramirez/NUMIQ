@@ -73,6 +73,40 @@ export function normalizeRich(doc: RichDoc | null | undefined): RichDoc | null {
  * un párrafo. Las líneas en blanco se ignoran (los bloques ya llevan su separación).
  */
 export function plainToRich(text: string | null | undefined): RichDoc | null {
+  return linesToRich(text, t => [{ t }])
+}
+
+/** Como plainToRich, pero además **negrita** y *cursiva* dentro de cada línea (lo que devuelve la IA) */
+export function markdownToRich(text: string | null | undefined): RichDoc | null {
+  return linesToRich(text, inlineMarkdown)
+}
+
+/** Bloques → texto con las mismas marcas que entiende markdownToRich (para pasárselo a la IA y volver) */
+export function richToMarkdown(doc: RichDoc | null | undefined): string {
+  if (!doc) return ''
+  const md = (spans: RichSpan[]) => spans.map(s => (s.b ? `**${s.t}**` : s.i ? `*${s.t}*` : s.t)).join('')
+  return doc.map((b) => {
+    if (b.k === 'h') return `## ${md(b.c)}`
+    if (b.k === 'p') return md(b.c)
+    return b.items.map((it, n) => `${b.k === 'ol' ? `${n + 1}.` : '-'} ${md(it)}`).join('\n')
+  }).join('\n').trim()
+}
+
+function inlineMarkdown(text: string): RichSpan[] {
+  const out: RichSpan[] = []
+  const re = /\*\*([^*]+)\*\*|\*([^*\s][^*]*)\*|__([^_]+)__/g
+  let last = 0
+  for (const m of text.matchAll(re)) {
+    if (m.index > last) out.push({ t: text.slice(last, m.index) })
+    if (m[2] !== undefined) out.push({ t: m[2], i: true })
+    else out.push({ t: (m[1] ?? m[3])!, b: true })
+    last = m.index + m[0].length
+  }
+  if (last < text.length) out.push({ t: text.slice(last) })
+  return out
+}
+
+function linesToRich(text: string | null | undefined, spans: (line: string) => RichSpan[]): RichDoc | null {
   if (!text?.trim()) return null
   const out: RichDoc = []
   for (const raw of text.replace(/\r\n?/g, '\n').split('\n')) {
@@ -83,13 +117,13 @@ export function plainToRich(text: string | null | undefined): RichDoc | null {
     const heading = /^#{1,6}\s+(.+)$/.exec(line)
     if (bullet || numbered) {
       const k = bullet ? 'ul' : 'ol'
-      const item: RichSpan[] = [{ t: (bullet ?? numbered)![1]!.trim() }]
+      const item = spans((bullet ?? numbered)![1]!.trim())
       const last = out.at(-1)
       if (last && (last.k === 'ul' || last.k === 'ol') && last.k === k) last.items.push(item)
       else out.push({ k, items: [item] })
     }
-    else if (heading) out.push({ k: 'h', c: [{ t: heading[1]!.trim() }] })
-    else out.push({ k: 'p', c: [{ t: line }] })
+    else if (heading) out.push({ k: 'h', c: spans(heading[1]!.trim()) })
+    else out.push({ k: 'p', c: spans(line) })
   }
   return normalizeRich(out)
 }

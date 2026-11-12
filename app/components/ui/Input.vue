@@ -1,4 +1,6 @@
 <script setup lang="ts" generic="T extends string | number | null | undefined">
+import type { AiAssist } from '../../utils/ai-assist'
+
 defineOptions({ inheritAttrs: false })
 
 // class y style van al contenedor (rejilla del formulario); el resto, al campo
@@ -20,6 +22,8 @@ const props = withDefaults(defineProps<{
   type?: string
   /** Campo numérico con coma decimal: el modelo es number | null */
   numeric?: boolean
+  /** Asistente de redacción con IA junto a la etiqueta */
+  ai?: AiAssist
 }>(), { type: 'text' })
 
 const model = defineModel<T>()
@@ -53,7 +57,11 @@ function onBlur() {
 
 <template>
   <div class="field" v-bind="rootAttrs">
-    <label v-if="label" :for="id" class="label">{{ label }}<span v-if="required" class="req" aria-hidden="true">*</span></label>
+    <div v-if="label && ai" class="label-row">
+      <label :for="id" class="label">{{ label }}<span v-if="required" class="req" aria-hidden="true">*</span></label>
+      <AiWrite :model-value="String(model ?? '')" :field="ai.field" :context="ai.context" :write-hint="ai.writeHint" @update:model-value="v => (model = v as T)" />
+    </div>
+    <label v-else-if="label" :for="id" class="label">{{ label }}<span v-if="required" class="req" aria-hidden="true">*</span></label>
     <div class="control input" :class="{ invalid: !!error }">
       <Icon v-if="icon" :name="icon" class="lead" aria-hidden="true" />
       <input

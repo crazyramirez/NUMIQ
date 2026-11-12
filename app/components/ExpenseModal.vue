@@ -425,6 +425,20 @@ const totals = computed(() => {
 // ─── Opciones ───
 
 const kindOptions = Object.entries(EXPENSE_KIND).map(([value, label]) => ({ value, label }))
+
+// ✨ IA en el concepto y las notas: lo que sabe del gasto
+function expenseAiContext() {
+  const f = form.value
+  return {
+    tipo: EXPENSE_KIND[f.kind] ?? f.kind,
+    [f.kind === 'payroll' ? 'perceptor' : 'proveedor']: supplier.value?.name ?? scan.value?.newSupplier?.name ?? null,
+    categoria: category.value?.name ?? null,
+    fecha: f.issueDate ? fdate(f.issueDate) : null,
+    total: totals.value.total ? eur(totals.value.total) : null,
+    concepto: f.description || null,
+    notas: f.notes || null,
+  }
+}
 const vatOptions = VAT_RATES.map(r => ({ value: r, label: `${r} %` }))
 const methodOptions = Object.entries(PAYMENT_METHODS).map(([value, label]) => ({ value, label }))
 
@@ -666,6 +680,7 @@ async function remove() {
               <UiInput
                 v-model="form.description"
                 label="Concepto"
+                :ai="{ field: 'expense_concept', context: expenseAiContext, writeHint: 'A partir del proveedor, la categoría y el importe' }"
                 :placeholder="form.kind === 'payroll' ? 'Ej. Nómina socio administrador octubre' : 'Ej. Fibra óptica y móvil del mes'"
                 :error="errors.description"
                 autocomplete="off"
@@ -936,6 +951,7 @@ async function remove() {
               <UiTextarea
                 v-model="form.notes"
                 label="Notas internas"
+                :ai="{ field: 'expense_notes', context: expenseAiContext, writeHint: 'Para qué fue, a partir de los datos del gasto' }"
                 rows="2"
                 placeholder="Para qué fue, a qué proyecto corresponde, justificación o cualquier apunte…"
               />

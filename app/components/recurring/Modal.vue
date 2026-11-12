@@ -218,6 +218,19 @@ watch([open, () => props.recurringId], async ([v]) => {
 const contacts = computed(() => (isInvoice.value ? clients.value : suppliers.value))
 const contactOptions = computed(() => contacts.value.map(c => ({ value: c.id, label: c.name, sub: c.nif ?? c.city, image: c.logoUrl })))
 const contact = computed(() => contacts.value.find(c => c.id === form.value.contactId) ?? null)
+
+// ✨ IA en el concepto y las notas: lo que sabe de la recurrencia
+function recurringAiContext() {
+  const f = form.value
+  return {
+    tipo: isInvoice.value ? 'Factura que se emite cada periodo' : 'Gasto que se repite cada periodo',
+    [isInvoice.value ? 'cliente' : 'proveedor']: contact.value?.name ?? null,
+    nombre: f.name || null,
+    conceptos: isInvoice.value ? f.lines.filter(l => l.description.trim()).map(l => l.description.trim().split('\n')[0]!) : null,
+    categoria: categories.value.find(c => c.id === f.categoryId)?.name ?? null,
+    concepto: f.description || null,
+  }
+}
 const categoryOptions = computed(() => [
   { value: null, label: 'Sin categoría' },
   ...categories.value.filter(c => c.kind === 'expense').sort((a, b) => a.name.localeCompare(b.name, 'es')).map(c => ({ value: c.id, label: c.accountCode ? `${c.name} · ${c.accountCode}` : c.name })),
@@ -551,7 +564,7 @@ async function onContactCreated(id: number) {
             <div class="form-grid">
               <UiSelect v-model="form.categoryId" class="c-6" label="Categoría" :options="categoryOptions" />
               <UiSelect v-model="form.expenseKind" class="c-6" label="Tipo" :options="expenseKindOptions" />
-              <UiInput v-model="form.description" label="Concepto" :placeholder="form.expenseKind === 'payroll' ? 'Ej. Nómina socio administrador' : 'Ej. Puesto fijo en el coworking'" autocomplete="off" />
+              <UiInput v-model="form.description" label="Concepto" :ai="{ field: 'recurring_concept', context: recurringAiContext, writeHint: 'A partir del proveedor y la categoría' }" :placeholder="form.expenseKind === 'payroll' ? 'Ej. Nómina socio administrador' : 'Ej. Puesto fijo en el coworking'" autocomplete="off" />
             </div>
             <div class="amounts-head">
               <h3 class="section-title">Importes</h3>
@@ -607,7 +620,7 @@ async function onContactCreated(id: number) {
             </button>
             <div v-if="more" class="form-grid">
               <UiInput v-model="form.customerReference" class="c-6" label="Orden de Pedido" placeholder="Nº de pedido del cliente" />
-              <UiTextarea v-model="form.notes" label="Notas en la factura" placeholder="Se imprimen en cada factura" />
+              <UiTextarea v-model="form.notes" label="Notas en la factura" :ai="{ field: 'recurring_notes', context: recurringAiContext, writeHint: 'A partir del cliente y los conceptos' }" placeholder="Se imprimen en cada factura" />
             </div>
           </template>
         </div>

@@ -113,6 +113,19 @@
   color: var(--text-2);
 }
 
+/* Etiqueta con una acción a la derecha (✨ IA) */
+.label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 20px;
+}
+
+.label-row .label {
+  min-width: 0;
+}
+
 .label .req {
   color: var(--danger);
   margin-left: 2px;
