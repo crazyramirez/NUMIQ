@@ -591,7 +591,7 @@ async function removeSignatureImage() {
               placeholder="Despedida, nombre, cargo, datos de contacto…"
               :disabled="!canEdit"
             />
-            <p class="hint">Selecciona texto para ponerlo en negrita, cursiva o subrayado. Los campos se rellenan con los datos de Ajustes › Empresa y una línea sin dato no aparece. Si la firma ya se despide, quita «Un saludo» del mensaje.</p>
+            <p class="hint">Selecciona texto para ponerlo en negrita, cursiva o subrayado. Los campos se rellenan con los datos de Ajustes › Empresa y una línea sin dato no aparece. Cierra todos tus correos a clientes (el mensaje no lleva despedida); sin firma, se despiden con «Un saludo» y el nombre de tu empresa.</p>
           </div>
 
           <div class="field">

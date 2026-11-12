@@ -92,9 +92,10 @@ export function defaultDesign(accentColor?: string | null): InvoiceDesign {
     defaultNotes: '',
     defaultTerms: 'Presupuesto válido durante 30 días desde su fecha. Precios sin IVA salvo indicación.',
     defaultEmailSubject: 'Factura {numero} · {empresa}',
-    defaultEmailMessage: 'Hola, {cliente}:\n\nTe enviamos la factura {numero} por importe de {importe}, con vencimiento el {vencimiento}.\n\nGracias por tu confianza.\n\nUn saludo,\n{empresa}',
+    // Sin importe (va en el PDF) ni despedida: la firma del correo cierra el mensaje
+    defaultEmailMessage: 'Hola, {cliente}:\n\nTe enviamos la factura {numero}, con vencimiento el {vencimiento}.\n\nGracias por tu confianza.',
     defaultEmailSubjectQuote: 'Presupuesto {numero} · {empresa}',
-    defaultEmailMessageQuote: 'Hola, {cliente}:\n\nTe enviamos el presupuesto {numero} por {importe}.\n\nQuedamos a tu disposición para cualquier duda o ajuste.\n\nUn saludo,\n{empresa}',
+    defaultEmailMessageQuote: 'Hola, {cliente}:\n\nTe enviamos el presupuesto {numero}.\n\nQuedamos a tu disposición para cualquier duda o ajuste.',
     emailSignature: null,
     emailSignatureImageSize: 'md',
     emailSignatureImageLayout: 'below',
@@ -102,10 +103,17 @@ export function defaultDesign(accentColor?: string | null): InvoiceDesign {
   }
 }
 
-// Plantillas por defecto de antes, con sintaxis de código (se veía tal cual en Ajustes): se cambian por las nuevas
-const LEGACY_EMAIL_MESSAGE = 'Hola{cliente ? `, ${cliente}` : \'\'}:\n\nTe enviamos la factura {numero} por importe de {importe}{vencimiento ? `, con vencimiento el ${vencimiento}` : \'\'}.\n\nGracias por tu confianza.\n\nUn saludo,\n{empresa}'
-const LEGACY_EMAIL_MESSAGE_QUOTE = 'Hola{cliente ? `, ${cliente}` : \'\'}:\n\nTe enviamos el presupuesto {numero} por {importe}.\n\nQuedamos a tu disposición para cualquier duda o ajuste.\n\nUn saludo,\n{empresa}'
-const upgrade = (v: string | undefined, legacy: string, current: string) => (v === legacy ? current : v)
+// Plantillas por defecto de antes (con sintaxis de código, con el importe y «Un saludo»): si siguen tal cual o
+// vacías, pasan a las nuevas. Las que el usuario cambió se respetan
+const LEGACY_EMAIL_MESSAGES = Object.freeze([
+  'Hola{cliente ? `, ${cliente}` : \'\'}:\n\nTe enviamos la factura {numero} por importe de {importe}{vencimiento ? `, con vencimiento el ${vencimiento}` : \'\'}.\n\nGracias por tu confianza.\n\nUn saludo,\n{empresa}',
+  'Hola, {cliente}:\n\nTe enviamos la factura {numero} por importe de {importe}, con vencimiento el {vencimiento}.\n\nGracias por tu confianza.\n\nUn saludo,\n{empresa}',
+])
+const LEGACY_EMAIL_MESSAGES_QUOTE = Object.freeze([
+  'Hola{cliente ? `, ${cliente}` : \'\'}:\n\nTe enviamos el presupuesto {numero} por {importe}.\n\nQuedamos a tu disposición para cualquier duda o ajuste.\n\nUn saludo,\n{empresa}',
+  'Hola, {cliente}:\n\nTe enviamos el presupuesto {numero} por {importe}.\n\nQuedamos a tu disposición para cualquier duda o ajuste.\n\nUn saludo,\n{empresa}',
+])
+const upgrade = (v: string | undefined, legacy: readonly string[], current: string) => (!v?.trim() || legacy.includes(v) ? current : v)
 
 /** Mezcla lo guardado con los valores por defecto (campos nuevos, datos antiguos) */
 export function normalizeDesign(raw: Partial<InvoiceDesign> | null | undefined, accentColor?: string | null): InvoiceDesign {
@@ -134,9 +142,9 @@ export function normalizeDesign(raw: Partial<InvoiceDesign> | null | undefined, 
     defaultNotes: (raw.defaultNotes ?? d.defaultNotes).slice(0, 1000),
     defaultTerms: (raw.defaultTerms ?? d.defaultTerms).slice(0, 1000),
     defaultEmailSubject: (raw.defaultEmailSubject ?? d.defaultEmailSubject).slice(0, 200),
-    defaultEmailMessage: (upgrade(raw.defaultEmailMessage, LEGACY_EMAIL_MESSAGE, d.defaultEmailMessage) ?? d.defaultEmailMessage).slice(0, 3000),
+    defaultEmailMessage: upgrade(raw.defaultEmailMessage, LEGACY_EMAIL_MESSAGES, d.defaultEmailMessage).slice(0, 3000),
     defaultEmailSubjectQuote: (raw.defaultEmailSubjectQuote ?? d.defaultEmailSubjectQuote).slice(0, 200),
-    defaultEmailMessageQuote: (upgrade(raw.defaultEmailMessageQuote, LEGACY_EMAIL_MESSAGE_QUOTE, d.defaultEmailMessageQuote) ?? d.defaultEmailMessageQuote).slice(0, 3000),
+    defaultEmailMessageQuote: upgrade(raw.defaultEmailMessageQuote, LEGACY_EMAIL_MESSAGES_QUOTE, d.defaultEmailMessageQuote).slice(0, 3000),
     emailSignature: signatureDoc(raw.emailSignature),
     emailSignatureImageSize: (['sm', 'md', 'lg'] as const).includes(raw.emailSignatureImageSize as SignatureImageSize) ? raw.emailSignatureImageSize as SignatureImageSize : d.emailSignatureImageSize,
     emailSignatureImageLayout: raw.emailSignatureImageLayout === 'left' ? 'left' : 'below',
@@ -219,6 +227,44 @@ export function renderEmailTemplate(template: string, vars: Record<string, strin
   // Tokens directos {cliente}, {numero}, {importe}, {vencimiento}, {empresa}, {tipo}
   res = res.replace(/\{(\w+)\}/g, (m, k) => vars[k] ?? m)
   return res
+}
+
+const SALES_LABELS: Record<string, string> = { invoice: 'factura', rectifying: 'factura rectificativa', quote: 'presupuesto', proforma: 'proforma' }
+
+/**
+ * Asunto y mensaje por defecto al enviar una factura o presupuesto (ventana Enviar, facturas recurrentes,
+ * asistente): las plantillas de Ajustes › Diseño de factura con los datos del documento. Sin despedida:
+ * el correo lo cierra la firma (la de Ajustes o, si no hay, «Un saludo» con el nombre de la empresa).
+ * Importes y fechas llegan ya escritos (cada lado los formatea a su manera).
+ */
+export function salesEmailDraft(
+  design: Pick<InvoiceDesign, 'defaultEmailSubject' | 'defaultEmailMessage' | 'defaultEmailSubjectQuote' | 'defaultEmailMessageQuote'>,
+  o: { kind: string, number: string | null, brand: string, firstName: string, client: string, amount: string, pending: string, due: string, reminder?: boolean, internal?: boolean, draft?: boolean },
+): { subject: string, message: string } {
+  const isQuote = o.kind === 'quote' || o.kind === 'proforma'
+  const label = SALES_LABELS[o.kind] ?? 'documento'
+  const Label = label.charAt(0).toUpperCase() + label.slice(1)
+  const n = o.number ?? ''
+  const hello = `Hola${o.firstName ? `, ${o.firstName}` : ''}:`
+  // Copia para la propia empresa: con el importe, para revisarla de un vistazo
+  if (o.internal) {
+    const what = o.draft ? `${label} en borrador` : `${label} ${n}`
+    return {
+      subject: `${o.draft ? 'Borrador para revisar' : 'Copia'} · ${Label}${n ? ` ${n}` : ''}${o.client ? ` · ${o.client}` : ''}`,
+      message: `Hola:\n\nTe adjunto la ${what}${o.client ? ` para ${o.client}` : ''} por importe de ${o.amount}${o.due ? ` (${isQuote ? 'válido hasta' : 'vence'} el ${o.due})` : ''}${o.draft ? ', para que la revises antes de emitirla. No se ha enviado al cliente' : ''}.`,
+    }
+  }
+  if (o.reminder) {
+    return {
+      subject: `Recordatorio de pago · factura ${n}`,
+      message: `${hello}\n\nTe escribimos para recordarte que la factura ${n} tiene ${o.pending} pendientes de pago${o.due ? ` desde el ${o.due}` : ''}.\n\nSi ya la has abonado, ignora este mensaje. Te adjuntamos de nuevo la factura por si la necesitas.`,
+    }
+  }
+  const d = defaultDesign()
+  const tokens: Record<string, string> = { cliente: o.firstName || o.client, numero: n, importe: o.amount, vencimiento: o.due, empresa: o.brand, tipo: label }
+  const subjectTpl = (isQuote ? design.defaultEmailSubjectQuote : design.defaultEmailSubject) || (isQuote ? d.defaultEmailSubjectQuote : d.defaultEmailSubject)
+  const messageTpl = (isQuote ? design.defaultEmailMessageQuote : design.defaultEmailMessage) || (isQuote ? d.defaultEmailMessageQuote : d.defaultEmailMessage)
+  return { subject: renderEmailTemplate(subjectTpl, tokens), message: renderEmailTemplate(messageTpl, tokens) }
 }
 
 /** Color de texto legible sobre un fondo (blanco o tinta) según su luminancia */

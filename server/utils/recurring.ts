@@ -266,20 +266,17 @@ async function generateInvoice(rec: Recurring, company: Company, issueDate: stri
   const brand = company.tradeName || company.legalName
   const firstName = contact.kind === 'person' ? contact.name.split(' ')[0] ?? '' : ''
   const design = await getCompanyDesign(company)
-  const tokens: Record<string, string> = {
-    cliente: firstName || contact.name || '',
-    numero: number,
-    importe: eurText(doc?.total ?? 0),
-    vencimiento: doc?.dueDate ? longDate(doc.dueDate) : '',
-    empresa: brand,
-    tipo: 'factura',
-  }
-  const subject = design.defaultEmailSubject
-    ? renderEmailTemplate(design.defaultEmailSubject, tokens)
-    : `Factura ${number} · ${brand}`
-  const message = design.defaultEmailMessage
-    ? renderEmailTemplate(design.defaultEmailMessage, tokens)
-    : `Hola${firstName ? `, ${firstName}` : ''}:\n\nTe enviamos la factura ${number} por importe de ${eurText(doc?.total ?? 0)}${doc?.dueDate ? `, con vencimiento el ${longDate(doc.dueDate)}` : ''}.\n\nGracias por tu confianza.\n\nUn saludo,\n${brand}`
+  // Los mismos textos que propone la ventana «Enviar» (plantillas de Ajustes › Diseño de factura)
+  const { subject, message } = salesEmailDraft(design, {
+    kind: 'invoice',
+    number,
+    brand,
+    firstName,
+    client: contact.name || '',
+    amount: eurText(doc?.total ?? 0),
+    pending: eurText(doc?.total ?? 0),
+    due: doc?.dueDate ? longDate(doc.dueDate) : '',
+  })
 
   try {
     await sendSalesEmail(company, userId || null, id, {

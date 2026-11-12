@@ -35,64 +35,41 @@ export function salesEmailTexts(
   contact: { name: string, kind: string } | null,
   opts: { reminder: boolean, internal: boolean },
 ) {
-  const brand = company.tradeName || company.legalName
-  const isQuote = doc.kind === 'quote' || doc.kind === 'proforma'
-  const label = (KIND_TITLES[doc.kind] ?? 'Documento').toLowerCase()
-  const n = doc.number ?? ''
-  const due = doc.dueDate ? longDate(doc.dueDate) : ''
-  if (opts.internal) {
-    const draft = doc.status === 'draft'
-    const what = draft ? `${label} en borrador` : `${label} ${n}`
-    return {
-      subject: `${draft ? 'Borrador para revisar' : 'Copia'} · ${capitalize(label)}${n ? ` ${n}` : ''}${doc.client ? ` · ${doc.client}` : ''}`,
-      message: `Hola:\n\nTe adjunto la ${what}${doc.client ? ` para ${doc.client}` : ''} por importe de ${eurText(doc.total)}${due ? ` (${isQuote ? 'válido hasta' : 'vence'} el ${due})` : ''}${draft ? ', para que la revises antes de emitirla. No se ha enviado al cliente' : ''}.\n\nUn saludo,\n${brand}`,
-    }
-  }
-  const firstName = contact?.kind === 'person' ? contact.name.split(' ')[0] ?? '' : ''
-  const hello = `Hola${firstName ? `, ${firstName}` : ''}:`
-  if (opts.reminder) {
-    const pending = round2(doc.total - doc.paidTotal)
-    return {
-      subject: `Recordatorio de pago · factura ${n}`,
-      message: `${hello}\n\nTe escribimos para recordarte que la factura ${n} tiene ${eurText(pending)} pendientes de pago${due ? ` desde el ${due}` : ''}.\n\nSi ya la has abonado, ignora este mensaje. Te adjuntamos de nuevo la factura por si la necesitas.\n\nUn saludo,\n${brand}`,
-    }
-  }
-  const tokens: Record<string, string> = { cliente: firstName || contact?.name || doc.client || '', numero: n, importe: eurText(doc.total), vencimiento: due, empresa: brand, tipo: label }
-  const subjectTpl = isQuote ? design.defaultEmailSubjectQuote : design.defaultEmailSubject
-  const messageTpl = isQuote ? design.defaultEmailMessageQuote : design.defaultEmailMessage
-  return {
-    subject: subjectTpl ? renderEmailTemplate(subjectTpl, tokens) : `${capitalize(label)} ${n} · ${brand}`,
-    message: messageTpl
-      ? renderEmailTemplate(messageTpl, tokens)
-      : isQuote
-        ? `${hello}\n\nTe enviamos el presupuesto ${n} por ${eurText(doc.total)}. Quedamos a tu disposición para cualquier duda o ajuste.\n\nUn saludo,\n${brand}`
-        : `${hello}\n\nTe enviamos la ${label} ${n} por importe de ${eurText(doc.total)}${due ? `, con vencimiento el ${due}` : ''}.\n\nGracias por tu confianza.\n\nUn saludo,\n${brand}`,
-  }
+  return salesEmailDraft(design, {
+    kind: doc.kind,
+    number: doc.number,
+    brand: company.tradeName || company.legalName,
+    firstName: contact?.kind === 'person' ? contact.name.split(' ')[0] ?? '' : '',
+    client: contact?.name || doc.client || '',
+    amount: eurText(doc.total),
+    pending: eurText(round2(doc.total - doc.paidTotal)),
+    due: doc.dueDate ? longDate(doc.dueDate) : '',
+    reminder: opts.reminder,
+    internal: opts.internal,
+    draft: doc.status === 'draft',
+  })
 }
 
-const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+type SalesDoc = Awaited<ReturnType<typeof loadSalesDocument>>
 
 /**
- * Envía una factura o presupuesto (o un recordatorio de pago) desde el Gmail de la app y lo anota
- * en el historial. Lo usan el botón "Enviar" y las facturas recurrentes con envío automático.
+ * El correo tal como lo recibe el cliente (texto y HTML): mensaje, datos del documento, botón a la página
+ * pública y firma. Lo usan el envío y la vista previa de la ventana «Enviar».
  */
-export async function sendSalesEmail(company: Company, userId: number | null, id: number, input: SalesEmailInput, site: string) {
-  if (!mailEnabled()) throw createError({ statusCode: 503, statusMessage: 'El correo no está configurado: añade GOOGLE_APP_EMAIL y GOOGLE_APP_PASSWORD' })
-
-  const { buffer, filename, doc } = await salesPdf(company, id)
-  if (doc.status === 'draft' && !input.internal) throw createError({ statusCode: 409, statusMessage: 'Emite el documento antes de enviarlo' })
-
+export async function salesEmailBody(company: Company, doc: SalesDoc, input: Pick<SalesEmailInput, 'subject' | 'message' | 'kind' | 'attachPdf' | 'internal'>, site: string) {
   const brand = company.tradeName || company.legalName
   const design = await getCompanyDesign(company)
   const isQuote = doc.kind === 'quote' || doc.kind === 'proforma'
   const label = KIND_TITLES[doc.kind] ?? 'Documento'
   const pending = round2(doc.total - doc.paidTotal)
+  // El importe del documento va en el PDF, no en el correo; el recordatorio sí dice lo que queda por pagar
   const details: Array<[string, string]> = [
     [label, doc.number ?? ''],
-    [input.kind === 'reminder' ? 'Pendiente' : 'Importe', eurText(input.kind === 'reminder' ? pending : doc.total)],
+    ...(input.kind === 'reminder' ? [['Pendiente', eurText(pending)] as [string, string]] : []),
     ...(doc.dueDate ? [[isQuote ? 'Válido hasta' : 'Vencimiento', doc.dueDate.split('-').reverse().join('/')] as [string, string]] : []),
   ]
-  const signature = await emailSignature(company, design)
+  // Sin firma en Ajustes, el correo se despide igualmente con el nombre de la empresa
+  const signature = await emailSignature(company, design) ?? { doc: [{ k: 'p', c: [{ t: 'Un saludo,' }] }, { k: 'p', c: [{ t: brand, b: true }] }], image: null, imageLeft: false } satisfies MailSignature
   const { text, html } = mailLayout({
     brand,
     accent: design.accentColor,
@@ -106,6 +83,21 @@ export async function sendSalesEmail(company: Company, userId: number | null, id
     signature,
     footer: [company.legalName, `NIF ${company.nif}`, company.email].filter(Boolean).join(' · '),
   })
+  return { text, html, signature }
+}
+
+/**
+ * Envía una factura o presupuesto (o un recordatorio de pago) desde el Gmail de la app y lo anota
+ * en el historial. Lo usan el botón "Enviar" y las facturas recurrentes con envío automático.
+ */
+export async function sendSalesEmail(company: Company, userId: number | null, id: number, input: SalesEmailInput, site: string) {
+  if (!mailEnabled()) throw createError({ statusCode: 503, statusMessage: 'El correo no está configurado: añade GOOGLE_APP_EMAIL y GOOGLE_APP_PASSWORD' })
+
+  const { buffer, filename, doc } = await salesPdf(company, id)
+  if (doc.status === 'draft' && !input.internal) throw createError({ statusCode: 409, statusMessage: 'Emite el documento antes de enviarlo' })
+
+  const brand = company.tradeName || company.legalName
+  const { text, html, signature } = await salesEmailBody(company, doc, input, site)
 
   const db = useDb()
   const extra = input.attachmentIds.length

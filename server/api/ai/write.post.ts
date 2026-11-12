@@ -21,7 +21,7 @@ const FIELDS = {
   default_notes: { what: 'las observaciones con las que empiezan todas las facturas nuevas', format: 'plain' },
   default_terms: { what: 'las condiciones con las que empiezan todos los presupuestos nuevos', format: 'plain' },
   payment_text: { what: 'el texto de pago al pie de las facturas (cómo pagar)', format: 'plain' },
-  email_message: { what: 'el mensaje del correo con el que se envía una factura o presupuesto al cliente', format: 'plain' },
+  email_message: { what: 'el mensaje del correo con el que se envía una factura o presupuesto al cliente. Empieza con el saludo, pero sin despedida ni firma: la firma se añade sola al final. Sin el importe salvo en un recordatorio de pago (ya va en el documento)', format: 'plain' },
 } as const
 
 const ACTIONS = {

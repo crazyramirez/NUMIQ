@@ -127,8 +127,8 @@ export function reminderMessage(company: Company, item: ReminderItem, firstName:
     n === 0
       ? `Te escribimos para recordarte que la factura ${values.numero} venció el ${values.vencimiento} y tiene ${values.importe} pendientes de pago.`
       : `Volvemos a escribirte porque la factura ${values.numero} sigue con ${values.importe} pendientes de pago desde el ${values.vencimiento} (hace ${values.dias} días).`,
+    // Sin despedida: el correo lo cierra la firma de Ajustes (o «Un saludo» con el nombre de la empresa)
     'Si ya la has abonado, ignora este mensaje. Te adjuntamos de nuevo la factura por si la necesitas.',
-    `Un saludo,\n${brand}`,
   ].join('\n\n')
 }
 
