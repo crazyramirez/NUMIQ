@@ -372,6 +372,12 @@ El flujo de GitHub Actions **Escritorio** (`.github/workflows/desktop.yml`) hace
 
 Se ejecuta con cada cambio en `desktop/` o en la base de datos, o a mano. Para publicar una versión en Releases, sube una etiqueta `vX.Y.Z` o lanza el flujo a mano con **Publicar** marcado.
 
+**Solo se guarda la última versión.** Al publicar, las versiones anteriores se borran de Releases junto con sus etiquetas, y cada ejecución borra los instaladores de las ejecuciones anteriores. En local, los instaladores de la última versión se descargan en `release/` (fuera de git):
+
+```bash
+rm -rf release && gh run download <id-de-la-ejecución> -D release   # o: gh release download -D release
+```
+
 **Firma de los instaladores (opcional).** Si existen estos secretos en el repositorio, los instaladores salen firmados:
 
 - Windows: `WIN_CSC_LINK` y `WIN_CSC_KEY_PASSWORD`.

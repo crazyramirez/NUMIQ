@@ -9,6 +9,11 @@
  *   macOS:   CSC_LINK / CSC_KEY_PASSWORD (Developer ID Application) y, para notarizar,
  *            APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD y APPLE_TEAM_ID
  */
+// En GitHub Actions los secretos que no existen llegan como cadena vacía: electron-builder tomaría
+// CSC_LINK="" por una ruta. Vacías = sin firma
+for (const k of ['CSC_LINK', 'CSC_KEY_PASSWORD', 'CSC_NAME', 'WIN_CSC_LINK', 'WIN_CSC_KEY_PASSWORD', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID']) {
+  if (process.env[k] === '') delete process.env[k]
+}
 const macSigned = !!(process.env.CSC_LINK || process.env.CSC_NAME)
 const notarize = macSigned && !!(process.env.APPLE_ID && process.env.APPLE_APP_SPECIFIC_PASSWORD && process.env.APPLE_TEAM_ID)
 
