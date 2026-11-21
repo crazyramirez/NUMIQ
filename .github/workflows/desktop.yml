@@ -24,6 +24,8 @@ on:
 
 permissions:
   contents: write
+  # Borrar los artefactos de ejecuciones anteriores (solo se guarda la última versión)
+  actions: write
 
 concurrency:
   group: desktop-${{ github.ref }}
@@ -141,7 +143,24 @@ jobs:
             desktop/dist/*.deb
             desktop/dist/*.rpm
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 14
+
+  # Solo la última versión: fuera los instaladores de ejecuciones anteriores
+  prune-artifacts:
+    name: Borrar artefactos anteriores
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Borrar artefactos de otras ejecuciones
+        run: |
+          gh api --paginate "repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.name | startswith("NUMIQ-")) | select(.workflow_run.id != ${{ github.run_id }}) | .id' |
+          while read -r id; do
+            echo "Borrando artefacto $id"
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
+          done
 
   release:
     name: Publicar versión
@@ -175,3 +194,17 @@ jobs:
             Al actualizar se conservan tus datos. Instrucciones y limitaciones en el README (sección «NUMIQ de escritorio»).
           files: out/*
           fail_on_unmatched_files: true
+          make_latest: true
+      # Solo la última versión en Releases: las anteriores se borran con su etiqueta
+      - name: Borrar versiones anteriores
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || steps.v.outputs.tag }}
+        run: |
+          gh release list --repo "${{ github.repository }}" --limit 100 --json tagName --jq '.[].tagName' |
+          while read -r t; do
+            if [ "$t" != "$TAG" ]; then
+              echo "Borrando $t"
+              gh release delete "$t" --repo "${{ github.repository }}" --yes --cleanup-tag
+            fi
+          done

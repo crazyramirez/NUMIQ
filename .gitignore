@@ -27,3 +27,6 @@ npm-debug.log*
 .DS_Store
 .idea
 *.log
+
+# Instaladores de escritorio descargados en local (solo la última versión)
+/release/

@@ -11,7 +11,7 @@
  * usa MySQL en los tres sistemas (la app es compatible con los dos).
  */
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, createWriteStream, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -90,9 +90,10 @@ function keep(rel) {
   const name = parts.at(-1)
   // Mensajes de error solo en inglés (cada idioma trae su errmsg.sys)
   if (parts[0] === 'share') return !(name === 'errmsg.sys' && parts[1] !== 'english')
-  if (parts[0] === 'bin') return name === exeName || (/\.dll$/i.test(name) && !/-debug\.dll$/i.test(name))
+  // bin/: mysqld y las librerías que carga desde su carpeta (DLL en Windows; en macOS, libprotobuf*.dylib)
+  if (parts[0] === 'bin') return name === exeName || (/\.(dll|dylib)$|\.so(\.\d+)*$/i.test(name) && !/-debug\.dll$/i.test(name))
   if (parts[0] === 'lib') {
-    if (parts.includes('plugin') || parts.includes('debug') || parts.includes('mecab')) return false
+    if (parts.includes('plugin') || parts.includes('debug') || parts.includes('mecab') || /^libmysqlclient/.test(name)) return false
     // Datos ICU (lib/private/icudt*): sin ellos fallan las consultas con REGEXP (banco, asistente)
     if (parts[1] === 'private' && parts.some(p => /^icudt/.test(p))) return true
     return /\.(so(\.\d+)*|dylib)$/.test(name) || /\.so\.\d/.test(name)
@@ -125,7 +126,15 @@ for (const f of walk(root)) {
   if (!keep(rel)) continue
   const to = join(OUT, rel)
   mkdirSync(dirname(to), { recursive: true })
-  renameSync(f, to)
+  // Copia siguiendo los enlaces simbólicos (libssl.dylib → libssl.3.dylib, bin/libprotobuf → ../lib):
+  // archivos reales, que ningún empaquetador ni instalador puede romper
+  try {
+    copyFileSync(f, to)
+  }
+  catch (err) {
+    if (lstatSync(f).isSymbolicLink()) continue // enlace a algo que no se incluye
+    throw err
+  }
   bytes += statSync(to).size
 }
 rmSync(tmp, { recursive: true, force: true })
@@ -151,5 +160,19 @@ if (platform === 'linux' && process.platform === 'linux') {
   const missing = ldd.split('\n').filter(l => l.includes('not found')).map(l => l.trim().split(' ')[0]).filter(l => !existsSync(join(libDir, l)))
   if (missing.length) console.warn(`  ! mysqld necesita además: ${missing.join(', ')}`)
 }
+// Autocomprobación en el propio sistema: mysqld arranca con lo que se ha dejado
+if (platform === process.platform && arch === process.arch) {
+  const env = { ...process.env, ...(platform === 'linux' ? { LD_LIBRARY_PATH: [join(OUT, 'lib'), join(OUT, 'lib', 'private'), process.env.LD_LIBRARY_PATH].filter(Boolean).join(':') } : {}) }
+  const v = spawnSync(join(OUT, 'bin', exeName), ['--no-defaults', `--basedir=${OUT}`, '--version'], { encoding: 'utf8', env })
+  if (v.status !== 0) {
+    if (platform === 'darwin') console.error(spawnSync('otool', ['-L', join(OUT, 'bin', exeName)], { encoding: 'utf8' }).stdout)
+    if (platform === 'linux') console.error(spawnSync('ldd', [join(OUT, 'bin', exeName)], { encoding: 'utf8', env }).stdout)
+    console.error(`mysqld no arranca (${v.error?.message ?? (v.signal ? `señal ${v.signal}` : `código ${v.status}`)}): ${v.stderr}`)
+    rmSync(OUT, { recursive: true, force: true })
+    process.exit(1)
+  }
+  console.log(`  · ${v.stdout.trim()}`)
+}
+
 writeFileSync(MARK, `${MYSQL_VERSION} ${target}\n`)
 console.log(`✔ MySQL ${MYSQL_VERSION} (${target}) listo: ${(bytes / 1e6).toFixed(0)} MB en ${relative(process.cwd(), OUT)}`)

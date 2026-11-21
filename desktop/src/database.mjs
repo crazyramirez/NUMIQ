@@ -7,7 +7,7 @@
  * Cierre: SHUTDOWN ordenado (InnoDB no necesita recuperarse al volver a abrir).
  */
 import { spawn, spawnSync } from 'node:child_process'
-import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
 import { join } from 'node:path'
 import mysql from 'mysql2/promise'
@@ -18,6 +18,13 @@ export const DB_NAME = 'numiq'
 const SQL_MODE = 'STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION'
 
 const sleep = ms => new Promise(r => setTimeout(r, ms))
+
+/** Entorno de mysqld. Linux: librerías que lo acompañan (libaio, libnuma) en <basedir>/lib */
+export function mysqlEnv(basedir) {
+  const env = { ...process.env }
+  if (process.platform === 'linux') env.LD_LIBRARY_PATH = [join(basedir, 'lib'), join(basedir, 'lib', 'private'), process.env.LD_LIBRARY_PATH].filter(Boolean).join(':')
+  return env
+}
 
 export function portOpen(port, host = '127.0.0.1') {
   return new Promise((resolve) => {
@@ -100,8 +107,12 @@ export async function startDatabase(o) {
       `--basedir=${o.basedir}`,
       `--datadir=${o.datadir}`,
       `--log-error=${o.logFile}`,
-    ], { windowsHide: true, encoding: 'utf8' })
-    if (r.status !== 0) throw new Error(`No se pudo crear la base de datos (código ${r.status}). Registro: ${o.logFile}`)
+    ], { windowsHide: true, encoding: 'utf8', env: mysqlEnv(o.basedir) })
+    if (r.status !== 0) {
+      const why = r.error?.message ?? (r.signal ? `señal ${r.signal}` : `código ${r.status}`)
+      const tail = existsSync(o.logFile) ? readFileSync(o.logFile, 'utf8').split('\n').slice(-15).join('\n') : ''
+      throw new Error(`No se pudo crear la base de datos (${why}). ${(r.stderr || '').trim()}\n${tail}\nRegistro: ${o.logFile}`)
+    }
   }
 
   status('Abriendo la base de datos…')
@@ -132,11 +143,7 @@ export async function startDatabase(o) {
   const child = spawn(exe, args, {
     stdio: ['ignore', out, out],
     windowsHide: true,
-    env: {
-      ...process.env,
-      // Linux: librerías que acompañan a mysqld (libaio, libnuma) en <basedir>/lib
-      ...(process.platform === 'linux' ? { LD_LIBRARY_PATH: [join(o.basedir, 'lib'), join(o.basedir, 'lib', 'private'), process.env.LD_LIBRARY_PATH].filter(Boolean).join(':') } : {}),
-    },
+    env: mysqlEnv(o.basedir),
   })
   closeSync(out)
   let exited = null
@@ -204,9 +211,4 @@ function handle(o, child) {
       }
     },
   }
-}
-
-/** Copia la salida de un proceso a un archivo de registro (rotado a 5 MB) */
-export function logStream(file) {
-  return createWriteStream(file, { flags: 'a' })
 }
