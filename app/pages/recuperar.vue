@@ -9,11 +9,19 @@ const back = typeof route.query.r === 'string' && route.query.r.startsWith('/') 
 const loading = ref(false)
 const sent = ref(false)
 const error = ref<string | null>(null)
+// Escritorio: sin correo, quien está delante del equipo elige la contraseña nueva aquí mismo
+const { desktop, bridge } = useDesktop()
 
 async function submit() {
   loading.value = true
   error.value = null
   try {
+    if (desktop) {
+      if (!bridge) throw new Error('Abre NUMIQ desde la app de escritorio para elegir una contraseña nueva')
+      const { token } = await $fetch<{ token: string }>('/api/desktop/reset', { method: 'POST', body: { email: email.value }, headers: { 'x-numiq-desktop': await bridge.token() } })
+      await navigateTo({ path: '/restablecer', query: { token, ...(back ? { r: back } : {}) } })
+      return
+    }
     await $fetch('/api/auth/forgot', { method: 'POST', body: { email: email.value, r: back } })
     sent.value = true
   }
@@ -30,13 +38,13 @@ async function submit() {
   <div class="rise">
     <template v-if="!sent">
       <h1 class="title">¿Olvidaste tu contraseña?</h1>
-      <p class="lead">Escribe tu email y te enviamos un enlace para elegir una nueva.</p>
+      <p class="lead">{{ desktop ? 'Escribe el email de tu cuenta en este equipo y elige una contraseña nueva.' : 'Escribe tu email y te enviamos un enlace para elegir una nueva.' }}</p>
       <form class="form" novalidate @submit.prevent="submit">
         <UiInput v-model="email" label="Email" type="email" autocomplete="email" placeholder="tu@empresa.es" icon="ph:envelope-simple" required />
         <Transition name="fade">
           <p v-if="error" class="alert" role="alert"><Icon name="ph:warning-circle-fill" /> {{ error }}</p>
         </Transition>
-        <UiButton type="submit" variant="primary" size="lg" block :loading="loading" :disabled="!email.includes('@')">Enviar enlace</UiButton>
+        <UiButton type="submit" variant="primary" size="lg" block :loading="loading" :disabled="!email.includes('@')">{{ desktop ? 'Continuar' : 'Enviar enlace' }}</UiButton>
       </form>
     </template>
     <div v-else class="done">

@@ -202,8 +202,10 @@ export async function sendPack(company: Company, user: { id: number, email: stri
   const brand = company.tradeName || company.legalName
   const design = await getCompanyDesign(company)
   const c = pack.contents
-  const link = `${input.site}/api/public/pack/${pack.token}`
+  // Escritorio (sin URL pública): el ZIP solo puede ir adjunto
+  const link = input.site ? `${input.site}/api/public/pack/${pack.token}` : null
   const attach = pack.size <= MAX_ATTACH
+  if (!link && !attach) throw createError({ statusCode: 413, statusMessage: 'El ZIP pasa de 18 MB y no cabe en un correo: descárgalo y compártelo por otra vía (o envía un periodo más corto)' })
   const details: Array<[string, string]> = [
     ['Periodo', pack.label],
     ...(c?.issued ? [['Facturas emitidas', `${c.issued} · ${eurText(c.totals.income)}`] as [string, string]] : []),
@@ -215,9 +217,9 @@ export async function sendPack(company: Company, user: { id: number, email: stri
     brand,
     accent: design.accentColor,
     title: input.subject,
-    lines: [...input.message.split(/\n{2,}/), attach ? 'Va adjunto en un ZIP y también puedes descargarlo con el botón (enlace válido 30 días).' : 'Por su tamaño, descárgalo con el botón (enlace válido 30 días).'],
+    lines: [...input.message.split(/\n{2,}/), !link ? 'Va adjunto en un ZIP.' : attach ? 'Va adjunto en un ZIP y también puedes descargarlo con el botón (enlace válido 30 días).' : 'Por su tamaño, descárgalo con el botón (enlace válido 30 días).'],
     details,
-    action: { label: 'Descargar documentación', url: link },
+    action: link ? { label: 'Descargar documentación', url: link } : undefined,
     footer: [company.legalName, `NIF ${company.nif}`, company.email].filter(Boolean).join(' · '),
   })
   const db = useDb()

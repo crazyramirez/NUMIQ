@@ -55,6 +55,8 @@ export async function requireCompany(event: H3Event, minRole: MemberRole = 'memb
  * podría registrarse con ese email). Ser propietario de una empresa no basta: cualquiera crea la suya.
  */
 export function isServerAdmin(user: { email: string, emailVerifiedAt?: Date | string | null }) {
+  // Escritorio: la instalación entera es del dueño del equipo (copia completa y restauración desde Ajustes)
+  if (isDesktop()) return true
   if (!user.emailVerifiedAt) return false
   const admins = [mailConfig().user, ...String(process.env.NUXT_SERVER_ADMINS ?? '').split(/[,;\s]+/)]
     .map(s => s.trim().toLowerCase()).filter(Boolean)

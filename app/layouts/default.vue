@@ -76,6 +76,16 @@ onMounted(() => {
       localStorage.setItem(seenKey, '1')
     }
     catch {}
+    // Escritorio: nunca hubo .env; basta con decir dónde va la clave
+    if (useDesktop().desktop) {
+      toast.push({
+        tone: 'info',
+        title: 'Activa la IA con tu clave de OpenAI',
+        body: 'Lee tickets y facturas, importa documentos y responde con tus cifras. Añade tu clave en Ajustes → Inteligencia artificial: se guarda cifrada en este equipo.',
+        action: { label: 'Añadir clave', run: () => navigateTo('/ajustes?s=ia') },
+      }, 0)
+      return
+    }
     toast.push({
       tone: 'info',
       title: 'La IA ahora usa tu propia clave de OpenAI',

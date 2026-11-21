@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   const { company, user } = await requireCompany(event)
   const id = idParam(event)
   const input = await readInput(event, schema)
-  const site = useRuntimeConfig().siteUrl || getRequestURL(event, { xForwardedProto: true }).origin
+  const site = siteUrl(event)
   const record = await sendSalesEmail(company, user.id, id, input, site)
   await audit(event, { companyId: company.id, userId: user.id, action: `sales.email.${input.kind}`, entity: 'sales_document', entityId: id, data: { to: record.to } })
   return { ok: true }

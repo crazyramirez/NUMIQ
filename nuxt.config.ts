@@ -129,6 +129,8 @@ export default defineNuxtConfig({
     public: {
       appName: 'NUMIQ',
       appVersion,
+      // NUMIQ de escritorio (desktop/): lo activa la app con NUXT_PUBLIC_DESKTOP=true
+      desktop: false,
     },
   },
 

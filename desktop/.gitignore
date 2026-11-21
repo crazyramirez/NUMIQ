@@ -1,0 +1,8 @@
+node_modules
+# Compilación de NUMIQ para el escritorio (npm run app)
+.server
+# MySQL embebido descargado (npm run db) y su caché
+vendor
+.cache
+# Instaladores (npm run dist)
+dist

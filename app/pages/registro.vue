@@ -12,6 +12,8 @@ const showPassword = ref(false)
 const loading = ref(false)
 const errors = reactive<Record<string, string | null>>({ name: null, email: null, password: null })
 const error = ref<string | null>(null)
+// Escritorio: la cuenta y los datos viven en este ordenador
+const { desktop } = useDesktop()
 
 const strength = computed(() => {
   const p = form.password
@@ -58,7 +60,7 @@ async function submit() {
 <template>
   <div class="rise">
     <h1 class="title">{{ invitation ? 'Crea tu cuenta' : 'Empieza en 2 minutos' }}</h1>
-    <p class="lead">{{ invitation ? 'Con ella aceptarás la invitación y entrarás directamente.' : 'Facturas legales, gastos ordenados e impuestos calculados. Sin papeles.' }}</p>
+    <p class="lead">{{ invitation ? 'Con ella aceptarás la invitación y entrarás directamente.' : desktop ? 'Tu cuenta y tus datos se quedan en este ordenador. La contraseña protege la app; si la olvidas, eliges otra desde aquí mismo.' : 'Facturas legales, gastos ordenados e impuestos calculados. Sin papeles.' }}</p>
 
     <form class="form" novalidate @submit.prevent="submit">
       <UiInput v-model="form.name" label="Nombre" autocomplete="name" placeholder="Tu nombre" icon="ph:user" :error="errors.name" required />

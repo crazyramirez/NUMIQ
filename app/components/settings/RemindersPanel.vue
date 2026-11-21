@@ -18,6 +18,7 @@ interface Item {
 
 const props = withDefaults(defineProps<{ canEdit?: boolean }>(), { canEdit: true })
 const toast = useToast()
+const { desktop } = useDesktop()
 
 const { data, refresh, status } = await useFetch<{ settings: Settings, queue: Item[], total: number, mail: boolean, businessHours: boolean }>('/api/reminders', { lazy: true, server: false })
 
@@ -138,7 +139,8 @@ function nextLabel(i: Item) {
       <form v-else class="rem" novalidate @submit.prevent="save">
         <div v-if="data && !data.mail" class="warn">
           <Icon name="ph:envelope-simple-open" aria-hidden="true" />
-          <span>El correo de la app no está configurado: añade GOOGLE_APP_EMAIL y GOOGLE_APP_PASSWORD para poder enviar avisos.</span>
+          <span v-if="desktop">El correo no está configurado: añade tu cuenta en <NuxtLink to="/ajustes?s=correo" class="link">Ajustes → Correo</NuxtLink> para poder enviar avisos.</span>
+          <span v-else>El correo de la app no está configurado: añade GOOGLE_APP_EMAIL y GOOGLE_APP_PASSWORD para poder enviar avisos.</span>
         </div>
 
         <fieldset :disabled="!props.canEdit" class="fs">

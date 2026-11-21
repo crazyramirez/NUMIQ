@@ -14,8 +14,9 @@ export function newToken() {
   return { token, hash: hashToken(token) }
 }
 
-/** URL pública de la app para los enlaces de los correos */
+/** URL pública de la app para los enlaces de los correos (escritorio: ninguna, nadie de fuera llega al equipo) */
 export function siteUrl(event: H3Event) {
+  if (isDesktop()) return ''
   return (useRuntimeConfig().siteUrl || getRequestURL(event, { xForwardedProto: true }).origin).replace(/\/+$/, '')
 }
 

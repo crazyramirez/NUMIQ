@@ -1,0 +1,32 @@
+{
+  "name": "numiq-desktop",
+  "productName": "NUMIQ",
+  "version": "0.3.5",
+  "private": true,
+  "description": "NUMIQ de escritorio: facturación, gastos e impuestos en tu propio ordenador, sin servidor.",
+  "author": "NUMIQ",
+  "homepage": "https://github.com/crazyramirez/NUMIQ",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "src/main.mjs",
+  "scripts": {
+    "app": "node scripts/build-app.mjs",
+    "db": "node scripts/fetch-db.mjs",
+    "start": "electron .",
+    "dev": "npm run app && npm run db && electron .",
+    "smoke": "node scripts/smoke.mjs",
+    "launch-test": "node scripts/launch-test.mjs",
+    "icon": "electron scripts/make-icon.mjs",
+    "dist": "npm run app && npm run db && electron-builder --config electron-builder.config.cjs --publish never",
+    "dist:win": "npm run app && node scripts/fetch-db.mjs --platform=win32 --arch=x64 && electron-builder --config electron-builder.config.cjs --win --x64 --publish never",
+    "dist:mac": "npm run app && node scripts/fetch-db.mjs --platform=darwin --arch=arm64 && node scripts/fetch-db.mjs --platform=darwin --arch=x64 && electron-builder --config electron-builder.config.cjs --mac --arm64 --x64 --publish never",
+    "dist:linux": "npm run app && node scripts/fetch-db.mjs --platform=linux --arch=x64 && electron-builder --config electron-builder.config.cjs --linux --x64 --publish never"
+  },
+  "dependencies": {
+    "mysql2": "^3.24.6"
+  },
+  "devDependencies": {
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0"
+  }
+}

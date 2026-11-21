@@ -235,6 +235,8 @@ function print() {
 }
 
 const publicUrl = computed(() => (doc.value?.publicToken && import.meta.client ? `${window.location.origin}/p/${doc.value.publicToken}` : null))
+// Escritorio: la página del cliente solo existe en este equipo; se puede ver, pero no compartir
+const { desktop } = useDesktop()
 
 async function copyLink() {
   if (!publicUrl.value) return
@@ -360,9 +362,13 @@ const moreItems = computed<MenuItem[]>(() => {
   }
   // Enlace para el cliente: solo facturas (el presupuesto se manda por email con su PDF)
   if (!isQuote.value && d.status !== 'draft' && publicUrl.value) {
+    if (!desktop) {
+      items.push(
+        { label: 'Enviar por WhatsApp', icon: 'ph:whatsapp-logo', onClick: shareWhatsapp },
+        { label: 'Copiar enlace para el cliente', icon: 'ph:link-simple', onClick: copyLink },
+      )
+    }
     items.push(
-      { label: 'Enviar por WhatsApp', icon: 'ph:whatsapp-logo', onClick: shareWhatsapp },
-      { label: 'Copiar enlace para el cliente', icon: 'ph:link-simple', onClick: copyLink },
       { label: 'Ver como el cliente', icon: 'ph:eye', onClick: () => window.open(publicUrl.value!, '_blank', 'noopener') },
     )
   }
@@ -409,7 +415,7 @@ function paperCtx(): CtxSpec | null {
     { label: 'Importe total', sub: eur(d.total), icon: 'ph:currency-eur', onClick: () => copyText(plainAmount(d.total), 'Importe') },
     ...(party?.name ? [{ label: 'Cliente', sub: party.name, icon: 'ph:user', onClick: () => copyText(party.name, 'Cliente') }] : []),
     ...(party?.nif ? [{ label: 'NIF del cliente', sub: party.nif, icon: 'ph:identification-card', onClick: () => copyText(party.nif, 'NIF') }] : []),
-    ...(publicUrl.value && !isQuote.value && d.status !== 'draft' ? [{ label: 'Enlace para el cliente', icon: 'ph:link-simple', onClick: copyLink }] : []),
+    ...(publicUrl.value && !desktop && !isQuote.value && d.status !== 'draft' ? [{ label: 'Enlace para el cliente', icon: 'ph:link-simple', onClick: copyLink }] : []),
     { label: 'Enlace a esta página', icon: 'ph:link', onClick: () => copyText(window.location.href, 'Enlace') },
   ]
   // «Más acciones» sin lo que ya está arriba
@@ -523,7 +529,7 @@ function paperCtx(): CtxSpec | null {
           <div v-if="doc.status === 'paid'" class="st-due ok">
             <Icon name="ph:check-circle-fill" /><span>Cobrada por completo</span>
           </div>
-          <p v-if="!isQuote && doc.status !== 'draft' && (doc.status !== 'paid' || doc.viewedAt)" class="st-seen" :class="{ on: doc.viewedAt }">
+          <p v-if="!desktop && !isQuote && doc.status !== 'draft' && (doc.status !== 'paid' || doc.viewedAt)" class="st-seen" :class="{ on: doc.viewedAt }">
             <Icon :name="doc.viewedAt ? 'ph:eye-fill' : 'ph:eye-slash'" aria-hidden="true" />
             <span v-if="doc.viewedAt">Visto por el cliente {{ relTime(doc.viewedAt) }}{{ doc.viewCount > 1 ? ` · ${doc.viewCount} visitas` : '' }}</span>
             <span v-else>El cliente aún no lo ha abierto</span>

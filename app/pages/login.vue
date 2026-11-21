@@ -18,9 +18,9 @@ async function submit() {
   try {
     await $fetch('/api/auth/login', { method: 'POST', body: form })
     await refreshSession()
-    // Tras entrar con contraseña, Inicio ofrecerá usar la huella o Face ID la próxima vez
+    // Tras entrar con contraseña, Inicio ofrecerá usar la huella o Face ID la próxima vez (no en el escritorio)
     try {
-      sessionStorage.setItem(PASSKEY_OFFER, '1')
+      if (!useDesktop().desktop) sessionStorage.setItem(PASSKEY_OFFER, '1')
     }
     catch { /* sin almacenamiento: no pasa nada */ }
     await navigateTo(target())
@@ -46,6 +46,14 @@ const passkeyBusy = ref(false)
 // una llave sincronizada (iCloud, Google) sigue apareciendo sugerida al tocar el email
 const hasDeviceKey = ref(false)
 onMounted(() => (hasDeviceKey.value = !!passkeyOnDevice()))
+
+// Escritorio, primer arranque: aún no hay ninguna cuenta en este equipo → crearla
+if (useDesktop().desktop) {
+  onMounted(async () => {
+    const s = await $fetch<{ hasAccounts: boolean }>('/api/desktop/status').catch(() => null)
+    if (s && !s.hasAccounts) await navigateTo({ path: '/registro', query: route.query }, { replace: true })
+  })
+}
 async function withPasskey() {
   passkeyBusy.value = true
   error.value = null

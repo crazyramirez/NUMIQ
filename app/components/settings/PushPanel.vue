@@ -3,9 +3,11 @@
 const toast = useToast()
 const push = usePush()
 const busy = ref<'toggle' | 'test' | null>(null)
+// Escritorio: notificaciones del sistema, siempre activas mientras NUMIQ está abierta
+const { desktop } = useDesktop()
 
 const WHAT = [
-  { icon: 'ph:eye', text: 'Un cliente abre tu factura' },
+  ...(desktop ? [] : [{ icon: 'ph:eye', text: 'Un cliente abre tu factura' }]),
   { icon: 'ph:arrows-clockwise', text: 'Se emite sola una factura recurrente' },
   { icon: 'ph:sparkle', text: 'La IA termina de leer tus documentos' },
   { icon: 'ph:bank', text: 'Quedan pocos días para presentar impuestos' },
@@ -36,7 +38,7 @@ async function test() {
   busy.value = 'test'
   try {
     await $fetch('/api/push/test', { method: 'POST' })
-    toast.success('Aviso de prueba enviado', 'Debería llegarte en unos segundos.')
+    toast.success('Aviso de prueba enviado', desktop ? 'Debería aparecer ahora en tu escritorio.' : 'Debería llegarte en unos segundos.')
   }
   catch (err) {
     toast.error('No se pudo enviar la prueba', errorMessage(err))
@@ -53,7 +55,17 @@ async function test() {
       <li v-for="w in WHAT" :key="w.text"><Icon :name="w.icon" aria-hidden="true" />{{ w.text }}</li>
     </ul>
 
-    <p v-if="push.needsInstall.value" class="note">
+    <template v-if="desktop">
+      <p class="note">
+        <Icon name="ph:desktop" aria-hidden="true" />
+        Llegan como notificaciones del sistema mientras NUMIQ está abierta, también minimizada. Si no ves ninguna, revisa que las notificaciones de NUMIQ estén permitidas en los ajustes del sistema.
+      </p>
+      <div class="row">
+        <span class="muted">Avisos activados en este equipo</span>
+        <UiButton size="sm" variant="ghost" icon="ph:paper-plane-tilt" :loading="busy === 'test'" @click="test">Enviar prueba</UiButton>
+      </div>
+    </template>
+    <p v-else-if="push.needsInstall.value" class="note">
       <Icon name="ph:device-mobile" aria-hidden="true" />
       En iPhone y iPad, primero instala NUMIQ: botón Compartir → «Añadir a pantalla de inicio». Luego ábrela desde el icono y activa aquí los avisos.
     </p>
@@ -62,7 +74,7 @@ async function test() {
       <Icon name="ph:bell-slash" aria-hidden="true" /> Los avisos están bloqueados para NUMIQ en este navegador: actívalos en los ajustes del sitio y vuelve aquí.
     </p>
 
-    <div v-if="push.supported.value && !push.needsInstall.value" class="row">
+    <div v-if="!desktop && push.supported.value && !push.needsInstall.value" class="row">
       <UiSwitch :model-value="push.enabled.value" :disabled="busy === 'toggle' || push.permission.value === 'denied'" label="Recibir avisos aquí" @update:model-value="toggle" />
       <UiButton v-if="push.enabled.value" size="sm" variant="ghost" icon="ph:paper-plane-tilt" :loading="busy === 'test'" @click="test">Enviar prueba</UiButton>
     </div>

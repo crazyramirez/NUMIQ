@@ -19,11 +19,13 @@ export default defineEventHandler(async (event) => {
     email: body.email,
     passwordHash: await hashPassword(body.password),
     lastLoginAt: new Date(),
+    // Escritorio: cuenta local, no hay a quién demostrar que el email es tuyo
+    ...(isDesktop() ? { emailVerifiedAt: new Date() } : {}),
   }).$returningId()
   const user = { id: res!.id, email: body.email, name: body.name, avatarUrl: null }
   await setUserSession(event, { user: sessionUser(user), loggedInAt: Date.now() })
   await audit(event, { userId: user.id, action: 'user.register' })
   // Correo de confirmación: si falla, la cuenta funciona igual y se puede reenviar después
-  if (mailEnabled()) await sendVerificationEmail(event, user).catch(err => console.error('[auth] verificación', err))
+  if (mailEnabled() && !isDesktop()) await sendVerificationEmail(event, user).catch(err => console.error('[auth] verificación', err))
   return { user }
 })

@@ -14,6 +14,8 @@ const open = defineModel<boolean>({ default: false })
 
 const toast = useToast()
 const { confirm } = useConfirm()
+// Escritorio: la dirección webcal solo existiría en este equipo; quedan los calendarios externos vistos aquí
+const { desktop } = useDesktop()
 
 interface Link { https: string, webcal: string, google: string, outlook: string, office: string, name: string, layers: CalendarLayer[], lastUsedAt: string | null, local: boolean }
 
@@ -27,9 +29,9 @@ const loading = ref(false)
 
 watch(open, async (v) => {
   if (!v) return
-  tab.value = props.initialTab ?? 'out'
+  tab.value = desktop ? 'in' : props.initialTab ?? 'out'
   resetForm()
-  if (link.value) return
+  if (link.value || desktop) return
   loading.value = true
   try {
     link.value = await $fetch<Link>('/api/calendar/link')
@@ -192,7 +194,7 @@ const nextColor = (c: string) => {
 <template>
   <UiModal v-model="open" title="Conectar calendario" subtitle="Lo que pasa en NUMIQ, en el calendario de tu móvil; y tus citas, aquí" size="lg" no-touch-keyboard>
     <div class="cn">
-      <UiSegmented v-model="tab" :options="tabs" label="Sentido" />
+      <UiSegmented v-if="!desktop" v-model="tab" :options="tabs" label="Sentido" />
 
       <!-- ─── NUMIQ en tu calendario ─── -->
       <template v-if="tab === 'out'">

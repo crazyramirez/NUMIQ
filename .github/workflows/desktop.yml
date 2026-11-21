@@ -1,0 +1,177 @@
+# NUMIQ de escritorio: instaladores de Windows, macOS y Linux, probados antes de empaquetar.
+#
+#  - Al subir cambios de desktop/ o de la base de datos: compila, prueba y deja los instaladores como artefactos.
+#  - A mano (Actions → Escritorio → Run workflow): lo mismo; con «Publicar» crea la versión en Releases.
+#  - Al subir una etiqueta vX.Y.Z: publica la versión con los instaladores en Releases.
+name: Escritorio
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publicar los instaladores como versión (Releases) con la versión de package.json
+        type: boolean
+        default: false
+  push:
+    tags: ['v*']
+    branches: [master]
+    paths:
+      - 'desktop/**'
+      - 'server/db/**'
+      - 'server/utils/desktop.ts'
+      - 'server/api/desktop/**'
+      - '.github/workflows/desktop.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            builder: --win --x64
+            db: --platform=win32 --arch=x64
+          - name: macOS
+            os: macos-latest
+            builder: --mac --arm64 --x64
+            db: --platform=darwin --arch=arm64
+            db2: --platform=darwin --arch=x64
+          - name: Linux
+            os: ubuntu-22.04
+            builder: --linux --x64
+            db: --platform=linux --arch=x64
+    env:
+      # Sin telemetría de Nuxt en CI
+      NUXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+
+      - name: Librerías de MySQL y del paquete rpm (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libaio1 libnuma1 rpm xvfb
+
+      - name: Dependencias
+        run: |
+          npm ci
+          npm ci --prefix desktop
+
+      - name: Compilar NUMIQ
+        working-directory: desktop
+        run: node scripts/build-app.mjs
+
+      - name: Caché de MySQL
+        uses: actions/cache@v4
+        with:
+          path: desktop/.cache/*.tar.*
+          key: mysql-${{ runner.os }}-${{ hashFiles('desktop/scripts/fetch-db.mjs') }}
+
+      - name: MySQL embebido
+        working-directory: desktop
+        shell: bash
+        run: |
+          node scripts/fetch-db.mjs ${{ matrix.db }}
+          if [ -n "${{ matrix.db2 }}" ]; then node scripts/fetch-db.mjs ${{ matrix.db2 }}; fi
+          if [ "$RUNNER_OS" = "Linux" ]; then ldd vendor/mysql/linux-x64/bin/mysqld | grep -E "aio|numa|not found" || true; fi
+
+      - name: Prueba de humo (base de datos + servidor + API)
+        working-directory: desktop
+        run: node scripts/smoke.mjs
+
+      - name: Instaladores
+        working-directory: desktop
+        run: npx electron-builder --config electron-builder.config.cjs ${{ matrix.builder }} --publish never
+        env:
+          # Firma opcional: si los secretos existen, los instaladores salen firmados (y notarizados en macOS)
+          CSC_LINK: ${{ runner.os == 'Windows' && secrets.WIN_CSC_LINK || runner.os == 'macOS' && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'Windows' && secrets.WIN_CSC_KEY_PASSWORD || runner.os == 'macOS' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Arrancar la app empaquetada
+        working-directory: desktop
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Windows) node scripts/launch-test.mjs dist/win-unpacked/NUMIQ.exe ;;
+            macOS)   node scripts/launch-test.mjs dist/mac-arm64/NUMIQ.app/Contents/MacOS/NUMIQ ;;
+            Linux)   xvfb-run -a node scripts/launch-test.mjs dist/linux-unpacked/numiq ;;
+          esac
+
+      - name: Comprobar el paquete
+        working-directory: desktop
+        shell: bash
+        run: |
+          ls -la dist
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            APP="dist/mac-arm64/NUMIQ.app"
+            codesign --verify --deep --strict "$APP" && echo "Firma correcta"
+            test -x "$APP/Contents/Resources/mysql/bin/mysqld"
+            test -f "$APP/Contents/Resources/server/server/index.mjs"
+          fi
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            dpkg-deb -I dist/*.deb
+            dpkg-deb -c dist/*.deb | grep -E "resources/mysql/bin/mysqld|resources/server/server/index.mjs"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NUMIQ-${{ matrix.name }}
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.dmg
+            desktop/dist/*.deb
+            desktop/dist/*.rpm
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publicar versión
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Versión
+        id: v
+        run: echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || steps.v.outputs.tag }}
+          name: NUMIQ ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || steps.v.outputs.tag }} · escritorio
+          body: |
+            Instaladores de NUMIQ de escritorio: la app completa en tu ordenador, con tu propia base de datos.
+
+            | Sistema | Archivo |
+            |---|---|
+            | Windows 10/11 (64 bits) | `NUMIQ-*-win-x64.exe` |
+            | macOS 15 o posterior, Apple Silicon (M1–M4) | `NUMIQ-*-mac-arm64.dmg` |
+            | macOS 15 o posterior, Intel | `NUMIQ-*-mac-x64.dmg` |
+            | Ubuntu, Debian, Mint | `NUMIQ-*-linux-amd64.deb` |
+            | Fedora, openSUSE | `NUMIQ-*-linux-x86_64.rpm` |
+
+            Al actualizar se conservan tus datos. Instrucciones y limitaciones en el README (sección «NUMIQ de escritorio»).
+          files: out/*
+          fail_on_unmatched_files: true

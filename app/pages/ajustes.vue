@@ -15,6 +15,7 @@ const ALL_SECTIONS = [
   { id: 'firmas', label: 'Firmas', icon: 'ph:signature' },
   { id: 'cobros', label: 'Cobros', icon: 'ph:bell-ringing' },
   { id: 'gestoria', label: 'Gestoría', icon: 'ph:briefcase' },
+  { id: 'correo', label: 'Correo', icon: 'ph:envelope-simple' },
   { id: 'equipo', label: 'Equipo', icon: 'ph:users-three' },
   { id: 'cuenta', label: 'Tu cuenta', icon: 'ph:user-circle' },
   { id: 'copia', label: 'Copia de seguridad', icon: 'ph:cloud-arrow-down' },
@@ -22,7 +23,9 @@ const ALL_SECTIONS = [
 ] as const
 type SectionId = typeof ALL_SECTIONS[number]['id']
 // El gestor no usa las firmas de la empresa (solo consulta): la sección sobra
-const SECTIONS = computed(() => (readOnly.value ? ALL_SECTIONS.filter(s => s.id !== 'firmas') : ALL_SECTIONS))
+// Escritorio: el correo se configura aquí (no hay .env) y no hay equipo (la app vive en un solo equipo)
+const { desktop } = useDesktop()
+const SECTIONS = computed(() => ALL_SECTIONS.filter(s => !(readOnly.value && s.id === 'firmas') && (desktop ? s.id !== 'equipo' : s.id !== 'correo')))
 /** Secciones con datos de la empresa: solo el titular y los administradores los cambian */
 const COMPANY_SECTIONS = new Set<SectionId>(['empresa', 'numeracion', 'diseno', 'cobros', 'gestoria'])
 
@@ -602,6 +605,7 @@ function onDesignSaved(accent: string) {
 
           <!-- ─── Equipo y cuenta ─── -->
           <SettingsTeamPanel v-if="section === 'equipo'" class="rise" style="--i: 2" />
+          <SettingsDesktopMailPanel v-if="section === 'correo'" class="rise" style="--i: 2" />
           <SettingsAccountPanel v-if="section === 'cuenta'" class="rise" style="--i: 2" />
 
           <!-- ─── Certificado digital (desactivado por ahora: solo lo usaría VeriFactu) ───

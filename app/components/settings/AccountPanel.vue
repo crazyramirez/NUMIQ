@@ -11,6 +11,8 @@ const pwErrors = ref<Record<string, string | null>>({})
 const savingPw = ref(false)
 const sending = ref(false)
 const verified = computed(() => !!(me.value?.user as { emailVerifiedAt?: string | null } | undefined)?.emailVerifiedAt)
+// Escritorio: cuenta local, sin confirmación de email ni llaves de acceso
+const { desktop } = useDesktop()
 
 async function saveName() {
   savingName.value = true
@@ -72,10 +74,12 @@ async function resend() {
           <span class="label">Email</span>
           <div class="em">
             <span class="truncate">{{ me?.user.email }}</span>
-            <UiBadge v-if="verified" tone="success" size="sm" icon="ph:seal-check-fill">Confirmado</UiBadge>
-            <UiBadge v-else tone="warning" size="sm">Sin confirmar</UiBadge>
+            <template v-if="!desktop">
+              <UiBadge v-if="verified" tone="success" size="sm" icon="ph:seal-check-fill">Confirmado</UiBadge>
+              <UiBadge v-else tone="warning" size="sm">Sin confirmar</UiBadge>
+            </template>
           </div>
-          <button v-if="!verified" type="button" class="link small" :disabled="sending" @click="resend">{{ sending ? 'Enviando…' : 'Enviarme el enlace de confirmación' }}</button>
+          <button v-if="!verified && !desktop" type="button" class="link small" :disabled="sending" @click="resend">{{ sending ? 'Enviando…' : 'Enviarme el enlace de confirmación' }}</button>
         </div>
       </div>
       <div class="act">
@@ -83,7 +87,7 @@ async function resend() {
       </div>
     </UiCard>
 
-    <SettingsPasskeysPanel />
+    <SettingsPasskeysPanel v-if="!desktop" />
 
     <SettingsPushPanel />
 

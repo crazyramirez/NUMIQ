@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
   const [pack] = await useDb().select().from(tables.advisorPacks).where(and(eq(tables.advisorPacks.id, id), eq(tables.advisorPacks.companyId, company.id)))
   if (!pack?.path) throw createError({ statusCode: 404, statusMessage: 'El paquete ya no está disponible: prepáralo de nuevo' })
   if (pack.expiresAt < new Date()) throw createError({ statusCode: 410, statusMessage: 'El enlace de este paquete ha caducado: prepáralo de nuevo' })
-  const site = (useRuntimeConfig().siteUrl || getRequestURL(event, { xForwardedProto: true }).origin).replace(/\/+$/, '')
+  const site = siteUrl(event)
   const result = await sendPack(company, user, pack, { ...input, site })
   await audit(event, { companyId: company.id, userId: user.id, action: 'advisor.send', entity: 'advisor_pack', entityId: id, data: { to: input.to, attached: result.attached } })
   return { ok: true, ...result }

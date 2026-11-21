@@ -30,6 +30,8 @@ const errors = reactive<Record<string, string | null>>({ to: null, subject: null
 const sending = ref(false)
 
 const { data: mail } = useFetch<{ configured: boolean, account: string | null }>('/api/mail/status', { lazy: true, server: false })
+// Escritorio: la cuenta se pone en Ajustes → Correo y no hay página online para el cliente
+const { desktop } = useDesktop()
 const { data: designData } = useFetch<{ design: InvoiceDesign, signatureImageUrl: string | null }>('/api/invoice-design', { lazy: true, server: false })
 const hasSignature = computed(() => !!(!richIsEmpty(designData.value?.design.emailSignature) || designData.value?.signatureImageUrl))
 
@@ -157,7 +159,8 @@ async function send() {
       <Icon name="ph:warning-circle-fill" />
       <div>
         <strong>El correo no está configurado</strong>
-        <p>Añade GOOGLE_APP_EMAIL y GOOGLE_APP_PASSWORD (contraseña de aplicación de Gmail) en el archivo .env del servidor.</p>
+        <p v-if="desktop">Añade tu cuenta (Gmail con contraseña de aplicación u otro correo) en <NuxtLink to="/ajustes?s=correo" class="link">Ajustes → Correo</NuxtLink>.</p>
+        <p v-else>Añade GOOGLE_APP_EMAIL y GOOGLE_APP_PASSWORD (contraseña de aplicación de Gmail) en el archivo .env del servidor.</p>
       </div>
     </div>
     <UiSegmented v-model="view" :options="VIEWS" label="Redactar o ver el correo" class="views" />
@@ -220,7 +223,7 @@ async function send() {
           <span class="grow truncate">{{ a.originalName }}</span>
           <span class="muted small">{{ sizeLabel(a.size) }}</span>
         </label>
-        <p v-if="!(isQuote && form.attachPdf)" class="hint">El correo incluye además un enlace seguro para ver el documento online.</p>
+        <p v-if="!desktop && !(isQuote && form.attachPdf)" class="hint">El correo incluye además un enlace seguro para ver el documento online.</p>
       </div>
     </form>
     <template #footer>

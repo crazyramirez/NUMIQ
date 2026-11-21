@@ -3206,7 +3206,7 @@ const EMAIL_RE = /^[^\s@,;<>"]+@[^\s@,;<>"]+\.[^\s@,;<>"]{2,}$/
  * empresa o al usuario es una copia interna: admite borradores (salen con la marca BORRADOR).
  */
 export async function planSalesEmail(ctx: OpCtx, family: SalesFamily, rawFilter: unknown, o: SalesEmailIn): Promise<OpPlan> {
-  if (!mailEnabled()) throw new OpError('El correo de la app no está configurado (GOOGLE_APP_EMAIL y GOOGLE_APP_PASSWORD): no se puede enviar nada')
+  if (!mailEnabled()) throw new OpError(`${mailMissingMessage()}: no se puede enviar nada`)
   const f = cleanFilter(rawFilter)
   const [one, many] = family === 'quote' ? ['presupuesto', 'presupuestos'] : ['factura', 'facturas']
   requireScope(f, many)

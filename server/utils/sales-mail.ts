@@ -91,7 +91,7 @@ export async function salesEmailBody(company: Company, doc: SalesDoc, input: Pic
  * en el historial. Lo usan el botón "Enviar" y las facturas recurrentes con envío automático.
  */
 export async function sendSalesEmail(company: Company, userId: number | null, id: number, input: SalesEmailInput, site: string) {
-  if (!mailEnabled()) throw createError({ statusCode: 503, statusMessage: 'El correo no está configurado: añade GOOGLE_APP_EMAIL y GOOGLE_APP_PASSWORD' })
+  if (!mailEnabled()) throw createError({ statusCode: 503, statusMessage: mailMissingMessage() })
 
   const { buffer, filename, doc } = await salesPdf(company, id)
   if (doc.status === 'draft' && !input.internal) throw createError({ statusCode: 409, statusMessage: 'Emite el documento antes de enviarlo' })

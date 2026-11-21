@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
   const id = idParam(event)
   const input = await readInput(event, schema)
   const doc = await loadSalesDocument(company.id, id)
-  const site = useRuntimeConfig().siteUrl || getRequestURL(event, { xForwardedProto: true }).origin
+  const site = siteUrl(event)
   const { html, signature } = await salesEmailBody(company, doc, { ...input, subject: input.subject.trim() || '(Sin asunto)', message: input.message.trim() }, site)
   const img = signature?.image
   return {

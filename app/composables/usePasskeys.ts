@@ -104,7 +104,8 @@ export function usePasskeyRegistration() {
   }
 
   onMounted(async () => {
-    isSupported.value = browserSupportsWebAuthn()
+    // Escritorio: sin llaves de acceso (la ventana de la app no tiene acceso fiable a la huella del sistema)
+    isSupported.value = !useDesktop().desktop && browserSupportsWebAuthn()
     if (isSupported.value) await prepare()
   })
 
@@ -175,7 +176,8 @@ export function usePasskeyLogin(onSignedIn: () => Promise<void> | void, onError?
   }
 
   onMounted(async () => {
-    isSupported.value = browserSupportsWebAuthn()
+    // Escritorio: sin llaves de acceso (la ventana de la app no tiene acceso fiable a la huella del sistema)
+    isSupported.value = !useDesktop().desktop && browserSupportsWebAuthn()
     if (!isSupported.value) return
     await prepare()
     void startConditional()

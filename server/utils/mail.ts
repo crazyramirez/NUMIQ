@@ -10,6 +10,19 @@ import type Mail from 'nodemailer/lib/mailer'
 export function mailConfig() {
   const c = useRuntimeConfig().mail
   const e = process.env
+  // Escritorio: la cuenta se elige en Ajustes → Correo (no hay .env)
+  const d = isDesktop() ? desktopMail() : null
+  if (d) {
+    return {
+      smtpHost: d.smtpHost || 'smtp.gmail.com',
+      smtpPort: Number(d.smtpPort) || 465,
+      imapHost: c.imapHost,
+      imapPort: Number(c.imapPort),
+      user: d.user,
+      password: d.password.replace(/\s/g, ''),
+      from: `${(d.fromName || 'NUMIQ').replace(/["<>]/g, '')} <${d.user}>`,
+    }
+  }
   const user = c.user || e.GOOGLE_APP_EMAIL || ''
   return {
     smtpHost: c.smtpHost,
@@ -22,6 +35,11 @@ export function mailConfig() {
     from: c.from || (user ? `NUMIQ <${user}>` : ''),
   }
 }
+
+/** Por qué no sale el correo, según dónde se configura (escritorio: Ajustes; servidor: .env) */
+export const mailMissingMessage = () => isDesktop()
+  ? 'El correo no está configurado: añade tu cuenta en Ajustes → Correo'
+  : 'El envío de correo no está configurado (GOOGLE_APP_EMAIL y GOOGLE_APP_PASSWORD)'
 
 export const mailEnabled = () => {
   const c = mailConfig()
@@ -76,7 +94,7 @@ function allowedRecipient(email: string) {
 
 export async function sendMail(m: OutgoingMail) {
   const c = mailConfig()
-  if (!c.user || !c.password) throw createError({ statusCode: 503, statusMessage: 'El envío de correo no está configurado (GOOGLE_APP_EMAIL y GOOGLE_APP_PASSWORD)' })
+  if (!c.user || !c.password) throw createError({ statusCode: 503, statusMessage: mailMissingMessage() })
   const split = (s?: string) => (s ?? '').split(',').map(x => x.trim()).filter(Boolean)
   const to = split(m.to).filter(allowedRecipient)
   const cc = split(m.cc).filter(allowedRecipient)

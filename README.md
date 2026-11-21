@@ -8,6 +8,8 @@ Gestión completa para autónomos y pequeñas empresas españolas: facturas y pr
 
 App web instalable (PWA), responsive y en español. Varias empresas por cuenta y equipo con roles.
 
+También como **app de escritorio para Windows, macOS y Linux**, sin servidor: el instalador trae su propia base de datos y todo funciona en el ordenador. Ver [NUMIQ de escritorio](#numiq-de-escritorio-windows-macos-y-linux).
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/inicio-dark.webp">
   <img src=".github/assets/screenshots/inicio-light.webp" alt="Panel de inicio de NUMIQ: tareas de hoy, dinero libre, facturado, gastos y pendientes del trimestre" width="100%">
@@ -138,6 +140,7 @@ Cuenta de demostración con datos ficticios. Las imágenes siguen el tema claro 
 - **Passkeys** con **@simplewebauthn**, a través de nuxt-auth-utils.
 - **pdf.js**, **pdf-lib** y **docx-preview** para las vistas previas de documentos, y **exifr** para sus fechas.
 - **MapLibre GL** con mapas de OpenFreeMap y direcciones de CartoCiudad (IGN).
+- **Electron** y **electron-builder** para la app de escritorio, con **MySQL 8.4** embebido (`desktop/`).
 
 Requisitos: **Node.js ≥ 22.22**. En local no hace falta instalar MySQL (ver más abajo).
 
@@ -228,6 +231,7 @@ shared/                   Tipos y utilidades comunes a cliente y servidor (NIF, 
 public/                   Manifest de la PWA, iconos y estáticos
 scripts/                  MariaDB local, clonación y pruebas
 storage/uploads/          Archivos subidos, por empresa (fuera de git)
+desktop/                  App de escritorio (Electron): arranque, MySQL embebido, instaladores y pruebas
 ```
 
 Las rutas de la API comprueban la sesión y la empresa activa con `requireCompany(event, rolMínimo)`. Todas las consultas filtran por `companyId`.
@@ -258,6 +262,134 @@ Se ejecutan dentro del propio servidor Nitro (`server/plugins`):
 | Avisos push de los eventos del calendario que lo piden (a la hora elegida; los de todo el día desde las 9:00) | Cada minuto. Desactivable con `NUXT_CALENDAR_REMINDERS_DISABLED=true`. |
 | Limpieza de escaneos no guardados y ZIP de gestoría caducados | Cada hora. |
 | Presupuestos al día: los borradores que queden se emiten y los caducados pasan a rechazados | Una vez, al arrancar. |
+
+---
+
+## NUMIQ de escritorio (Windows, macOS y Linux)
+
+La misma app, instalada en el ordenador y sin servidor ni hosting. El instalador trae su propio servidor de NUMIQ y su base de datos (MySQL 8.4), que solo escuchan dentro del equipo. Los datos no salen del ordenador salvo lo que tú envías: correos, consultas a la IA con tu clave de OpenAI, mapas y calendarios externos.
+
+### Descargar e instalar
+
+Los instaladores están en [Releases](https://github.com/crazyramirez/NUMIQ/releases). Todos son instalables, no portables.
+
+| Sistema | Archivo | Instalación |
+|---|---|---|
+| **Windows** 10 y 11 (64 bits) | `NUMIQ-x.y.z-win-x64.exe` | Instalador con acceso directo en el escritorio y en el menú Inicio. Se desinstala desde Configuración → Aplicaciones. |
+| **macOS** 15 o posterior, Apple Silicon (M1 a M4) | `NUMIQ-x.y.z-mac-arm64.dmg` | Abre el DMG y arrastra NUMIQ a Aplicaciones. |
+| **macOS** 15 o posterior, Intel | `NUMIQ-x.y.z-mac-x64.dmg` | Igual que el anterior. |
+| **Ubuntu, Debian, Mint** (64 bits) | `NUMIQ-x.y.z-linux-amd64.deb` | `sudo apt install ./NUMIQ-x.y.z-linux-amd64.deb` |
+| **Fedora, openSUSE** (64 bits) | `NUMIQ-x.y.z-linux-x86_64.rpm` | `sudo dnf install ./NUMIQ-x.y.z-linux-x86_64.rpm` |
+
+Necesitas unos 500 MB de disco. Se recomiendan 4 GB de RAM.
+
+**Si el sistema avisa al abrirla.** Mientras los instaladores no lleven firma digital de pago:
+
+- **Windows** muestra «Windows protegió su PC». Pulsa **Más información → Ejecutar de todas formas**.
+- **macOS** puede decir que NUMIQ «está dañada» o que «no se puede abrir». Abre Terminal y ejecuta una sola vez:
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/NUMIQ.app
+  ```
+  También puedes ir a **Ajustes del Sistema → Privacidad y seguridad → Abrir igualmente**.
+
+### Primer arranque
+
+1. NUMIQ abre directamente **Crear cuenta**. La cuenta es local: el email no se confirma y la contraseña protege la app en este equipo.
+2. En la bienvenida das de alta tu empresa. Puedes rellenarla con datos de ejemplo para probar.
+3. **IA:** pega tu clave de OpenAI en **Ajustes → Inteligencia artificial**.
+4. **Correo:** añade tu cuenta en **Ajustes → Correo**. Sirve Gmail con contraseña de aplicación, Outlook/Microsoft 365 u otro SMTP. La contraseña se guarda cifrada.
+5. Si olvidas la contraseña, pulsa **¿Olvidaste tu contraseña?** al entrar y elige otra desde la propia app, sin correo.
+
+### Qué funciona y qué no
+
+| Función | En el escritorio |
+|---|---|
+| Facturas, presupuestos, gastos, banco, impuestos, informes, calendario, archivo, firmas, importación y PDF | ✅ Igual que en la web |
+| IA: lectura de documentos, importación y asistente | ✅ Con internet y tu clave de OpenAI |
+| Enviar facturas, presupuestos, recordatorios y documentación al gestor por email | ✅ Con la cuenta de **Ajustes → Correo**. La documentación para el gestor va adjunta en un ZIP de hasta 18 MB; si pesa más, descárgala y compártela tú |
+| Recordatorios de cobro automáticos, facturas recurrentes y avisos de plazos | ✅ Mientras NUMIQ está abierta, aunque esté minimizada. Lo que toque con la app cerrada se hace al abrirla |
+| Avisos | ✅ Como notificaciones del sistema |
+| Calendarios externos (iCal de Google, iCloud u Outlook) vistos en NUMIQ | ✅ |
+| Copia de seguridad, clonación completa y restauración | ✅ En **Ajustes → Copia de seguridad** |
+| Página online para el cliente (`/p/…`): enlace para compartir, WhatsApp, aviso de «visto por el cliente» y pago desde la página | ❌ No hay dirección pública. La factura va por email con su PDF. «Ver como el cliente» sí funciona, dentro de la app |
+| Enlace de descarga para el gestor | ❌ El ZIP va adjunto o se descarga |
+| Equipo, invitaciones y rol de gestor | ❌ La app vive en un solo equipo. Para trabajar con otras personas, usa la versión web |
+| Suscripción webcal desde Google Calendar, Apple Calendar u Outlook | ❌ |
+| Llaves de acceso (huella, Face ID) y bloqueo con llave | ❌ Se entra con la contraseña |
+| Avisos push en el móvil, varios dispositivos y sincronización | ❌ |
+| Instalar como PWA | ❌ Ya es una app instalada |
+
+### Tus datos
+
+Todo vive en una carpeta de tu usuario. **Archivo → Abrir la carpeta de datos** te lleva a ella.
+
+| Sistema | Carpeta |
+|---|---|
+| Windows | `%APPDATA%\NUMIQ` |
+| macOS | `~/Library/Application Support/NUMIQ` |
+| Linux | `~/.config/NUMIQ` |
+
+Dentro:
+
+- `data/mysql`: la base de datos.
+- `data/uploads`: logos, escaneos y documentos.
+- `data/settings.json`: la cuenta de correo, con la contraseña cifrada.
+- `numiq-desktop.json`: las claves que cifran las sesiones, las claves de OpenAI y el correo, y la contraseña de la base de datos. **Guárdalo junto a tus copias**: sin él no se pueden abrir los datos cifrados.
+- `logs/`: registros de la app, del servidor y de la base de datos, para soporte.
+
+Comportamiento con actualizaciones y desinstalación:
+
+- **Actualizar:** instala la versión nueva encima y tus datos se conservan. NUMIQ avisa cuando hay una versión nueva; solo consulta la lista de Releases de GitHub, sin enviar ningún dato.
+- **Desinstalar** no borra tus datos. Para quitarlo todo, borra también la carpeta.
+
+**Copias y migración entre la web y el escritorio.** En **Ajustes → Copia de seguridad** tienes dos opciones:
+
+- La copia de la empresa, en Excel, JSON y PDF.
+- La **clonación completa** (`.zip`), que se restaura en otro ordenador o en un servidor de NUMIQ.
+
+Para pasar de la web al escritorio, clona la instalación en la web (lo hace quien administra el servidor) y restaura el ZIP en el escritorio. Funciona también en sentido contrario. Las cuentas mantienen sus contraseñas. Las claves de OpenAI y el correo hay que volver a ponerlos, porque cada instalación las cifra con sus propias claves.
+
+**Seguridad.** La base de datos y el servidor solo aceptan conexiones del propio equipo (`127.0.0.1`). La base tiene una contraseña aleatoria propia. La ventana solo carga NUMIQ y los enlaces externos se abren en tu navegador. El ejecutable no puede usarse como Node.js (fuses de Electron).
+
+### Compilar la app de escritorio
+
+```bash
+cd desktop
+npm install
+npm run dev          # compila NUMIQ, descarga MySQL para tu sistema y abre la app
+npm run smoke        # prueba de humo sin Electron: MySQL + servidor + API completa
+npm run dist:win     # instalador de Windows   (en Windows)
+npm run dist:mac     # DMG arm64 e Intel        (en un Mac)
+npm run dist:linux   # .deb y .rpm             (en Linux, con rpm instalado)
+```
+
+El flujo de GitHub Actions **Escritorio** (`.github/workflows/desktop.yml`) hace todo esto en Windows, macOS y Linux:
+
+1. Compila NUMIQ.
+2. Pasa la prueba de humo: registro, datos de ejemplo, todas las consultas de la API, modelos de Hacienda, PDF, copia, clonación y restauración.
+3. Genera los instaladores.
+4. Arranca la app ya empaquetada y comprueba que se cierra en orden.
+
+Se ejecuta con cada cambio en `desktop/` o en la base de datos, o a mano. Para publicar una versión en Releases, sube una etiqueta `vX.Y.Z` o lanza el flujo a mano con **Publicar** marcado.
+
+**Firma de los instaladores (opcional).** Si existen estos secretos en el repositorio, los instaladores salen firmados:
+
+- Windows: `WIN_CSC_LINK` y `WIN_CSC_KEY_PASSWORD`.
+- macOS: `MAC_CSC_LINK` y `MAC_CSC_KEY_PASSWORD` (certificado Developer ID). Para notarizar, además `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD` y `APPLE_TEAM_ID`.
+
+**Cómo está hecha:**
+
+```
+Electron (desktop/src/main.mjs)
+  ├─ MySQL 8.4 en 127.0.0.1, datos en la carpeta del usuario (desktop/src/database.mjs)
+  ├─ servidor de NUMIQ (el mismo .output de Nitro) en un utilityProcess → http://localhost:47300
+  │    con NUMIQ_DESKTOP=1 y NUXT_PUBLIC_DESKTOP=true
+  └─ ventana con la app, puente mínimo en window.numiqDesktop (desktop/src/preload.cjs)
+```
+
+Se usa MySQL porque MariaDB no publica binarios para macOS. La app funciona con los dos motores: la prueba de humo lo comprueba, incluida una clonación hecha con MariaDB y restaurada en MySQL.
+
+En el código, el modo escritorio se consulta con `isDesktop()` en el servidor (`server/utils/desktop.ts`) y con `useDesktop()` en el cliente. Cualquier función nueva que dependa de una URL pública, de varios usuarios o de passkeys tiene que tener en cuenta ese modo.
 
 ---
 

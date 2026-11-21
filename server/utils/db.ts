@@ -77,6 +77,8 @@ export type Db = ReturnType<typeof useDb>
 
 function migrationsFolder() {
   const candidates = [
+    // Escritorio: la app indica dónde van las migraciones (el servidor arranca en la carpeta de datos)
+    ...(process.env.NUMIQ_MIGRATIONS_DIR ? [resolve(process.env.NUMIQ_MIGRATIONS_DIR)] : []),
     resolve(process.cwd(), 'server/db/migrations'),
     resolve(process.cwd(), '.output/server/migrations'),
     resolve(process.cwd(), 'migrations'),

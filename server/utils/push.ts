@@ -45,6 +45,8 @@ export function vapidKeys() {
 export async function sendPush(userIds: number[], payload: PushPayload) {
   const ids = [...new Set(userIds)]
   if (!ids.length) return { sent: 0 }
+  // Escritorio: un solo equipo, el aviso sale como notificación del sistema
+  if (isDesktop()) return { sent: desktopNotify(payload) ? 1 : 0 }
   vapidKeys()
   const db = useDb()
   const subs = await db.select().from(tables.pushSubscriptions).where(inArray(tables.pushSubscriptions.userId, ids))

@@ -4,6 +4,9 @@ import type { DroppedFile } from '~/components/docs/Dropzone.vue'
 import type { Advisor } from '~/components/settings/AdvisorForm.vue'
 
 useHead({ title: 'Gestoría · NUMIQ' })
+// Escritorio: sin enlace de descarga, el ZIP solo puede ir adjunto (hasta 18 MB)
+const { desktop } = useDesktop()
+const MAX_ATTACH = 18 * 1024 * 1024
 
 interface Preview {
   period: { from: string, to: string, label: string, slug: string }
@@ -383,18 +386,18 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
             <UiInput v-model="mail.subject" class="c-12" label="Asunto" :error="errors.subject" @input="touched = true" />
             <UiTextarea v-model="mail.message" class="c-12 msg" label="Mensaje" :error="errors.message" @input="touched = true" />
           </div>
-          <p v-if="!info.mail" class="warn-mail"><Icon name="ph:warning-fill" aria-hidden="true" /> El correo no está configurado: puedes descargar el ZIP y enviarlo tú.</p>
+          <p v-if="!info.mail" class="warn-mail"><Icon name="ph:warning-fill" aria-hidden="true" /> El correo no está configurado: puedes descargar el ZIP y enviarlo tú<template v-if="desktop">, o añadir tu cuenta en <NuxtLink to="/ajustes?s=correo" class="link">Ajustes → Correo</NuxtLink></template>.</p>
         </section>
 
         <div class="actionbar">
           <p class="ab-t">
             <Icon name="ph:file-zip" aria-hidden="true" />
             <span>ZIP de unos <b class="num">{{ fileSize(size) }}</b></span>
-            <span v-if="!readOnly" class="muted">· {{ size > 18 * 1024 * 1024 ? 'irá como enlace de descarga' : 'irá adjunto y con enlace' }}</span>
+            <span v-if="!readOnly" class="muted">· {{ desktop ? (size > MAX_ATTACH ? 'demasiado grande para el correo: descárgalo y compártelo' : 'irá adjunto') : size > MAX_ATTACH ? 'irá como enlace de descarga' : 'irá adjunto y con enlace' }}</span>
           </p>
           <div class="row gap-2">
             <UiButton :variant="readOnly ? 'primary' : 'secondary'" icon="ph:download-simple" :loading="busy === 'download'" :disabled="!!busy || nothing || !rangeOk" @click="download">Descargar ZIP</UiButton>
-            <UiButton v-if="!readOnly" variant="primary" icon="ph:paper-plane-tilt" :loading="busy === 'send'" :disabled="!!busy || nothing || !rangeOk || !info.mail" @click="send">Enviar al gestor</UiButton>
+            <UiButton v-if="!readOnly" variant="primary" icon="ph:paper-plane-tilt" :loading="busy === 'send'" :disabled="!!busy || nothing || !rangeOk || !info.mail || (desktop && size > MAX_ATTACH)" @click="send">Enviar al gestor</UiButton>
           </div>
         </div>
       </div>
