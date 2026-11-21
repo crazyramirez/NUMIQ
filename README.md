@@ -8,7 +8,7 @@ Gestión completa para autónomos y pequeñas empresas españolas: facturas y pr
 
 App web instalable (PWA), responsive y en español. Varias empresas por cuenta y equipo con roles.
 
-También como **app de escritorio para Windows, macOS y Linux**, sin servidor: el instalador trae su propia base de datos y todo funciona en el ordenador. Ver [NUMIQ de escritorio](#numiq-de-escritorio-windows-macos-y-linux).
+También como **app de escritorio instalable para Windows, macOS y Linux**. Es la forma más fácil de empezar: sin hosting, sin servidor y con los datos en tu ordenador. A cambio, funciona en un solo equipo y sin las funciones online. Ver [NUMIQ de escritorio](#numiq-de-escritorio-windows-macos-y-linux) y [¿Escritorio o web?](#escritorio-o-web).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshots/inicio-dark.webp">
@@ -268,6 +268,42 @@ Se ejecutan dentro del propio servidor Nitro (`server/plugins`):
 ## NUMIQ de escritorio (Windows, macOS y Linux)
 
 La misma app, instalada en el ordenador y sin servidor ni hosting. El instalador trae su propio servidor de NUMIQ y su base de datos (MySQL 8.4), que solo escuchan dentro del equipo. Los datos no salen del ordenador salvo lo que tú envías: correos, consultas a la IA con tu clave de OpenAI, mapas y calendarios externos.
+
+### ¿Escritorio o web?
+
+La versión de escritorio es la forma más sencilla de usar NUMIQ: se instala como cualquier programa y ya está. A cambio, vive en un solo ordenador y no está en internet, así que pierde lo que necesita una dirección pública o varias personas.
+
+**Lo que ganas con el escritorio**
+
+- **Instalar y empezar.** Un instalador y dos clics. No hay que contratar hosting, configurar un dominio, crear una base de datos, rellenar un `.env` ni mantener un servidor.
+- **Sin cuotas ni infraestructura.** No pagas servidor. Lo único de pago es la IA, si la usas, con tu propia clave de OpenAI.
+- **Tus datos, en tu ordenador.** Facturas, gastos, extractos y documentos no salen del equipo. Nadie más tiene una copia.
+- **Funciona sin internet en el día a día.** Facturar, registrar gastos, generar PDF, conciliar el banco, preparar los modelos de Hacienda y sacar informes no necesita conexión. La IA, el correo y los mapas sí.
+- **Rápida.** Todo está en local: no hay esperas de red.
+- **Las mismas funciones.** Es el mismo código que la web, no una versión recortada.
+
+**Lo que pierdes al no estar online**
+
+- **Un solo ordenador.** No la abres desde el móvil, la tableta ni otro PC, y no hay sincronización entre dispositivos.
+- **Trabajas solo.** No hay equipo, invitaciones ni acceso del gestor dentro de la app. La documentación al gestor se le envía por email.
+- **Sin página para el cliente.** No hay enlace para que vea o pague la factura online, ni aviso de «visto». La factura le llega por email con su PDF.
+- **Tareas automáticas solo con la app abierta.** Las facturas recurrentes, los recordatorios de cobro y los avisos de plazos se ejecutan mientras NUMIQ está abierta, aunque esté minimizada. Lo que quede pendiente se hace al abrirla.
+- **Las copias de seguridad son cosa tuya.** Si el disco falla y no tienes copia, pierdes los datos. Haz copias periódicas desde **Ajustes → Copia de seguridad** y guárdalas fuera del ordenador.
+- **Sin passkeys ni avisos en el móvil.** Se entra con contraseña y los avisos salen en el escritorio.
+- **Actualizas tú.** NUMIQ avisa cuando hay una versión nueva; la descargas e instalas encima.
+
+**Cuál elegir**
+
+| Situación | Mejor opción |
+|---|---|
+| Autónomo que trabaja desde un solo ordenador | **Escritorio** |
+| Quieres probar NUMIQ sin montar nada | **Escritorio** |
+| No quieres que tus datos estén en ningún servidor | **Escritorio** |
+| Usas el móvil para escanear tickets o consultar sobre la marcha | **Web** |
+| Trabajas con socios, empleados o con tu gestor dentro de la app | **Web** |
+| Quieres que el cliente vea y pague la factura desde un enlace | **Web** |
+
+No es una decisión para siempre. Con la clonación de **Ajustes → Copia de seguridad** pasas todos tus datos de la web al escritorio o del escritorio a la web.
 
 ### Descargar e instalar
 
