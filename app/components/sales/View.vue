@@ -435,6 +435,19 @@ function paperCtx(): CtxSpec | null {
 const head = ref<HTMLElement>()
 const stuck = ref(false)
 const headSize = reactive({ full: 0, now: 0 })
+// Lo que falta hasta los bordes de la columna principal: el fondo translúcido llega de lado a lado
+// (como la barra superior) sin salirse de ella ni provocar scroll horizontal
+const bleed = reactive({ l: 0, r: 0 })
+
+function measureBleed() {
+  const el = head.value
+  const main = el?.closest('main')
+  if (!el || !main) return
+  const r = el.getBoundingClientRect()
+  const m = main.getBoundingClientRect()
+  bleed.l = Math.max(0, r.left - m.left)
+  bleed.r = Math.max(0, m.right - r.right)
+}
 
 function checkStuck() {
   const el = head.value
@@ -451,11 +464,15 @@ onMounted(() => {
     const h = head.value?.offsetHeight ?? 0
     headSize.now = h
     if (!stuck.value) headSize.full = h
+    measureBleed()
   })
   watch(head, (el, old) => {
     if (old) headObs?.unobserve(old)
     if (el) {
       headObs?.observe(el)
+      // La columna cambia de ancho al plegar el menú lateral
+      const main = el.closest('main')
+      if (main) headObs?.observe(main)
       checkStuck()
     }
   }, { immediate: true })
@@ -468,6 +485,8 @@ onBeforeUnmount(() => {
 
 const headStyle = computed(() => ({
   '--head-gap': `${stuck.value ? Math.max(0, headSize.full - headSize.now) : 0}px`,
+  '--bleed-l': `${bleed.l}px`,
+  '--bleed-r': `${bleed.r}px`,
 }))
 const viewStyle = computed(() => ({ '--head-h': `${headSize.now}px` }))
 </script>
@@ -699,8 +718,8 @@ const viewStyle = computed(() => ({ '--head-h': `${headSize.now}px` }))
   max-width: 1320px;
 }
 
-/* Fija bajo la barra superior al bajar. Fondo y línea inferior se extienden a lo ancho con una sombra
-   recortada en vertical (no provoca scroll horizontal ni tapa menús ni avisos); la línea, solo fija */
+/* Fija bajo la barra superior al bajar, con su mismo cristal translúcido y desenfocado. Fondo y línea
+   inferior llegan a los bordes de la columna (--bleed-*, medidos); la línea, solo cuando está fija */
 .v-head {
   position: sticky;
   top: var(--topbar-h);
@@ -717,25 +736,23 @@ const viewStyle = computed(() => ({ '--head-h': `${headSize.now}px` }))
 .v-head::after {
   content: '';
   position: absolute;
-  left: 0;
-  right: 0;
+  left: calc(-1 * var(--bleed-l, 0px));
+  right: calc(-1 * var(--bleed-r, 0px));
   z-index: -1;
-  clip-path: inset(0 -100vmax);
   pointer-events: none;
 }
 
 .v-head::before {
   top: 0;
   bottom: 0;
-  background: var(--bg);
-  box-shadow: 0 0 0 100vmax var(--bg);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  backdrop-filter: saturate(1.6) blur(14px);
 }
 
 .v-head::after {
   bottom: -1px;
   height: 1px;
-  background: var(--border-subtle);
-  box-shadow: 0 0 0 100vmax var(--border-subtle);
+  background: color-mix(in srgb, var(--border) 70%, transparent);
   opacity: 0;
   transition: opacity var(--t-fast);
 }
