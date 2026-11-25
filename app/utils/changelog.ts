@@ -19,6 +19,8 @@ export interface ChangeEntry {
 }
 
 export const CHANGELOG: readonly ChangeEntry[] = Object.freeze([
+  // ─── 25 de noviembre de 2026 ───
+  { at: '2026-11-25T13:00', kind: 'new', area: 'Facturas', icon: 'ph:file-plus', title: 'Páginas adicionales en facturas y presupuestos', body: 'Debajo de la hoja, «Añadir página» crea una página más del documento para tus condiciones generales, la memoria del proyecto o fotos del trabajo. Escribe con formato (subtítulos, listas, negrita) y pide a «✨ IA» que lo redacte o lo mejore. Añade imágenes con el botón, arrastrándolas a la hoja o pegándolas, y elige su tamaño, alineación y pie de foto. Ordena los bloques arrastrando su asa (⋮⋮) o con su menú. Guarda una página como plantilla (⋯ → Guardar como plantilla) y la tendrás a un clic en cualquier documento. Sale en hoja nueva en el PDF, en el enlace del cliente y al imprimir; al convertir un presupuesto en factura, las páginas pasan con él. También se lo puedes pedir al asistente.', to: '/presupuestos/nuevo' },
   // ─── 21 de noviembre de 2026 ───
   { at: '2026-11-21T03:00', kind: 'new', area: 'Escritorio', icon: 'ph:desktop', title: 'NUMIQ de escritorio para Windows, macOS y Linux', body: 'NUMIQ también se instala en el ordenador, sin servidor: trae su propia base de datos y tus datos se quedan en tu equipo. Facturas, gastos, banco, impuestos, informes, IA y copias funcionan igual. El correo se configura en Ajustes → Correo y los avisos salen como notificaciones del sistema. Puedes pasar tus datos de la web al escritorio con la clonación de Ajustes → Copia de seguridad.', to: '/ajustes?s=copia' },
   // ─── 12 de noviembre de 2026 ───

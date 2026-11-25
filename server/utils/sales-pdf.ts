@@ -58,6 +58,8 @@ export async function salesPdf(company: Company, id: number, designOverride?: In
     lines: doc.lines.map(l => ({ ...l, sku: l.itemId ? skus.get(l.itemId) ?? null : null })),
     verifactu: doc.verifactu && opts.verifactu !== false ? { qrUrl: doc.verifactu.qrUrl, hash: doc.verifactu.hash } : null,
     signature: await pdfSignature(company.id, doc.signature, (doc.issuer ?? companySnapshot(company)).name),
+    // La vista previa del diseño enseña solo la hoja principal
+    pages: opts.defaultTexts ? [] : await pdfPages(company.id, doc.extraPages),
   }
   const logo = await companyLogo(company.logoPath)
   const comp = pdfCompany(company)

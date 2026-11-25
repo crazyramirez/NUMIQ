@@ -86,6 +86,16 @@ export interface PdfDocument {
   verifactu: { qrUrl: string, hash: string } | null
   /** Firma estampada (PNG transparente) con el texto de encima y el nombre de quien firma */
   signature?: { dataUrl: string, label: string, signer: string } | null
+  /** Páginas adicionales tras el documento (condiciones, memoria, fotos…), cada una en hoja nueva */
+  pages?: PdfPage[]
+}
+
+export interface PdfPage {
+  title: string
+  blocks: Array<
+    | { k: 'text', doc: RichDoc }
+    | { k: 'image', dataUrl: string, w: number, h: number, size: PageImageSize, align: PageAlign, caption: string | null }
+  >
 }
 
 export interface PdfCompany {
@@ -356,21 +366,19 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
       }
     : null
 
-  // Descripción con formato (párrafos, subtítulos y listas) antes de los conceptos
+  // Texto con formato (párrafos, subtítulos y listas): la descripción y las páginas adicionales
   const runs = (spans: RichSpan[]) => (spans.length
     ? spans.map(s => ({ text: s.t, ...(s.b ? { bold: true } : {}), ...(s.i ? { italics: true } : {}), ...(s.u ? { decoration: 'underline' } : {}) }))
     : ' ')
+  const richStack = (rich: RichDoc): Node[] => rich.map((b, n): Node => {
+    const top = n ? 5 : 0
+    if (b.k === 'h') return { text: runs(b.c), font: SEMI, fontSize: f(10.5), color: INK, margin: [0, n ? 9 : 0, 0, 0] }
+    if (b.k === 'p') return { text: runs(b.c), color: INK_2, lineHeight: compact ? 1.16 : 1.22, margin: [0, top, 0, 0] }
+    const items = b.items.map(it => ({ text: runs(it), color: INK_2, lineHeight: compact ? 1.16 : 1.22, margin: [0, 1, 0, 1] }))
+    return b.k === 'ul' ? { ul: items, markerColor: a, margin: [0, top, 0, 0] } : { ol: items, markerColor: a, margin: [0, top, 0, 0] }
+  })
   const description: Node | null = doc.description?.length
-    ? {
-        stack: doc.description.map((b, n): Node => {
-          const top = n ? 5 : 0
-          if (b.k === 'h') return { text: runs(b.c), font: SEMI, fontSize: f(10.5), color: INK, margin: [0, n ? 9 : 0, 0, 0] }
-          if (b.k === 'p') return { text: runs(b.c), color: INK_2, lineHeight: compact ? 1.16 : 1.22, margin: [0, top, 0, 0] }
-          const items = b.items.map(it => ({ text: runs(it), color: INK_2, lineHeight: compact ? 1.16 : 1.22, margin: [0, 1, 0, 1] }))
-          return b.k === 'ul' ? { ul: items, markerColor: a, margin: [0, top, 0, 0] } : { ol: items, markerColor: a, margin: [0, top, 0, 0] }
-        }),
-        margin: [0, gap(22), 0, 0],
-      }
+    ? { stack: richStack(doc.description), margin: [0, gap(22), 0, 0] }
     : null
 
   // Tabla de conceptos (no la hay en las facturas «solo descripción»: la descripción explica el trabajo)
@@ -498,6 +506,41 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
     }
   }
 
+  // Páginas adicionales: cada una empieza en hoja nueva, con su título y sus bloques en orden
+  const maxImageH = 841.89 - top - (compact ? 40 : 46) - 120
+  const extraPages: Node[] = (doc.pages ?? []).map(p => ({
+    pageBreak: 'before',
+    stack: [
+      p.title
+        ? {
+            stack: [
+              { text: p.title, font: SEMI, fontSize: f(17), color: INK, characterSpacing: -0.2 },
+              { canvas: [{ type: 'rect', x: 0, y: 0, w: 30, h: 2.4, r: 1.2, color: a }], margin: [0, gap(9), 0, 0] },
+            ],
+            margin: [0, gap(6), 0, gap(16)],
+          }
+        : null,
+      ...p.blocks.map((b, n): Node => {
+        const margin = [0, n ? gap(16) : 0, 0, 0]
+        if (b.k === 'text') return { stack: richStack(b.doc), margin }
+        let width = contentW * (PAGE_IMAGE_WIDTH[b.size] ?? 1)
+        let height = width * b.h / b.w
+        if (height > maxImageH) {
+          width = width * maxImageH / height
+          height = maxImageH
+        }
+        return {
+          stack: [
+            { image: b.dataUrl, width, height, alignment: b.align },
+            b.caption ? { text: b.caption, fontSize: f(8.2), color: MUTED, alignment: b.align, margin: [0, 5, 0, 0] } : null,
+          ].filter(Boolean),
+          unbreakable: true,
+          margin,
+        }
+      }),
+    ].filter(Boolean),
+  }))
+
   const legal = design.footerText || company.invoiceFooter || [company.legalName, `NIF ${company.nif}`, company.email, company.website].filter(Boolean).join(' · ')
 
   const definition: Record<string, unknown> = {
@@ -533,7 +576,7 @@ export function buildInvoicePdf(doc: PdfDocument, company: PdfCompany, design: I
       margin: [side, compact ? 10 : 12, side, 0],
     }),
     watermark: doc.status === 'draft' ? { text: 'BORRADOR', color: '#9aa1ae', opacity: 0.08, bold: true, font: F } : undefined,
-    content: [header, meta, parties, rectNote, description, lineTable, bottom, paymentNode].filter(Boolean),
+    content: [header, meta, parties, rectNote, description, lineTable, bottom, paymentNode, ...extraPages].filter(Boolean),
   }
   return definition
 }

@@ -726,6 +726,112 @@
   }
 }
 
+/* ─── Páginas adicionales (condiciones, memoria del proyecto, fotos…): una hoja más por página ─── */
+.paper.paper-extra {
+  margin-top: 28px;
+}
+
+/* Sin la franja de color de la primera hoja: como en el PDF, solo la lleva la portada */
+.paper.paper-extra::before,
+.paper.xp-sheet::before {
+  display: none;
+}
+
+/* Cabecera discreta que se repite en cada hoja (marca a la izquierda, documento a la derecha) */
+.xp-run {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 34px;
+  padding-bottom: 10px;
+  font-size: 11px;
+  color: var(--p-text-3);
+  border-bottom: 1px solid var(--p-line);
+}
+
+.xp-run-brand {
+  font-weight: 650;
+  color: var(--p-text-2);
+}
+
+.xp-head {
+  margin-bottom: 24px;
+}
+
+.xp-title {
+  font-size: 23px;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: var(--p-text);
+  overflow-wrap: anywhere;
+}
+
+.xp-rule {
+  width: 30px;
+  height: 3px;
+  margin-top: 12px;
+  background: var(--p-accent);
+  border-radius: 2px;
+}
+
+.xp-block + .xp-block {
+  margin-top: 20px;
+}
+
+/* Imagen: ancho elegido respecto a la hoja y alineada a un lado o centrada (igual que el PDF) */
+.xp-fig {
+  margin: 0;
+  max-width: 100%;
+}
+
+.xp-fig[data-size='s'] { width: 34%; }
+.xp-fig[data-size='m'] { width: 50%; }
+.xp-fig[data-size='l'] { width: 75%; }
+.xp-fig[data-size='full'] { width: 100%; }
+.xp-fig[data-align='left'] { margin-right: auto; }
+.xp-fig[data-align='center'] { margin-inline: auto; text-align: center; }
+.xp-fig[data-align='right'] { margin-left: auto; text-align: right; }
+
+.xp-img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.xp-cap {
+  margin-top: 7px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--p-text-3);
+}
+
+@media (max-width: 767px) {
+  .paper.paper-extra {
+    margin-top: 18px;
+  }
+
+  .xp-run {
+    margin-bottom: 24px;
+  }
+
+  .xp-title {
+    font-size: 20px;
+  }
+}
+
+@media print {
+  .paper.paper-extra {
+    margin-top: 0;
+    break-before: page;
+  }
+
+  .xp-fig {
+    break-inside: avoid;
+  }
+}
+
 /* ─── Impresión / Guardar como PDF: solo la hoja, A4, cabecera de tabla en cada página ─── */
 @page {
   size: A4;

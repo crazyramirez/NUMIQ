@@ -14,6 +14,7 @@ interface PublicDoc {
   logoUrl: string | null
   signature: { url: string, label: string, signer: string } | null
   pdfUrl: string
+  pageImageBase: string
   payment: { paid: boolean, pending: number, paidTotal: number, dueDate: string | null, method: string | null, iban: string | null, cancelled: boolean, online?: { link: string | null, linkLabel: string | null, bizum: string | null } } | null
 }
 
@@ -185,7 +186,7 @@ async function copy(key: string, text: string) {
         </aside>
 
         <div class="pub-paper rise" style="--i: 1">
-          <SalesPaper :doc="data.doc" :company="data.company" :design="data.design" :logo-url="data.logoUrl" :signature="data.signature" />
+          <SalesPaper :doc="data.doc" :company="data.company" :design="data.design" :logo-url="data.logoUrl" :signature="data.signature" :page-image-base="data.pageImageBase" />
         </div>
       </main>
 

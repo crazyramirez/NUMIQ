@@ -144,6 +144,7 @@ export interface SalesChangesIn {
   condiciones: string | null
   referencia: string | null
   descripcion: string | null
+  pagina_adicional?: { titulo: string | null, texto: string | null } | null
   numero?: string | null
   descuento: number | null
   base: number | null
@@ -168,6 +169,9 @@ interface SalesChangeSet {
   terms?: string | null
   customerReference?: string | null
   description?: RichDoc | null
+  /** Página adicional de texto que se añade al final; null en extraPages = quitarlas todas */
+  addPage?: { title: string, doc: RichDoc | null }
+  extraPages?: null
   discountPct?: number
   /** Base o total al que se ajustan los precios */
   taxBase?: number
@@ -566,6 +570,9 @@ export async function planSales(ctx: OpCtx, family: SalesFamily, accion: string,
   if (cambios.condiciones?.trim()) ch.terms = cambios.condiciones.trim().slice(0, 5000)
   if (cambios.referencia?.trim()) ch.customerReference = cambios.referencia.trim().slice(0, 80)
   if (cambios.descripcion?.trim()) ch.description = plainToRich(cambios.descripcion.slice(0, 5000))
+  if (cambios.pagina_adicional && (cambios.pagina_adicional.titulo?.trim() || cambios.pagina_adicional.texto?.trim())) {
+    ch.addPage = { title: (cambios.pagina_adicional.titulo ?? '').trim().slice(0, 160), doc: markdownToRich((cambios.pagina_adicional.texto ?? '').slice(0, 20_000)) }
+  }
   if (cambios.numero?.trim()) {
     if (found.length !== 1) throw new OpError('El número se cambia de uno en uno: indica un solo documento')
     ch.number = cambios.numero.trim().slice(0, 40)
@@ -576,6 +583,11 @@ export async function planSales(ctx: OpCtx, family: SalesFamily, accion: string,
   if (cambios.total != null) ch.total = amount(cambios.total, 'el total')
   if (cambios.lineas?.length) ch.lineOps = await resolveLineOps(ctx, cambios.lineas)
   for (const v of cambios.vaciar ?? []) {
+    if (v === 'paginas_adicionales') {
+      if (ch.addPage) throw new OpError('Añade una página o quítalas todas, no las dos cosas')
+      ch.extraPages = null
+      continue
+    }
     const k = SALES_CLEAR[v]
     if (!k) throw new OpError(`«${v}» no se puede dejar en blanco`)
     if (ch[k] != null) throw new OpError(`«${v}»: indica un valor nuevo o vacíalo, no las dos cosas`)
@@ -600,6 +612,8 @@ export async function planSales(ctx: OpCtx, family: SalesFamily, accion: string,
   if (ch.terms !== undefined) parts.push(ch.terms ? 'condiciones nuevas' : 'sin condiciones')
   if (ch.customerReference !== undefined) parts.push(ch.customerReference ? `referencia ${ch.customerReference}` : 'sin referencia')
   if (ch.description !== undefined) parts.push(ch.description ? 'descripción nueva' : 'sin descripción')
+  if (ch.addPage) parts.push(`página adicional «${short(ch.addPage.title || 'sin título', 40)}»`)
+  if (ch.extraPages === null) parts.push('sin páginas adicionales')
 
   const linesChange = touchesLines(ch)
   const amounts = linesChange || ch.irpfRate != null
@@ -727,6 +741,8 @@ async function loadSalesInput(companyId: number, id: number) {
     // Sin forma de pago sigue sin ella al cambiar otra cosa
     paymentMethod: doc.paymentMethod,
     description: doc.description,
+    // Las páginas adicionales tal cual: al deshacer vuelven las de antes
+    extraPages: doc.extraPages,
     notes: doc.notes,
     terms: doc.terms,
     rectifiesId: doc.rectifiesId,
@@ -773,6 +789,10 @@ async function salesModify(ctx: OpCtx, p: { ids: number[], labels: Record<string
         ...(ch.terms !== undefined ? { terms: ch.terms } : {}),
         ...(ch.customerReference !== undefined ? { customerReference: ch.customerReference } : {}),
         ...(ch.description !== undefined ? { description: ch.description } : {}),
+        ...(ch.extraPages === null ? { extraPages: null } : {}),
+        ...(ch.addPage
+          ? { extraPages: [...(loaded.input.extraPages ?? []), { id: pageId(), title: ch.addPage.title, blocks: ch.addPage.doc ? [{ id: pageId(), k: 'text' as const, doc: ch.addPage.doc }] : [] }].slice(-10) }
+          : {}),
         lines: touchesLines(ch) ? nextSalesLines(loaded.input.lines, ch.irpfRate ?? loaded.input.irpfRate, ch, contact) : loaded.input.lines,
       }
       await saveSalesDraft(ctx.company.id, ctx.actor.id, next, id)

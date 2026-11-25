@@ -1,6 +1,6 @@
 /** Campos de texto con asistente de redacción (✨ IA): cada uno tiene sus instrucciones en server/api/ai/write.post.ts */
 export type AiField =
-  | 'sales_description' | 'sales_concept' | 'sales_notes' | 'sales_terms'
+  | 'sales_description' | 'sales_concept' | 'sales_notes' | 'sales_terms' | 'sales_page'
   | 'expense_concept' | 'expense_notes' | 'recurring_concept' | 'recurring_notes'
   | 'item_description' | 'contact_notes' | 'default_notes' | 'default_terms' | 'payment_text' | 'email_message'
 

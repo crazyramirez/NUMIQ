@@ -88,7 +88,7 @@ export function assistantToolDefs() {
       entidad: { type: 'string', enum: ['facturas', 'presupuestos', 'gastos', 'movimientos', 'contactos', 'productos', 'recurrentes', 'categorias'] },
       filtro: FILTER,
     }),
-    fn('operar_facturas', 'Prepara un cambio sobre facturas o presupuestos para que el usuario lo confirme. modificar: cualquier dato (cliente, importe total o base, líneas y conceptos, precios, cantidades, descuento, IVA, retención, fechas, vencimiento, forma de pago, notas, condiciones, referencia, descripción). También eliminar, emitir borradores, marcar cobradas o quitar cobros (marcar_pendientes; en presupuestos, volver a pendiente), marcar enviadas, aceptar o rechazar presupuestos, convertir presupuestos en factura y devolver facturas a borrador. NO ejecuta nada: crea una propuesta con los registros exactos.', {
+    fn('operar_facturas', 'Prepara un cambio sobre facturas o presupuestos para que el usuario lo confirme. modificar: cualquier dato (cliente, importe total o base, líneas y conceptos, precios, cantidades, descuento, IVA, retención, fechas, vencimiento, forma de pago, notas, condiciones, referencia, descripción, páginas adicionales de texto). También eliminar, emitir borradores, marcar cobradas o quitar cobros (marcar_pendientes; en presupuestos, volver a pendiente), marcar enviadas, aceptar o rechazar presupuestos, convertir presupuestos en factura y devolver facturas a borrador. NO ejecuta nada: crea una propuesta con los registros exactos.', {
       documentos: { type: 'string', enum: ['facturas', 'presupuestos'] },
       accion: { type: 'string', enum: ['modificar', 'eliminar', 'emitir', 'marcar_cobradas', 'marcar_pendientes', 'marcar_enviadas', 'marcar_aceptados', 'marcar_rechazados', 'convertir_en_factura', 'pasar_a_borrador'] },
       filtro: FILTER,
@@ -120,8 +120,16 @@ export function assistantToolDefs() {
         condiciones: str(),
         referencia: str('Referencia o nº de pedido del cliente'),
         descripcion: str('Descripción del trabajo que va antes de las líneas'),
+        pagina_adicional: {
+          ...obj({
+            titulo: str('Título de la página, p. ej. «Condiciones generales» o «Memoria del proyecto»'),
+            texto: str('Texto de la página: un párrafo por línea, "## " para subtítulos, "- " para viñetas y **negrita**'),
+          }),
+          type: ['object', 'null'],
+          description: 'Añade una página adicional al final del documento (en hoja nueva tras el total) con título y texto. Las imágenes se añaden desde el editor',
+        },
         numero: str('Nuevo número del documento escrito a mano (p. ej. F2026-0050); solo con un documento a la vez'),
-        vaciar: clear(['notas', 'condiciones', 'referencia', 'vencimiento', 'fecha_operacion', 'descripcion', 'forma_pago']),
+        vaciar: clear(['notas', 'condiciones', 'referencia', 'vencimiento', 'fecha_operacion', 'descripcion', 'forma_pago', 'paginas_adicionales']),
       }),
     }),
     fn('enviar_email', 'Prepara el envío por email de facturas o presupuestos con su PDF (o un recordatorio de pago) para que el usuario lo confirme. NO envía nada hasta que confirme. Los borradores solo pueden enviarse a la empresa o al propio usuario, para revisarlos (van con la marca BORRADOR); al cliente solo van documentos emitidos.', {

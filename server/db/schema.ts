@@ -348,6 +348,8 @@ export const salesDocuments = mysqlTable('sales_documents', {
   description: jsonText<RichDoc>('description'),
   /** «Solo descripción»: los conceptos de antes, guardados sin mostrarse para recuperarlos al volver a «Con conceptos» */
   keptLines: jsonText<SalesKeptLine[]>('kept_lines'),
+  /** Páginas adicionales tras el documento (condiciones, memoria, fotos…): título y bloques de texto o imagen */
+  extraPages: jsonText<DocPage[]>('extra_pages'),
   notes: text('notes'),
   terms: text('terms'),
   /** Rectificativa: factura que corrige y motivo (R1..R5) */

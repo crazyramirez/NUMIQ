@@ -19,6 +19,8 @@ export interface PaperDoc {
   operationDate: string | null
   paymentMethod: string | null
   description?: RichDoc | null
+  /** Páginas adicionales tras el documento (condiciones, memoria, fotos…) */
+  extraPages?: DocPage[] | null
   notes: string | null
   terms: string | null
   irpfRate: number
@@ -40,6 +42,8 @@ const props = defineProps<{
   logoUrl?: string | null
   /** Firma estampada al pie (texto de encima, imagen y nombre de quien firma) */
   signature?: { url: string, label: string, signer: string } | null
+  /** Dónde se piden las imágenes de las páginas adicionales (la vista pública usa las suyas) */
+  pageImageBase?: string
 }>()
 
 const d = computed(() => props.design ?? normalizeDesign(null, props.company.brandColor))
@@ -59,6 +63,7 @@ const isQuote = computed(() => props.doc.kind === 'quote' || props.doc.kind === 
 /** Título de observaciones o condiciones según el diseño (vacío: sin título) */
 const notesTitle = computed(() => (isQuote.value ? d.value.termsLabel : d.value.notesLabel).trim())
 const title = computed(() => ({ invoice: 'Factura', rectifying: 'Factura rectificativa', quote: 'Presupuesto', proforma: 'Factura proforma' }[props.doc.kind] ?? 'Factura'))
+const pageImg = (name: string) => `${props.pageImageBase ?? '/api/sales/page-images/'}${name}`
 const place = (p: PaperParty) => [[p.postalCode, p.city].filter(Boolean).join(' '), p.province ? `(${p.province})` : ''].filter(Boolean).join(' ')
 </script>
 
@@ -186,6 +191,25 @@ const place = (p: PaperParty) => [[p.postalCode, p.city].filter(Boolean).join(' 
       <span class="legal">{{ d.footerText || company.invoiceFooter || `${issuer.name} · NIF ${issuer.nif}` }}</span>
       <span v-if="doc.verifactu" class="hash mono" :title="doc.verifactu.hash">Huella {{ doc.verifactu.hash.slice(0, 16) }}…</span>
     </footer>
+  </article>
+
+  <!-- Páginas adicionales: cada una en su hoja, con la cabecera discreta que se repite en el PDF -->
+  <article v-for="p in doc.extraPages ?? []" :key="p.id" class="paper paper-extra" :class="{ dense: d.density === 'compact' }" :style="paperStyle">
+    <div class="xp-run">
+      <span class="xp-run-brand">{{ brand }}</span>
+      <span>{{ title }} {{ doc.number ?? 'Borrador' }}</span>
+    </div>
+    <header v-if="p.title" class="xp-head">
+      <h2 class="xp-title">{{ p.title }}</h2>
+      <div class="xp-rule" aria-hidden="true" />
+    </header>
+    <template v-for="b in p.blocks" :key="b.id">
+      <RichView v-if="b.k === 'text'" :doc="b.doc" class="xp-block" />
+      <figure v-else class="xp-block xp-fig" :data-size="b.size" :data-align="b.align">
+        <img :src="pageImg(b.img)" :width="b.w" :height="b.h" :alt="b.caption || p.title || 'Imagen'" class="xp-img" loading="lazy">
+        <figcaption v-if="b.caption" class="xp-cap">{{ b.caption }}</figcaption>
+      </figure>
+    </template>
   </article>
 </template>
 

@@ -1,7 +1,7 @@
 {
   "name": "numiq-desktop",
   "productName": "NUMIQ",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "private": true,
   "description": "NUMIQ de escritorio: facturación, gastos e impuestos en tu propio ordenador, sin servidor.",
   "author": "NUMIQ",

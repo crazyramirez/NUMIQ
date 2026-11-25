@@ -53,6 +53,7 @@ interface SalesDoc {
   irpfRate: number
   paymentMethod: string | null
   description: RichDoc | null
+  extraPages?: DocPage[] | null
   notes: string | null
   terms: string | null
   rectifiesId: number | null
@@ -133,6 +134,8 @@ const form = reactive({
   // La de la última vez en este tipo de documento (null: sin forma de pago)
   paymentMethod: (design.value ? design.value.design[isQuote.value ? 'quotePaymentMethod' : 'paymentMethod'] : 'transfer') as string | null,
   description: null as RichDoc | null,
+  // Páginas adicionales tras el documento (condiciones, memoria, fotos…)
+  extraPages: [] as DocPage[],
   notes: isQuote.value ? '' : design.value?.design.defaultNotes ?? '',
   terms: isQuote.value ? design.value?.design.defaultTerms ?? '' : '',
   rectifiesId: null as number | null,
@@ -158,6 +161,7 @@ if (doc.value) {
     irpfRate: doc.value.irpfRate,
     paymentMethod: doc.value.paymentMethod,
     description: doc.value.description ?? null,
+    extraPages: structuredClone(doc.value.extraPages ?? []),
     notes: doc.value.notes ?? '',
     terms: doc.value.terms ?? '',
     rectifiesId: doc.value.rectifiesId,
@@ -531,6 +535,8 @@ const hasDiscount = computed(() => form.lines.some(l => (l.discountPct ?? 0) > 0
 // ─── Guardar y emitir ────────────────────────────────────────────────────────
 const dirty = ref(false)
 const saving = ref<'draft' | 'issue' | null>(null)
+/** Imágenes de las páginas adicionales que aún se están subiendo */
+const pageUploads = ref(0)
 const errors = reactive<{ contact: string | null, lines: string | null }>({ contact: null, lines: null })
 watch(form, () => (dirty.value = true), { deep: true })
 
@@ -593,6 +599,10 @@ function validate(issue: boolean) {
 }
 
 async function save(issue: boolean) {
+  if (pageUploads.value) {
+    toast.info('Subiendo imágenes…', 'Espera a que terminen de subirse para guardar.')
+    return
+  }
   if (!validate(issue)) {
     toast.error('Revisa la factura', errors.contact ?? errors.lines ?? undefined)
     // En el móvil, al paso donde está lo que falta
@@ -632,6 +642,7 @@ async function save(issue: boolean) {
       irpfRate: form.irpfRate,
       paymentMethod: form.paymentMethod,
       description: form.description,
+      extraPages: form.extraPages,
       notes: form.notes || null,
       terms: form.terms || null,
       rectifiesId: kind.value === 'rectifying' ? form.rectifiesId : null,
@@ -811,6 +822,7 @@ const R_CODES = [
     <!-- Mide el espacio real (sin el menú lateral) para colocar la hoja y el panel -->
     <div class="ed-fit">
       <div class="ed-body">
+        <div class="sheets">
         <!-- La hoja -->
         <div class="paper" :style="{ '--doc-accent': accent, '--doc-font': paperFont }">
           <div class="paper-head">
@@ -1059,6 +1071,19 @@ const R_CODES = [
           </div>
         </div>
 
+        <!-- Páginas adicionales: condiciones, memoria del proyecto, fotos… -->
+        <SalesPages
+          v-model="form.extraPages"
+          v-model:uploading="pageUploads"
+          :brand="issuerName"
+          :doc-label="`${paperTitle} ${doc?.number ?? issueNumber ?? ''}`.trim()"
+          :accent="accent"
+          :font="paperFont"
+          :ai-context="() => aiContext()"
+          class="pages-ed"
+        />
+        </div>
+
         <!-- Panel de opciones -->
         <aside class="side">
           <UiCard title="Condiciones" icon="ph:file-text">
@@ -1207,6 +1232,11 @@ const R_CODES = [
 }
 
 .min0 {
+  min-width: 0;
+}
+
+/* La hoja y sus páginas adicionales, una debajo de otra */
+.sheets {
   min-width: 0;
 }
 
@@ -1982,7 +2012,9 @@ const R_CODES = [
   .editor[data-step='2'] .rect-box,
   .editor[data-step='2'] .paper-bottom,
   .editor[data-step='2'] .paper-pay,
-  .editor[data-step='2'] .side {
+  .editor[data-step='2'] .side,
+  .editor[data-step='1'] .pages-ed,
+  .editor[data-step='2'] .pages-ed {
     display: none;
   }
 

@@ -22,6 +22,7 @@ export default defineEventHandler(async (event) => {
       operationDate: doc.operationDate,
       paymentMethod: doc.paymentMethod,
       description: doc.description,
+      extraPages: doc.extraPages,
       notes: doc.notes,
       terms: doc.terms,
       irpfRate: doc.irpfRate,
@@ -57,6 +58,8 @@ export default defineEventHandler(async (event) => {
     logoUrl: company.logoPath ? `${base}/logo` : null,
     signature: full.signature ? { url: `${base}/signature`, label: full.signature.label, signer: (doc.issuer ?? companySnapshot(company)).name } : null,
     pdfUrl: base,
+    /** Imágenes de las páginas adicionales (solo las de este documento) */
+    pageImageBase: `${base}/page-image/`,
     payment: isInvoice
       ? {
           paid: doc.status === 'paid' || pending <= 0,

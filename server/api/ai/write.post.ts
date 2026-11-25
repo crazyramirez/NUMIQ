@@ -12,6 +12,7 @@ const FIELDS = {
   sales_concept: { what: 'el concepto de una línea de factura o presupuesto', format: 'concept' },
   sales_notes: { what: 'las observaciones al pie de una factura, que lee el cliente (breves: agradecimiento, aclaraciones útiles). La fecha, el vencimiento, la forma de pago, el IBAN y el total ya figuran en otra parte de la factura: no los menciones salvo que se pida', format: 'plain' },
   sales_terms: { what: 'las condiciones al pie de un presupuesto, que lee el cliente (validez, plazos, pagos, revisiones…). La fecha de validez y el total ya figuran en otra parte del presupuesto: no los menciones salvo que se pida', format: 'plain' },
+  sales_page: { what: 'un bloque de texto de una página adicional de una factura o presupuesto (condiciones generales, memoria o alcance del proyecto, garantías, plazos, metodología…). El título de la página, si lo hay, va en el contexto e indica de qué trata; no lo repitas como encabezado. Los datos del documento (importes, fechas, IBAN) ya figuran en la primera página: no los repitas salvo que se pida', format: 'rich' },
   expense_concept: { what: 'el concepto de un gasto (factura recibida, ticket o nómina) en la contabilidad', format: 'line' },
   expense_notes: { what: 'las notas internas de un gasto: para qué fue, proyecto, justificación', format: 'plain' },
   recurring_concept: { what: 'el concepto de una factura o gasto que se repite cada periodo', format: 'line' },

@@ -39,6 +39,8 @@ export const salesInputSchema = z.object({
   lines: z.array(salesLineSchema).min(1, 'Añade al menos una línea').max(500),
   /** «Solo descripción»: los conceptos de antes, para recuperarlos al volver (sin enviar = no se tocan) */
   keptLines: z.array(salesLineSchema).max(500).nullish(),
+  /** Páginas adicionales (condiciones, memoria, fotos…); sin enviar = no se tocan */
+  extraPages: docPagesSchema.nullish(),
   /** Firma: null = lo que diga Ajustes; sin enviar = no se toca */
   sign: z.boolean().nullable().optional(),
   signatureId: z.number().int().positive().nullable().optional(),
@@ -131,6 +133,7 @@ export async function saveSalesDraft(companyId: number, userId: number, input: S
       ? input.keptLines.map(l => ({ ...l, itemId: l.itemId ?? null, discountPct: l.discountPct ?? 0, surchargeRate: l.surchargeRate ?? 0, irpfApplies: l.irpfApplies ?? true }))
       : null
   }
+  if (input.extraPages !== undefined) values.extraPages = input.extraPages ?? null
   if (input.sign !== undefined) values.sign = input.sign
   if (input.signatureId !== undefined) {
     if (input.signatureId) await findSignature(companyId, input.signatureId)
@@ -366,6 +369,8 @@ export async function quoteToInvoice(company: typeof tables.companies.$inferSele
       discountPct: l.discountPct, vatRate: l.vatRate, surchargeRate: l.surchargeRate, irpfApplies: l.irpfApplies,
     })),
     keptLines: src.keptLines,
+    // La memoria, las fotos o las condiciones del presupuesto pasan a la factura (se pueden quitar en ella)
+    extraPages: src.extraPages,
   })
   const db = useDb()
   await db.update(tables.salesDocuments).set({ sourceId: id })

@@ -225,6 +225,15 @@ export async function buildBackup(company: Company, opts: BackupOptions) {
       add(`Productos/${safe(i.name)}.${kind.ext}`, data, false)
       originals++
     }
+    // Imágenes de las páginas adicionales, en una carpeta por documento (con su nombre de archivo, que es el que guarda el JSON)
+    for (const s of sales) {
+      for (const name of new Set(pageImages(s.extraPages))) {
+        const img = await readPageImage(company.id, name)
+        if (!img) continue
+        add(`Páginas adicionales/${safe(s.number ?? `borrador-${s.id}`)}/${name}`, img.data, false)
+        originals++
+      }
+    }
     for (const sig of signatures) {
       const data = await readStoredFile(sig.path).catch(() => null)
       if (!data) continue
