@@ -106,6 +106,92 @@ function inlineMarkdown(text: string): RichSpan[] {
   return out
 }
 
+/**
+ * Texto pegado sin estructura (un PDF, un correo en texto plano) → bloques. Un PDF corta cada línea con
+ * un salto: las líneas que siguen la misma frase se vuelven a unir en su párrafo (y «condi-\nciones»
+ * en «condiciones»), las viñetas del PDF (•, , ▪…) son listas, los títulos en mayúsculas subtítulos,
+ * las líneas en blanco separan párrafos (nunca párrafos vacíos) y los números de página sobran.
+ */
+export function pastedTextToRich(text: string | null | undefined): RichDoc | null {
+  if (!text?.trim()) return null
+  const lines = text
+    .replace(/\r\n?/g, '\n')
+    .replace(/\f/g, '\n\n')
+    .replace(/­/g, '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000B\u000E-\u001F]/g, '')
+    .split('\n')
+    .map(l => l.replace(/[ \t  -​]+/g, ' ').trim())
+  const filled = lines.filter(Boolean)
+  // Ancho de línea del texto: el de las líneas largas (percentil 90). Un PDF ronda 60-130 caracteres
+  const lens = filled.filter(l => !listLine(l)).map(l => l.length).sort((a, b) => a - b)
+  const width = lens[Math.floor((lens.length - 1) * 0.9)] ?? 0
+  const wrapped = filled.length >= 3 && width >= 30 && width <= 160
+  const pageNo = /^(?:p[áa]g(?:ina)?\.?\s*)?\d{1,3}(?:\s*(?:de|\/|of)\s*\d{1,3})?$/i
+
+  type Item = { k: 'p' | 'h' | 'ul' | 'ol', t: string, last: string }
+  const items: Item[] = []
+  let cur: Item | null = null
+  for (const line of lines) {
+    if (!line || (wrapped && filled.length >= 5 && pageNo.test(line))) {
+      cur = null
+      continue
+    }
+    const md = /^#{1,6}\s+(.+)$/.exec(line)
+    const li = listLine(line)
+    const caps = wrapped && isCapsTitle(li?.k === 'ol' ? li.t : line)
+    if (md || caps) {
+      items.push({ k: 'h', t: md ? md[1]! : line, last: line })
+      cur = null
+      continue
+    }
+    if (li) {
+      cur = { k: li.k, t: li.t, last: line }
+      items.push(cur)
+      continue
+    }
+    if (cur && wrapped) {
+      const prev = cur.last
+      const longPrev = prev.length >= width * 0.65
+      const continues = !/[.:;!?…»"”)]$/.test(prev) && /^[a-záéíóúüñç(«"“,;\d]/.test(line)
+      if (longPrev || continues) {
+        cur.t = /[a-záéíóúüñç]-$/i.test(cur.t) && /^[a-záéíóúüñç]/.test(line) ? cur.t.slice(0, -1) + line : `${cur.t} ${line}`
+        cur.last = line
+        continue
+      }
+    }
+    cur = { k: 'p', t: line, last: line }
+    items.push(cur)
+  }
+
+  const out: RichDoc = []
+  for (const it of items) {
+    const c = [{ t: it.t }]
+    if (it.k === 'p' || it.k === 'h') {
+      out.push({ k: it.k, c })
+      continue
+    }
+    const prev = out.at(-1)
+    if (prev && prev.k === it.k) prev.items.push(c)
+    else out.push({ k: it.k, items: [c] })
+  }
+  return normalizeRich(out)
+}
+
+/** Viñeta o número al principio de una línea (también los símbolos privados que usan Word y los PDF) */
+function listLine(line: string): { k: 'ul' | 'ol', t: string } | null {
+  const b = /^(?:[-•◦▪▫●○■□*·–—►▶✓✔]|[])\s+(.+)$/.exec(line)
+  if (b) return { k: 'ul', t: b[1]!.trim() }
+  const n = /^\d{1,2}[.)]\s+(.+)$/.exec(line)
+  return n ? { k: 'ol', t: n[1]!.trim() } : null
+}
+
+/** «CONDICIONES GENERALES», «1. OBJETO DEL CONTRATO»: corto, con letras y todo en mayúsculas */
+function isCapsTitle(t: string) {
+  const letters = t.replace(/[^a-záéíóúüñç]/gi, '')
+  return t.length <= 90 && letters.length >= 3 && letters === letters.toUpperCase() && letters !== letters.toLowerCase() && !/[.,;]$/.test(t)
+}
+
 function linesToRich(text: string | null | undefined, spans: (line: string) => RichSpan[]): RichDoc | null {
   if (!text?.trim()) return null
   const out: RichDoc = []

@@ -428,11 +428,53 @@ function paperCtx(): CtxSpec | null {
     items: [...main, { divider: true }, { label: 'Copiar', icon: 'ph:copy', children: copy }, { divider: true }, ...more],
   }
 }
+
+// ─── Cabecera fija ───────────────────────────────────────────────────────────
+// Al bajar se queda bajo la barra superior con sus acciones a mano. En el móvil se compacta y el hueco
+// que deja se compensa con margen: el documento no da saltos al fijarse ni al soltarse
+const head = ref<HTMLElement>()
+const stuck = ref(false)
+const headSize = reactive({ full: 0, now: 0 })
+
+function checkStuck() {
+  const el = head.value
+  if (!el) return
+  const top = Number.parseFloat(getComputedStyle(el).top) || 0
+  stuck.value = window.scrollY > 0 && el.getBoundingClientRect().top <= top + 0.5
+}
+
+let headObs: ResizeObserver | null = null
+onMounted(() => {
+  window.addEventListener('scroll', checkStuck, { passive: true })
+  window.addEventListener('resize', checkStuck, { passive: true })
+  headObs = new ResizeObserver(() => {
+    const h = head.value?.offsetHeight ?? 0
+    headSize.now = h
+    if (!stuck.value) headSize.full = h
+  })
+  watch(head, (el, old) => {
+    if (old) headObs?.unobserve(old)
+    if (el) {
+      headObs?.observe(el)
+      checkStuck()
+    }
+  }, { immediate: true })
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', checkStuck)
+  window.removeEventListener('resize', checkStuck)
+  headObs?.disconnect()
+})
+
+const headStyle = computed(() => ({
+  '--head-gap': `${stuck.value ? Math.max(0, headSize.full - headSize.now) : 0}px`,
+}))
+const viewStyle = computed(() => ({ '--head-h': `${headSize.now}px` }))
 </script>
 
 <template>
-  <div v-if="doc && company" class="view page">
-    <div class="v-head no-print">
+  <div v-if="doc && company" class="view page" :style="viewStyle">
+    <div ref="head" class="v-head no-print" :class="{ stuck }" :style="headStyle">
       <div class="head-nav">
         <UiButton v-if="backFrom" variant="ghost" size="sm" icon="ph:arrow-left" class="back-from" :title="backLabel" @click="back()">{{ backPlaceLabel }}</UiButton>
         <UiButton v-else variant="ghost" square icon="ph:arrow-left" :aria-label="backLabel" :title="backLabel" @click="back()" />
@@ -657,12 +699,49 @@ function paperCtx(): CtxSpec | null {
   max-width: 1320px;
 }
 
+/* Fija bajo la barra superior al bajar. Fondo y línea inferior se extienden a lo ancho con una sombra
+   recortada en vertical (no provoca scroll horizontal ni tapa menús ni avisos); la línea, solo fija */
 .v-head {
+  position: sticky;
+  top: var(--topbar-h);
+  z-index: calc(var(--z-sticky) - 1);
   display: flex;
   align-items: center;
   gap: var(--s-3);
   flex-wrap: wrap;
-  margin-bottom: var(--s-6);
+  margin: calc(-1 * var(--s-3)) 0 calc(var(--s-6) - var(--s-3) + var(--head-gap, 0px));
+  padding: var(--s-3) 0;
+}
+
+.v-head::before,
+.v-head::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: -1;
+  clip-path: inset(0 -100vmax);
+  pointer-events: none;
+}
+
+.v-head::before {
+  top: 0;
+  bottom: 0;
+  background: var(--bg);
+  box-shadow: 0 0 0 100vmax var(--bg);
+}
+
+.v-head::after {
+  bottom: -1px;
+  height: 1px;
+  background: var(--border-subtle);
+  box-shadow: 0 0 0 100vmax var(--border-subtle);
+  opacity: 0;
+  transition: opacity var(--t-fast);
+}
+
+.v-head.stuck::after {
+  opacity: 1;
 }
 
 .head-nav {
@@ -803,7 +882,7 @@ function paperCtx(): CtxSpec | null {
 
 .v-side {
   position: sticky;
-  top: calc(var(--topbar-h) + var(--s-5));
+  top: calc(var(--topbar-h) + var(--head-h, 0px) + var(--s-5));
   display: flex;
   flex-direction: column;
   gap: var(--s-4);
@@ -1142,6 +1221,47 @@ function paperCtx(): CtxSpec | null {
   .pager-btn {
     height: 40px;
     padding: 0 12px;
+  }
+
+  /* Fija, compacta: volver y el número en una fila; la acción principal y los iconos en otra */
+  .v-head.stuck {
+    gap: var(--s-2);
+    padding: var(--s-2) 0;
+  }
+
+  .v-head.stuck .eyebrow,
+  .v-head.stuck .pager-btns {
+    display: none;
+  }
+
+  .v-head.stuck .head-nav {
+    width: auto;
+  }
+
+  .v-head.stuck .grow {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .v-head.stuck h1 {
+    font-size: var(--text-lg);
+    flex-wrap: nowrap;
+  }
+
+  .v-head.stuck .page-actions > .btn-primary,
+  .v-head.stuck .page-actions > .act-wide {
+    flex: 1 1 auto;
+    order: 0;
+    height: 40px;
+  }
+
+  .v-head.stuck .page-actions > .tools {
+    flex: 1 1 auto;
+  }
+
+  .v-head.stuck .tools .btn.btn-square,
+  .v-head.stuck .tools :deep(.menu) .btn.btn-square {
+    height: 34px;
   }
 }
 

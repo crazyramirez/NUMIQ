@@ -77,9 +77,12 @@ function onPaste(e: ClipboardEvent) {
   e.preventDefault()
   const html = e.clipboardData?.getData('text/html')
   const text = e.clipboardData?.getData('text/plain') ?? ''
-  const doc = html
+  // Sin párrafos en el HTML (un PDF: el visor de Chrome no da HTML, el de Firefox líneas sueltas con <br>)
+  // y con varias líneas, manda el texto: se rehacen los párrafos que el PDF partió línea a línea
+  const structured = !!html && /<(?:p|div|li|h[1-6]|table|ul|ol|blockquote|pre)[\s>]/i.test(html)
+  const doc = html && (structured || !/\n/.test(text.trim()))
     ? normalizeRich(htmlToRich(new DOMParser().parseFromString(html, 'text/html').body))
-    : normalizeRich(text.split(/\r?\n/).map(l => ({ k: 'p' as const, c: [{ t: l }] })))
+    : pastedTextToRich(text)
   if (!doc) return
   // Un solo párrafo se pega dentro de la línea; varios, como bloques
   const only = doc.length === 1 ? doc[0]! : null
