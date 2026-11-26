@@ -190,8 +190,8 @@ async function send() {
     </div>
 
     <form v-show="view === 'edit'" id="send-form" class="stack gap-4" novalidate @submit.prevent="send">
-      <UiInput v-model="form.to" label="Para" type="email" placeholder="cliente@empresa.es" icon="ph:envelope-simple" :error="errors.to" hint="Varios destinatarios separados por comas" required />
-      <UiInput v-model="form.cc" label="CC" placeholder="Opcional" icon="ph:users" :error="errors.cc" hint="Varios en copia separados por comas (máx. 5)" />
+      <UiEmails v-model="form.to" label="Para" placeholder="cliente@empresa.es" icon="ph:envelope-simple" :error="errors.to" :exclude="form.cc" hint="Escribe o pega correos; coma o Intro para añadir otro" required />
+      <UiEmails v-model="form.cc" label="CC" placeholder="Opcional" icon="ph:users" :error="errors.cc" :exclude="form.to" />
       <UiInput v-model="form.subject" label="Asunto" :error="errors.subject" required />
       <div class="msg">
         <UiTextarea v-model="form.message" label="Mensaje" rows="9" :error="errors.message" :ai="aiMessage" />

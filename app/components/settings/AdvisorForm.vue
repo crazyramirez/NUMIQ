@@ -65,7 +65,7 @@ async function save() {
         <UiInput v-model="form.firm" class="c-6" label="Asesoría" placeholder="Ej. Asesoría Fiscal Prado SL" autocomplete="off" :error="errors.firm" />
         <UiInput v-model="form.email" class="c-6" label="Email" type="email" placeholder="gestor@asesoria.es" icon="ph:envelope-simple" :error="errors.email" />
         <UiInput v-model="form.phone" class="c-6" label="Teléfono" type="tel" :error="errors.phone" />
-        <UiInput v-model="form.cc" class="c-12" label="En copia (opcional)" placeholder="Otro email de la asesoría, separados por comas" :error="errors.cc" />
+        <UiEmails v-model="form.cc" class="c-12" label="En copia (opcional)" placeholder="Otro email de la asesoría" :error="errors.cc" :exclude="form.email" />
         <UiTextarea v-if="!compact" v-model="form.message" class="c-12" label="Mensaje habitual (opcional)" placeholder="Hola Carmen: te envío la documentación del trimestre. Cualquier cosa, me dices." :error="errors.message" />
       </div>
     </fieldset>

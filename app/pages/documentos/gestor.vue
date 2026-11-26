@@ -381,8 +381,8 @@ const expired = (p: Pack) => new Date(p.expiresAt) < new Date()
             <h2 class="section-title">Correo para tu gestor</h2>
           </div>
           <div class="form-grid">
-            <UiInput v-model="mail.to" class="c-6" label="Para" type="email" placeholder="gestor@asesoria.es" :error="errors.to" @input="touched = true" />
-            <UiInput v-model="mail.cc" class="c-6" label="Copia (opcional)" :error="errors.cc" @input="touched = true" />
+            <UiEmails v-model="mail.to" class="c-6" label="Para" placeholder="gestor@asesoria.es" :error="errors.to" :exclude="mail.cc" @update:model-value="touched = true" />
+            <UiEmails v-model="mail.cc" class="c-6" label="Copia (opcional)" :error="errors.cc" :exclude="mail.to" @update:model-value="touched = true" />
             <UiInput v-model="mail.subject" class="c-12" label="Asunto" :error="errors.subject" @input="touched = true" />
             <UiTextarea v-model="mail.message" class="c-12 msg" label="Mensaje" :error="errors.message" @input="touched = true" />
           </div>
