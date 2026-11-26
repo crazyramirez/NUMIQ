@@ -5,7 +5,7 @@ const emailList = z.string().trim().min(1, 'Indica al menos un destinatario').tr
 
 const schema = z.object({
   to: emailList,
-  cc: z.string().trim().max(500).optional().transform(s => (s ? s.split(/[,;\s]+/).filter(Boolean) : [])).pipe(z.array(z.email('Hay un email en copia no válido')).max(5)),
+  cc: z.string().trim().max(500).optional().transform(s => (s ? s.split(/[,;\s]+/).filter(Boolean) : [])).pipe(z.array(z.email('Hay un email en copia no válido')).max(5, 'Máximo 5 en copia')),
   subject: z.string().trim().min(1, 'Escribe un asunto').max(200),
   message: z.string().trim().min(1, 'Escribe un mensaje').max(5000),
   kind: z.enum(['document', 'reminder']).default('document'),

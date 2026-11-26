@@ -26,7 +26,7 @@ const label = computed(() => (isQuote.value ? 'presupuesto' : props.doc.kind ===
 const firstName = computed(() => (props.doc.contact?.kind === 'person' ? props.doc.contact.name.split(' ')[0] ?? '' : ''))
 
 const form = reactive({ to: '', cc: '', subject: '', message: '', attachPdf: true, attachOriginal: false, attachmentIds: [] as number[] })
-const errors = reactive<Record<string, string | null>>({ to: null, subject: null, message: null })
+const errors = reactive<Record<string, string | null>>({ to: null, cc: null, subject: null, message: null })
 const sending = ref(false)
 
 const { data: mail } = useFetch<{ configured: boolean, account: string | null }>('/api/mail/status', { lazy: true, server: false })
@@ -191,7 +191,7 @@ async function send() {
 
     <form v-show="view === 'edit'" id="send-form" class="stack gap-4" novalidate @submit.prevent="send">
       <UiInput v-model="form.to" label="Para" type="email" placeholder="cliente@empresa.es" icon="ph:envelope-simple" :error="errors.to" hint="Varios destinatarios separados por comas" required />
-      <UiInput v-model="form.cc" label="CC" placeholder="Opcional" icon="ph:users" />
+      <UiInput v-model="form.cc" label="CC" placeholder="Opcional" icon="ph:users" :error="errors.cc" hint="Varios en copia separados por comas (máx. 5)" />
       <UiInput v-model="form.subject" label="Asunto" :error="errors.subject" required />
       <div class="msg">
         <UiTextarea v-model="form.message" label="Mensaje" rows="9" :error="errors.message" :ai="aiMessage" />

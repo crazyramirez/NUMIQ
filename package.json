@@ -1,6 +1,6 @@
 {
   "name": "numiq",
-  "version": "0.3.11",
+  "version": "0.3.12",
   "private": true,
   "type": "module",
   "description": "Gestión completa para autónomos y pequeñas empresas: facturación, gastos, impuestos, VeriFactu e IA.",
